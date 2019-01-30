@@ -99,14 +99,14 @@ performance out of your model, consider using the "shrinking" procedure of
 
 ## Public contents
 
-*   [constrained_minimization_problem.py](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/constrained_minimization_problem.py):
+*   [constrained_minimization_problem.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/constrained_minimization_problem.py):
     contains the `ConstrainedMinimizationProblem` interface, representing an
     inequality-constrained problem. Your own constrained optimization problems
     should be represented using implementations of this interface. If using the
     rate-based helpers, such objects can be constructed as
     `RateMinimizationProblem`s.
 
-*   [candidates.py](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/candidates.py):
+*   [candidates.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/candidates.py):
     contains two functions, `find_best_candidate_distribution` and
     `find_best_candidate_index`. Both of these functions are given a set of
     candidate solutions to a constrained optimization problem, from which the
@@ -121,15 +121,15 @@ performance out of your model, consider using the "shrinking" procedure of
     implements the heuristic used for hyperparameter search in the experiments
     of Section 5.2.
 
-*   [Optimizing general inequality-constrained problems](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/)
+*   [Optimizing general inequality-constrained problems](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/)
 
-    *   [constrained_optimizer.py](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/constrained_optimizer.py):
+    *   [constrained_optimizer.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/constrained_optimizer.py):
         contains the `ConstrainedOptimizer` interface, which is similar to (but
         different from) `tf.train.Optimizer`, with the main difference being
         that `ConstrainedOptimizer`s are given `ConstrainedMinimizationProblem`s
         to optimize, and perform constrained optimization.
 
-    *   [lagrangian_optimizer.py](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/lagrangian_optimizer.py):
+    *   [lagrangian_optimizer.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/lagrangian_optimizer.py):
         contains the `LagrangianOptimizer` implementation, which is a
         `ConstrainedOptimizer` implementing the Lagrangian approach discussed
         above (with additive updates to the Lagrange multipliers). You should
@@ -143,7 +143,7 @@ performance out of your model, consider using the "shrinking" procedure of
         model parameters, and uses `tf.train.Optimizer`s, instead of SGD, for
         the "inner" updates.
 
-    *   [proxy_lagrangian_optimizer.py](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/proxy_lagrangian_optimizer.py):
+    *   [proxy_lagrangian_optimizer.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/proxy_lagrangian_optimizer.py):
         contains the `ProxyLagrangianOptimizer` implementation, which is a
         `ConstrainedOptimizer` implementing the proxy-Lagrangian approach
         mentioned above. We recommend using this optimizer for problems *with*
@@ -154,9 +154,9 @@ performance out of your model, consider using the "shrinking" procedure of
         difference being that it uses `tf.train.Optimizer`s, instead of SGD, for
         the "inner" updates.
 
-*   [Helpers for constructing rate-based optimization problems](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/)
+*   [Helpers for constructing rate-based optimization problems](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/)
 
-    *   [subsettable_context.py](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/subsettable_context.py):
+    *   [subsettable_context.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/subsettable_context.py):
         contains the `context` method, which takes a `Tensor` of predictions
         (i.e. the output of a TensorFlow model, through which gradients can be
         propagated), and optionally `Tensor`s of labels and weights, and returns
@@ -182,24 +182,24 @@ performance out of your model, consider using the "shrinking" procedure of
         (e.g. using the "filter" method of a `tf.train.Dataset`), and to
         construct each subset context directly from each such dataset.
 
-    *   [binary_rates.py](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/binary_rates.py):
+    *   [binary_rates.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/binary_rates.py):
         contains functions for constructing rates from contexts. These rates can
         then be combined into more complicated expressions using python
         arithmetic operators, or into constraints using comparison operators.
 
-    *   [operations.py](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/operations.py):
+    *   [operations.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/operations.py):
         contains functions for manipulating rate expressions, including
         `wrap_rate`, which can be used to convert a `Tensor` into a rate object,
         as well as `lower_bound` and `upper_bound`, which convert lists of rates
         into rates representing lower- and upper-bounds on all elements of the
         list.
 
-    *   [loss.py](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/loss.py):
+    *   [loss.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/loss.py):
         contains loss functions used in constructing rates. These can be passed
         as parameters to the optional `penalty_loss` and `constraint_loss`
         functions in "binary_rates.py" (above).
 
-    *   [rate_minimization_problem.py](https://github.com/google-research/constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/rate_minimization_problem.py):
+    *   [rate_minimization_problem.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/rate_minimization_problem.py):
         contains the `RateMinimizationProblem` class, which constructs a
         `ConstrainedMinimizationProblem` (suitable for use by
         `ConstrainedOptimizer`s) from a rate expression to minimize, and a list
@@ -303,7 +303,7 @@ and the latter the "true" constraints. These default to the hinge and zero-one
 losses, respectively, so the consequence is that we will attempt to minimize the
 average hinge loss (a relaxation of the error rate using the `penalty_loss`),
 while constraining the recall (using the `constraint_loss`) by essentially
-learning how much we should penalize the hinge-constrained reacll
+learning how much we should penalize the hinge-constrained recall
 (`penalty_loss`, again).
 
 The `RateMinimizationProblem` class implements the
