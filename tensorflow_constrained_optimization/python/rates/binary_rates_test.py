@@ -20,6 +20,8 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import six
+from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import basic_expression
@@ -80,6 +82,17 @@ class RatesTest(tf.test.TestCase):
 
   @property
   def context(self):
+    """Creates a new non-split and non-subsetted context."""
+    # We can't create the context in __init__, since it would then wind up in
+    # the wrong TensorFlow graph.
+    return subsettable_context.rate_context(
+        predictions=tf.constant(self._penalty_predictions, dtype=tf.float32),
+        labels=tf.constant(self._penalty_labels, dtype=tf.float32),
+        weights=tf.constant(self._penalty_weights, dtype=tf.float32))
+
+  @property
+  def split_context(self):
+    """Creates a new split and subsetted context."""
     # We can't create the context in __init__, since it would then wind up in
     # the wrong TensorFlow graph.
     context = subsettable_context.split_rate_context(
@@ -147,7 +160,8 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.positive_prediction_rate(self.context)
+    actual_expression = binary_rates.positive_prediction_rate(
+        self.split_context)
     self.check_rates(expected_penalty_value, expected_constraint_value,
                      actual_expression)
 
@@ -171,7 +185,8 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.negative_prediction_rate(self.context)
+    actual_expression = binary_rates.negative_prediction_rate(
+        self.split_context)
     self.check_rates(expected_penalty_value, expected_constraint_value,
                      actual_expression)
 
@@ -201,7 +216,7 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.error_rate(self.context)
+    actual_expression = binary_rates.error_rate(self.split_context)
     self.check_rates(expected_penalty_value, expected_constraint_value,
                      actual_expression)
 
@@ -231,7 +246,7 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.accuracy_rate(self.context)
+    actual_expression = binary_rates.accuracy_rate(self.split_context)
     self.check_rates(expected_penalty_value, expected_constraint_value,
                      actual_expression)
 
@@ -259,7 +274,7 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.true_positive_rate(self.context)
+    actual_expression = binary_rates.true_positive_rate(self.split_context)
     self.check_rates(expected_penalty_value, expected_constraint_value,
                      actual_expression)
 
@@ -287,7 +302,7 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.false_negative_rate(self.context)
+    actual_expression = binary_rates.false_negative_rate(self.split_context)
     self.check_rates(expected_penalty_value, expected_constraint_value,
                      actual_expression)
 
@@ -315,7 +330,7 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.false_positive_rate(self.context)
+    actual_expression = binary_rates.false_positive_rate(self.split_context)
     self.check_rates(expected_penalty_value, expected_constraint_value,
                      actual_expression)
 
@@ -343,9 +358,168 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.true_negative_rate(self.context)
+    actual_expression = binary_rates.true_negative_rate(self.split_context)
     self.check_rates(expected_penalty_value, expected_constraint_value,
                      actual_expression)
+
+  def find_roc_auc_thresholds(self, bins):
+    """Finds the thresholds associated with each of the ROC AUC bins."""
+    indices = [
+        index for index in range(len(self._penalty_labels))
+        if self._penalty_labels[index] <= 0
+    ]
+    permutation = sorted(
+        indices, key=lambda index: self._penalty_predictions[index])
+    denominator = sum(self._penalty_weights[index] for index in permutation)
+
+    # Construct a dictionary mapping thresholds to FPRs.
+    fprs = {-float("Inf"): 1.0}
+    fpr_numerator = denominator
+    for index in permutation:
+      fpr_numerator -= self._penalty_weights[index]
+      fprs[self._penalty_predictions[index]] = fpr_numerator / denominator
+
+    # These FPR thresholds are the same as in roc_auc_{lower,upper}_bound.
+    fpr_thresholds = [(index + 0.5) / bins for index in xrange(bins)]
+
+    # For each FPR threshold, find the threshold on the model output that
+    # achieves the desired FPR.
+    prediction_thresholds = []
+    for fpr_threshold in fpr_thresholds:
+      prediction_threshold = min(
+          [float("Inf")] +
+          [key for key, value in six.iteritems(fprs) if value < fpr_threshold])
+      prediction_thresholds.append(prediction_threshold)
+
+    return prediction_thresholds
+
+  def check_roc_auc(self, bins, roc_auc_thresholds, constraints_tensor,
+                    pre_train_ops):
+    """Helper method for test_roc_auc_{lower,upper}_bound."""
+    bisection_loops = 32
+    bisection_epsilon = 1e-6
+
+    with tf.Session() as session:
+      session.run(
+          [tf.local_variables_initializer(),
+           tf.global_variables_initializer()])
+      session.run(list(pre_train_ops))
+
+      session.run(tf.assign(roc_auc_thresholds, np.zeros(bins)))
+      constraints = session.run(constraints_tensor)
+      # We extracted the constraints from a *set*, rather than a *list*, so we
+      # need to sort them by their violations (when the thresholds are
+      # uninitialized) to determine which constraint is associated with which
+      # threshold.
+      permutation = sorted(
+          range(bins), key=lambda index: constraints[index], reverse=True)
+
+      # Repeatedly double the (negative) lower thresholds until they're below
+      # intercepts.
+      lower_thresholds = np.zeros(bins)
+      threshold = -1.0
+      while True:
+        session.run(tf.assign(roc_auc_thresholds, lower_thresholds))
+        constraints = session.run(constraints_tensor)[permutation]
+        indices = (constraints <= 0.0)
+        if not any(indices):
+          break
+        lower_thresholds[indices] = threshold
+        threshold *= 2.0
+
+      # Repeatedly double the (positive) upper thresholds until they're above
+      # the intercepts.
+      upper_thresholds = np.zeros(bins)
+      threshold = 1.0
+      while True:
+        session.run(tf.assign(roc_auc_thresholds, upper_thresholds))
+        constraints = session.run(constraints_tensor)[permutation]
+        indices = (constraints > 0.0)
+        if not any(indices):
+          break
+        upper_thresholds[indices] = threshold
+        threshold *= 2.0
+
+      # Now perform a bisection search to find the intercepts (i.e. the
+      # thresholds for which the constraints are exactly satisfied).
+      for _ in xrange(bisection_loops):
+        middle_thresholds = 0.5 * (lower_thresholds + upper_thresholds)
+        session.run(tf.assign(roc_auc_thresholds, middle_thresholds))
+        constraints = session.run(constraints_tensor)[permutation]
+        lower_indices = (constraints > 0.0)
+        upper_indices = (constraints <= 0.0)
+        lower_thresholds[lower_indices] = middle_thresholds[lower_indices]
+        upper_thresholds[upper_indices] = middle_thresholds[upper_indices]
+        # Stop the search once we're within epsilon.
+        if max(upper_thresholds - lower_thresholds) <= bisection_epsilon:
+          break
+
+    actual_thresholds = upper_thresholds
+    expected_thresholds = self.find_roc_auc_thresholds(bins)
+    self.assertAllClose(
+        expected_thresholds, actual_thresholds, rtol=0, atol=bisection_epsilon)
+
+  def test_roc_auc_lower_bound(self):
+    """Tests that roc_auc_lower_bound's constraints give correct thresholds."""
+    bins = 3
+    denominator_lower_bound = 0.0
+    global_step = tf.Variable(0, dtype=tf.int32)
+    evaluation_context = basic_expression.BasicExpression.EvaluationContext(
+        denominator_lower_bound, global_step)
+
+    expression = binary_rates.roc_auc_lower_bound(self.context, bins)
+
+    # Extract the Tensors for the constraints, and the associated pre_train_ops.
+    pre_train_ops = set()
+    constraints_tensor = []
+    for constraint in expression.extra_constraints:
+      constraint_tensor, constraint_pre_train_ops, _ = (
+          constraint.expression.constraint_expression.evaluate(
+              evaluation_context))
+      constraints_tensor.append(constraint_tensor)
+      pre_train_ops.update(constraint_pre_train_ops)
+    self.assertEqual(bins, len(constraints_tensor))
+    constraints_tensor = tf.stack(constraints_tensor)
+
+    # The check_roc_auc() helper will perform a bisection search over the
+    # thresholds, so we need to extract the Tensor containing the thresholds
+    # from the graph.
+    roc_auc_thresholds = tf.get_default_graph().get_tensor_by_name(
+        "roc_auc_thresholds:0")
+
+    self.check_roc_auc(bins, roc_auc_thresholds, constraints_tensor,
+                       pre_train_ops)
+
+  def test_roc_auc_upper_bound(self):
+    """Tests that roc_auc_upper_bound's constraints give correct thresholds."""
+    bins = 4
+    denominator_lower_bound = 0.0
+    global_step = tf.Variable(0, dtype=tf.int32)
+    evaluation_context = basic_expression.BasicExpression.EvaluationContext(
+        denominator_lower_bound, global_step)
+
+    expression = binary_rates.roc_auc_upper_bound(self.context, bins)
+
+    # Extract the Tensors for the constraints, and the associated pre_train_ops.
+    pre_train_ops = set()
+    constraints_tensor = []
+    for constraint in expression.extra_constraints:
+      constraint_tensor, constraint_pre_train_ops, _ = (
+          constraint.expression.constraint_expression.evaluate(
+              evaluation_context))
+      constraints_tensor.append(constraint_tensor)
+      pre_train_ops.update(constraint_pre_train_ops)
+    self.assertEqual(bins, len(constraints_tensor))
+    constraints_tensor = tf.stack(constraints_tensor)
+
+    # The check_roc_auc() helper will perform a bisection search over the
+    # thresholds, so we need to extract the Tensor containing the thresholds
+    # from the graph.
+    roc_auc_thresholds = tf.get_default_graph().get_tensor_by_name(
+        "roc_auc_thresholds:0")
+
+    self.check_roc_auc(bins, roc_auc_thresholds, -constraints_tensor,
+                       pre_train_ops)
 
 
 if __name__ == "__main__":

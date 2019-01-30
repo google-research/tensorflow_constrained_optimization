@@ -59,6 +59,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numbers
+from six.moves import xrange  # pylint: disable=redefined-builtin
+import tensorflow as tf
+
 from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import expression
 from tensorflow_constrained_optimization.python.rates import loss
@@ -549,5 +553,287 @@ def true_negative_rate(context,
       negative_coefficient=1.0,
       numerator_context=negative_context,
       denominator_context=negative_context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def _roc_auc(context,
+             bins,
+             lower_bound=False,
+             upper_bound=False,
+             penalty_loss=_DEFAULT_PENALTY_LOSS,
+             constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` representing an approximate ROC AUC.
+
+  The result of this function represents a Riemann approximation to the area
+  under the ROC curve (false positive rate on the horizontal axis, true positive
+  rate on the vertical axis), using the constraint-based method proposed by:
+
+  > Eban, Schain, Mackey, Gordon, Rifkin and Elidan. "Scalable Learning of
+  > Non-Decomposable Objectives". AISTATS 2017.
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then need to set the lower_bound parameter to `True`. Likewise, if
+  you're going to be upper-bounding or minimizing the result of this function
+  (which normally wouldn't make much sense for ROC AUC), then the upper_bound
+  parameter must be `True`. At least one of these parameters *must* be `True`,
+  and it's permitted for both of them to be `True` (but we recommend against
+  this, since it would result in equality constraints, which might cause
+  problems during optimization and/or post-processing).
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    bins: positive integer, the number of "rectangles" to use for the Riemann
+      approximation to ROC AUC.
+    lower_bound: bool, `True` if you want the result of this function to
+      lower-bound the approximate ROC AUC.
+    upper_bound: bool, `True` if you want the result of this function to
+      upper-bound the approximate ROC AUC.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate. This loss must be "normalized" (see
+      `BinaryClassificationLoss.is_normalized`).
+
+  Returns:
+    An `Expression` representing a Riemann approximation to ROC AUC.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, the number of bins is
+      not an integer, or either loss is not a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels, the number of bins is
+      nonpositive, both lower_bound and upper_bound are `False`, or the
+      constraint_loss is not normalized.
+  """
+  if not isinstance(context, subsettable_context.SubsettableContext):
+    raise TypeError("context must be a SubsettableContext")
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("roc_auc_lower_bound requires a context with labels")
+
+  if not isinstance(bins, numbers.Integral):
+    raise TypeError("number of roc_auc_lower_bound bins must be an integer")
+  if bins <= 0:
+    raise ValueError("number of roc_auc_lower_bound bins must be strictly "
+                     "positive")
+
+  # One could set both lower_bound and upper_bound to True, in which case the
+  # result of this function could be treated as the Riemann approximation to ROC
+  # AUC itself (instead of a {lower,upper} bound of it). However, this would
+  # come with some drawbacks: it would of course make optimization more
+  # difficult, but more importantly, it would potentially cause post-processing
+  # for feasibility (e.g. using "shrinking") to fail to find a feasible
+  # solution.
+  if not (lower_bound or upper_bound):
+    raise ValueError("at least one of lower_bound or upper_bound must be True")
+
+  if not (isinstance(penalty_loss, loss.BinaryClassificationLoss) and
+          isinstance(constraint_loss, loss.BinaryClassificationLoss)):
+    raise TypeError("penalty and constraint losses must be "
+                    "BinaryClassificationLosses")
+
+  # For the constraints on the false positive rates to make sense, it would be
+  # best to be using a normalized loss. The reason for this is that, if both
+  # lower_bound and upper_bound are True (or if one imposes constraints
+  # including separate lower and upper bounds), our constraints on the false
+  # positive rates will be equality constraints, which could be infeasible for
+  # an unnormalized loss. This could be changed to a warning, however.
+  if not constraint_loss.is_normalized:
+    raise ValueError("roc_auc_lower_bound can only be used with a normalized "
+                     "constraint_loss (e.g. zero/one, sigmoid or ramp)")
+
+  dtype = raw_context.penalty_predictions.dtype.real_dtype
+  if dtype != raw_context.constraint_predictions.dtype.real_dtype:
+    raise ValueError("penalty and constraint predictions must have the same "
+                     "dtype")
+  # We use a lambda to initialize the thresholds so that, if this function call
+  # is inside the scope of a tf.control_dependencies() block, the dependencies
+  # will not be applied to the initializer.
+  thresholds = tf.Variable(
+      lambda: tf.zeros((bins,)), dtype=dtype, name="roc_auc_thresholds")
+
+  positive_context = context.subset(raw_context.penalty_labels > 0,
+                                    raw_context.constraint_labels > 0)
+  negative_context = context.subset(raw_context.penalty_labels <= 0,
+                                    raw_context.constraint_labels <= 0)
+
+  penalty_average_tpr_terms = []
+  constraint_average_tpr_terms = []
+  extra_constraints = set()
+  for bin_index in xrange(bins):
+    threshold = thresholds[bin_index]
+
+    # It's tempting to wrap tf.stop_gradient() around the threshold, so that
+    # only the model parameters (and not the thresholds) will be adjusted to
+    # increase the average true positive rate. However, this would prevent the
+    # one-sided constraint, as described below, from working, since we need
+    # something to be "pushing against" the constraint.
+    penalty_tpr_term = term.BinaryClassificationTerm.ratio(
+        1.0, 0.0, raw_context.penalty_predictions - threshold,
+        raw_context.penalty_weights, positive_context.penalty_predicate,
+        positive_context.penalty_predicate, penalty_loss)
+    constraint_tpr_term = term.BinaryClassificationTerm.ratio(
+        1.0, 0.0, raw_context.constraint_predictions - threshold,
+        raw_context.constraint_weights, positive_context.constraint_predicate,
+        positive_context.constraint_predicate, constraint_loss)
+
+    penalty_average_tpr_terms.append(penalty_tpr_term / bins)
+    constraint_average_tpr_terms.append(constraint_tpr_term / bins)
+
+    # We wrap tf.stop_gradient() around the predictions because we want to
+    # adjust the thresholds, and only the thresholds, to satisfy the false
+    # positive rate constraints.
+    penalty_fpr_term = term.BinaryClassificationTerm.ratio(
+        1.0, 0.0,
+        tf.stop_gradient(raw_context.penalty_predictions) - threshold,
+        raw_context.penalty_weights, negative_context.penalty_predicate,
+        negative_context.penalty_predicate, penalty_loss)
+    constraint_fpr_term = term.BinaryClassificationTerm.ratio(
+        1.0, 0.0,
+        tf.stop_gradient(raw_context.constraint_predictions) - threshold,
+        raw_context.constraint_weights, negative_context.constraint_predicate,
+        negative_context.constraint_predicate, constraint_loss)
+
+    fpr_expression = expression.Expression(
+        basic_expression.BasicExpression([penalty_fpr_term]),
+        basic_expression.BasicExpression([constraint_fpr_term]))
+    target_fpr = (bin_index + 0.5) / bins
+    # Ideally fpr_expression would equal target_fpr, but we prefer to only
+    # impose a one-sided constraint (when exactly one of lower_bound or
+    # upper_bound is True) since using an equality constraint would come with
+    # drawbacks: it would of course make optimization more difficult, but more
+    # importantly, it would potentially cause post-processing for feasibility
+    # (e.g. using "shrinking") to fail to find a feasible solution.
+    #
+    # The reason why a <= constraint results in a lower bound, and a >=
+    # constraint results in an upper bound, is that, in the lower-bound case
+    # (the upper-bound case is similar), adjusting the threshold to increase the
+    # FPR will increase the corresponding TPR, and therefore the ROC AUC
+    # estimate. In other words, the objective (increasing ROC AUC, and therefore
+    # the FPR of each bin) will be "pushing against" the constraint.
+    if lower_bound:
+      extra_constraints.add(fpr_expression <= target_fpr)
+    if upper_bound:
+      extra_constraints.add(fpr_expression >= target_fpr)
+
+  return expression.Expression(
+      basic_expression.BasicExpression(penalty_average_tpr_terms),
+      basic_expression.BasicExpression(constraint_average_tpr_terms),
+      extra_constraints)
+
+
+def roc_auc_lower_bound(context,
+                        bins,
+                        penalty_loss=_DEFAULT_PENALTY_LOSS,
+                        constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` representing an approximate lower bound on ROC AUC.
+
+  The result of this function represents a lower bound on a Riemann
+  approximation to the area under the ROC curve (false positive rate on the
+  horizontal axis, true positive rate on the vertical axis), using the
+  constraint-based method proposed by:
+
+  > Eban, Schain, Mackey, Gordon, Rifkin and Elidan. "Scalable Learning of
+  > Non-Decomposable Objectives". AISTATS 2017.
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then you can think of it as being the approximate ROC AUC itself.
+  It's different if you're going to be upper-bounding or minimizing the result,
+  however, since the consequence would be to decrease the value of the lower
+  bound, without affecting the model.
+
+  Notice that the result of this function is *not* a lower bound on the ROC AUC.
+  Rather, it's a lower bound on a Riemann approximation. As the number of bins
+  increases, this approximation will improve (and the cost, in the form of the
+  difficulty of optimizing a constrained optimization problem including an
+  approximate ROC AUC, will increase).
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    bins: positive integer, the number of "rectangles" to use for the Riemann
+      approximation to ROC AUC.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate. This loss must be "normalized" (see
+      `BinaryClassificationLoss.is_normalized`).
+
+  Returns:
+    An `Expression` representing a lower bound on a Riemann approximation to ROC
+    AUC.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, the number of bins is
+      not an integer, or either loss is not a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels, the number of bins is
+      nonpositive, or the constraint_loss is not normalized.
+  """
+  return _roc_auc(
+      context,
+      bins,
+      lower_bound=True,
+      upper_bound=False,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def roc_auc_upper_bound(context,
+                        bins,
+                        penalty_loss=_DEFAULT_PENALTY_LOSS,
+                        constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` representing an approximate upper bound on ROC AUC.
+
+  The result of this function represents an upper bound on a Riemann
+  approximation to the area under the ROC curve (false positive rate on the
+  horizontal axis, true positive rate on the vertical axis), using the
+  constraint-based method proposed by:
+
+  > Eban, Schain, Mackey, Gordon, Rifkin and Elidan. "Scalable Learning of
+  > Non-Decomposable Objectives". AISTATS 2017.
+
+  If you're going to be upper-bounding or minimizing the result of this
+  function, then you can think of it as being the approximate ROC AUC itself.
+  It's different if you're going to be lower-bounding or maximizing the result,
+  however, since the consequence would be to increase the value of the upper
+  bound, without affecting the model.
+
+  Notice that the result of this function is *not* an upper bound on the ROC
+  AUC. Rather, it's an upper bound on a Riemann approximation. As the number of
+  bins increases, this approximation will improve (and the cost, in the form of
+  the difficulty of optimizing a constrained optimization problem including an
+  approximate ROC AUC, will increase).
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    bins: positive integer, the number of "rectangles" to use for the Riemann
+      approximation to ROC AUC.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate. This loss must be "normalized" (see
+      `BinaryClassificationLoss.is_normalized`).
+
+  Returns:
+    An `Expression` representing an upper bound on a Riemann approximation to
+    ROC AUC.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, the number of bins is
+      not an integer, or either loss is not a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels, the number of bins is
+      nonpositive, or the constraint_loss is not normalized.
+  """
+  return _roc_auc(
+      context,
+      bins,
+      lower_bound=False,
+      upper_bound=True,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
