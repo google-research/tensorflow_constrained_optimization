@@ -74,7 +74,7 @@ class RateMinimizationProblemTest(tf.test.TestCase):
     self._num_datasets = 4
 
   @property
-  def contexts(self):
+  def _contexts(self):
     # We can't create the contexts in __init__, since they would then wind up in
     # the wrong TensorFlow graph.
     result = []
@@ -107,7 +107,7 @@ class RateMinimizationProblemTest(tf.test.TestCase):
           np.sum(weights * 0.5 * (1.0 + np.sign(predictions))) /
           np.sum(weights))
 
-    contexts = self.contexts
+    contexts = self._contexts
 
     # Construct the objective and three constraints. These are as simple as
     # possible, since rates and constraints are tested elsewhere.

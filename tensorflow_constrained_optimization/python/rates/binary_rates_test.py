@@ -81,7 +81,7 @@ class RatesTest(tf.test.TestCase):
         [True, False, False, True, True, True, True, False])
 
   @property
-  def context(self):
+  def _context(self):
     """Creates a new non-split and non-subsetted context."""
     # We can't create the context in __init__, since it would then wind up in
     # the wrong TensorFlow graph.
@@ -91,7 +91,7 @@ class RatesTest(tf.test.TestCase):
         weights=tf.constant(self._penalty_weights, dtype=tf.float32))
 
   @property
-  def split_context(self):
+  def _split_context(self):
     """Creates a new split and subsetted context."""
     # We can't create the context in __init__, since it would then wind up in
     # the wrong TensorFlow graph.
@@ -108,8 +108,8 @@ class RatesTest(tf.test.TestCase):
             self._constraint_weights, dtype=tf.float32))
     return context.subset(self._penalty_predicate, self._constraint_predicate)
 
-  def check_rates(self, expected_penalty_value, expected_constraint_value,
-                  actual_expression):
+  def _check_rates(self, expected_penalty_value, expected_constraint_value,
+                   actual_expression):
     denominator_lower_bound = 0.0
     global_step = tf.Variable(0, dtype=tf.int32)
     evaluation_context = basic_expression.BasicExpression.EvaluationContext(
@@ -161,9 +161,9 @@ class RatesTest(tf.test.TestCase):
         expected_constraint_numerator / expected_constraint_denominator)
 
     actual_expression = binary_rates.positive_prediction_rate(
-        self.split_context)
-    self.check_rates(expected_penalty_value, expected_constraint_value,
-                     actual_expression)
+        self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
 
   def test_negative_prediction_rate(self):
     """Checks that `negative_prediction_rate` calculates the right quantity."""
@@ -186,9 +186,9 @@ class RatesTest(tf.test.TestCase):
         expected_constraint_numerator / expected_constraint_denominator)
 
     actual_expression = binary_rates.negative_prediction_rate(
-        self.split_context)
-    self.check_rates(expected_penalty_value, expected_constraint_value,
-                     actual_expression)
+        self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
 
   def test_error_rate(self):
     """Checks that `error_rate` calculates the right quantity."""
@@ -216,9 +216,9 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.error_rate(self.split_context)
-    self.check_rates(expected_penalty_value, expected_constraint_value,
-                     actual_expression)
+    actual_expression = binary_rates.error_rate(self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
 
   def test_accuracy_rate(self):
     """Checks that `accuracy_rate` calculates the right quantity."""
@@ -246,9 +246,9 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.accuracy_rate(self.split_context)
-    self.check_rates(expected_penalty_value, expected_constraint_value,
-                     actual_expression)
+    actual_expression = binary_rates.accuracy_rate(self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
 
   def test_true_positive_rate(self):
     """Checks that `true_positive_rate` calculates the right quantity."""
@@ -274,9 +274,9 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.true_positive_rate(self.split_context)
-    self.check_rates(expected_penalty_value, expected_constraint_value,
-                     actual_expression)
+    actual_expression = binary_rates.true_positive_rate(self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
 
   def test_false_negative_rate(self):
     """Checks that `false_negative_rate` calculates the right quantity."""
@@ -302,9 +302,9 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.false_negative_rate(self.split_context)
-    self.check_rates(expected_penalty_value, expected_constraint_value,
-                     actual_expression)
+    actual_expression = binary_rates.false_negative_rate(self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
 
   def test_false_positive_rate(self):
     """Checks that `false_positive_rate` calculates the right quantity."""
@@ -330,9 +330,9 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.false_positive_rate(self.split_context)
-    self.check_rates(expected_penalty_value, expected_constraint_value,
-                     actual_expression)
+    actual_expression = binary_rates.false_positive_rate(self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
 
   def test_true_negative_rate(self):
     """Checks that `true_negative_rate` calculates the right quantity."""
@@ -358,11 +358,11 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
-    actual_expression = binary_rates.true_negative_rate(self.split_context)
-    self.check_rates(expected_penalty_value, expected_constraint_value,
-                     actual_expression)
+    actual_expression = binary_rates.true_negative_rate(self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
 
-  def find_roc_auc_thresholds(self, bins):
+  def _find_roc_auc_thresholds(self, bins):
     """Finds the thresholds associated with each of the ROC AUC bins."""
     indices = [
         index for index in range(len(self._penalty_labels))
@@ -393,8 +393,8 @@ class RatesTest(tf.test.TestCase):
 
     return prediction_thresholds
 
-  def check_roc_auc(self, bins, roc_auc_thresholds, constraints_tensor,
-                    pre_train_ops):
+  def _check_roc_auc(self, bins, roc_auc_thresholds, constraints_tensor,
+                     pre_train_ops):
     """Helper method for test_roc_auc_{lower,upper}_bound."""
     bisection_loops = 32
     bisection_epsilon = 1e-6
@@ -455,7 +455,7 @@ class RatesTest(tf.test.TestCase):
           break
 
     actual_thresholds = upper_thresholds
-    expected_thresholds = self.find_roc_auc_thresholds(bins)
+    expected_thresholds = self._find_roc_auc_thresholds(bins)
     self.assertAllClose(
         expected_thresholds, actual_thresholds, rtol=0, atol=bisection_epsilon)
 
@@ -467,7 +467,7 @@ class RatesTest(tf.test.TestCase):
     evaluation_context = basic_expression.BasicExpression.EvaluationContext(
         denominator_lower_bound, global_step)
 
-    expression = binary_rates.roc_auc_lower_bound(self.context, bins)
+    expression = binary_rates.roc_auc_lower_bound(self._context, bins)
 
     # Extract the Tensors for the constraints, and the associated pre_train_ops.
     pre_train_ops = set()
@@ -487,8 +487,8 @@ class RatesTest(tf.test.TestCase):
     roc_auc_thresholds = tf.get_default_graph().get_tensor_by_name(
         "roc_auc_thresholds:0")
 
-    self.check_roc_auc(bins, roc_auc_thresholds, constraints_tensor,
-                       pre_train_ops)
+    self._check_roc_auc(bins, roc_auc_thresholds, constraints_tensor,
+                        pre_train_ops)
 
   def test_roc_auc_upper_bound(self):
     """Tests that roc_auc_upper_bound's constraints give correct thresholds."""
@@ -498,7 +498,7 @@ class RatesTest(tf.test.TestCase):
     evaluation_context = basic_expression.BasicExpression.EvaluationContext(
         denominator_lower_bound, global_step)
 
-    expression = binary_rates.roc_auc_upper_bound(self.context, bins)
+    expression = binary_rates.roc_auc_upper_bound(self._context, bins)
 
     # Extract the Tensors for the constraints, and the associated pre_train_ops.
     pre_train_ops = set()
@@ -518,8 +518,8 @@ class RatesTest(tf.test.TestCase):
     roc_auc_thresholds = tf.get_default_graph().get_tensor_by_name(
         "roc_auc_thresholds:0")
 
-    self.check_roc_auc(bins, roc_auc_thresholds, -constraints_tensor,
-                       pre_train_ops)
+    self._check_roc_auc(bins, roc_auc_thresholds, -constraints_tensor,
+                        pre_train_ops)
 
 
 if __name__ == "__main__":
