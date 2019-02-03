@@ -15,8 +15,6 @@ specific language governing permissions and limitations under the License.
 
 # TensorFlow Constrained Optimization (TFCO)
 
-<!-- TODO: rewrite this introduction to emphasize the rates code more -->
-
 TFCO is a library for optimizing inequality-constrained problems in TensorFlow.
 In the most general case, both the objective function and the constraints are
 represented as `Tensor`s, giving users the maximum amount of flexibility in
@@ -157,16 +155,16 @@ performance out of your model, consider using the "shrinking" procedure of
 *   [Helpers for constructing rate-based optimization problems](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/)
 
     *   [subsettable_context.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/subsettable_context.py):
-        contains the `context` method, which takes a `Tensor` of predictions
-        (i.e. the output of a TensorFlow model, through which gradients can be
-        propagated), and optionally `Tensor`s of labels and weights, and returns
-        an object representing a (subset of a) minibatch on which one may
-        calculate rates.
+        contains the `rate_context` method, which takes a `Tensor` of
+        predictions (i.e. the output of a TensorFlow model, through which
+        gradients can be propagated), and optionally `Tensor`s of labels and
+        weights, and returns an object representing a (subset of a) minibatch on
+        which one may calculate rates.
 
-        The related `split_context` method takes *two* `Tensor`s of predictions,
-        labels and weights, the first for the "penalty" portion of the
-        objective, and the second for the "constraint" portion. The purpose of
-        splitting the context is to improve generalization performance: see
+        The related `split_rate_context` method takes *two* `Tensor`s of
+        predictions, labels and weights, the first for the "penalty" portion of
+        the objective, and the second for the "constraint" portion. The purpose
+        of splitting the context is to improve generalization performance: see
         [CotterEtAl18] for full details.
 
         The most important property of these objects is that they are
@@ -291,7 +289,7 @@ negatively-labeled examples). Our current example (minimizing a hinge relaxation
 of the error rate subject to a recall constraint) is such a problem.
 
 ```python
-context = tfco.context(predictions, labels=constant_labels)
+context = tfco.rate_context(predictions, labels=constant_labels)
 problem = tfco.RateMinimizationProblem(
     tfco.error_rate(context), [tfco.recall(context) >= recall_lower_bound])
 ```
@@ -322,7 +320,7 @@ comparison operator.
 For problems that cannot be easily expressed using the rate helpers, one could
 instead an explicit implementation of the `ConstrainedMinimizationProblem`
 interface. The current task (minimizing the average hinge loss subject to a
-recall constraint) is a rate-based problem, but for pedagogical reasons we will
+recall constraint) is a rate-based problem, but for illustrative reasons we will
 show how to create a `ConstrainedMinimizationProblem` for this task.
 
 The constructor will takes three parameters: a `Tensor` containing the
