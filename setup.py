@@ -23,8 +23,8 @@ from setuptools import find_packages
 from setuptools import setup
 
 _version = "0.1"
-# TODO: change this to a group email address, instead of personal.
-_author_email = "acotter@google.com"
+# TODO: change this to a group email address.
+_author_email = "no-reply@google.com"
 
 _install_requires = [
     "numpy",
