@@ -206,14 +206,15 @@ performance out of your model, consider using the "shrinking" procedure of
 ## Convex example using proxy constraints
 
 This is a simple example of recall-constrained optimization on simulated data:
-we will try to find a classifier that minimizes the average hinge loss while
-constraining recall to be at least 90%.
+we seek a classifier that minimizes the average hinge loss while constraining
+recall to be at least 90%.
 
 We'll start with the required imports&mdash;notice the definition of `tfco`:
 
 ```python
 import math
 import numpy as np
+from six.moves import xrange
 import tensorflow as tf
 
 import tensorflow_constrained_optimization as tfco
@@ -233,7 +234,7 @@ dimension = 10
 # We will constrain the recall to be at least 90%.
 recall_lower_bound = 0.9
 
-# Create random "ground truth" parameters to a linear model.
+# Create random "ground truth" parameters for a linear model.
 ground_truth_weights = np.random.normal(size=dimension) / math.sqrt(dimension)
 ground_truth_threshold = 0
 
@@ -296,12 +297,12 @@ problem = tfco.RateMinimizationProblem(
 
 Rate-construction functions (`error_rate` and `recall`, here) take two optional
 named parameters&mdash;not used here&mdash;named `penalty_loss` and
-`constraint_loss`, the former of which is used to define the proxy constraints,
+`constraint_loss`, of which the former is used to define the proxy constraints,
 and the latter the "true" constraints. These default to the hinge and zero-one
-losses, respectively, so the consequence is that we will attempt to minimize the
-average hinge loss (a relaxation of the error rate using the `penalty_loss`),
-while constraining the recall (using the `constraint_loss`) by essentially
-learning how much we should penalize the hinge-constrained recall
+losses, respectively. The consequence of this is that we will attempt to
+minimize the average hinge loss (a relaxation of the error rate using the
+`penalty_loss`), while constraining the recall (using the `constraint_loss`) by
+essentially learning how much we should penalize the hinge-constrained recall
 (`penalty_loss`, again).
 
 The `RateMinimizationProblem` class implements the
@@ -351,6 +352,7 @@ class ExampleProblem(tfco.ConstrainedMinimizationProblem):
 
   @property
   def constraints(self):
+    # Recall that the labels are binary (0 or 1).
     true_positives = self._labels * tf.to_float(self._predictions > 0)
     true_positive_count = tf.reduce_sum(true_positives)
     recall = true_positive_count / self._positive_count
@@ -367,7 +369,8 @@ class ExampleProblem(tfco.ConstrainedMinimizationProblem):
   @property
   def proxy_constraints(self):
     # Use 1 - hinge since we're SUBTRACTING recall in the constraint function,
-    # and we want the proxy constraint function to be convex.
+    # and we want the proxy constraint function to be convex. Recall that the
+    # labels are binary (0 or 1).
     true_positives = self._labels * tf.minimum(1.0, self._predictions)
     true_positive_count = tf.reduce_sum(true_positives)
     recall = true_positive_count / self._positive_count
@@ -390,12 +393,12 @@ constrain).
 
 ```python
 def average_hinge_loss(labels, predictions):
-  num_examples, = np.shape(labels)
+  # Recall that the labels are binary (0 or 1).
   signed_labels = (labels * 2) - 1
-  total_hinge_loss = np.sum(np.maximum(0.0, 1.0 - signed_labels * predictions))
-  return total_hinge_loss / num_examples
+  return np.mean(np.maximum(0.0, 1.0 - signed_labels * predictions))
 
 def recall(labels, predictions):
+  # Recall that the labels are binary (0 or 1).
   positive_count = np.sum(labels)
   true_positives = labels * (predictions > 0)
   true_positive_count = np.sum(true_positives)
@@ -445,12 +448,14 @@ Running the above code gives the following output (due to the randomness of the
 dataset, you'll get a different result when you run it):
 
 ```none
-Constrained average hinge loss = 0.710019
-Constrained recall = 0.899811
+Constrained average hinge loss = 0.683846
+Constrained recall = 0.899791
 ```
 
-As we hoped, the recall is extremely close to 90%&mdash;and, thanks to the use
-of proxy constraints, this is the *true* recall, not a hinge approximation.
+As we hoped, the recall is extremely close to 90%&mdash;and, thanks to the fact
+that the optimizer uses a (hinge) proxy constraint only when needed, and the
+actual (zero-one) constraint whenever possible, this is the *true* recall, not a
+hinge approximation.
 
 For comparison, let's try optimizing the same problem *without* the recall
 constraint:
@@ -479,9 +484,15 @@ This code gives the following output (again, you'll get a different answer,
 since the dataset is random):
 
 ```none
-Unconstrained average hinge loss = 0.627271
-Unconstrained recall = 0.793951
+Unconstrained average hinge loss = 0.612755
+Unconstrained recall = 0.801670
 ```
 
 Because there is no constraint, the unconstrained problem does a better job of
 minimizing the average hinge loss, but naturally doesn't approach 90% recall.
+
+## More examples
+
+*   [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb):
+    **Start here!** This is the above simple example as a
+    [Jupyter](https://jupyter.org/) notebook.

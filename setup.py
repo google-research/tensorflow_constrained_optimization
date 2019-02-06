@@ -19,12 +19,24 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import datetime
+import sys
+
 from setuptools import find_packages
 from setuptools import setup
 
-_version = "0.1"
-# TODO: change this to a group email address.
-_author_email = "no-reply@google.com"
+# This version number should always be that of the *next* (unreleased) version.
+# Immediately after uploading a package to PyPI, you should increment the
+# version number and push to gitHub.
+__version__ = "0.1"
+
+if "--release" in sys.argv:
+  sys.argv.remove("--release")
+  _name = "tensorflow_constrained_optimization"
+else:
+  # Build a nightly package by default.
+  _name = "tfco_nightly"
+  __version__ += datetime.datetime.now().strftime(".dev%Y%m%d")
 
 _install_requires = [
     "numpy",
@@ -76,10 +88,10 @@ rate, recall, etc).
 """
 
 setup(
-    name="tensorflow_constrained_optimization",
-    version=_version,
+    name=_name,
+    version=__version__,
     author="Google Inc.",
-    author_email=_author_email,
+    author_email="no-reply@google.com",
     license="Apache 2.0",
     classifiers=_classifiers,
     install_requires=_install_requires,
