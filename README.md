@@ -405,7 +405,7 @@ def recall(labels, predictions):
   return true_positive_count / positive_count
 ```
 
-As was mentioned earlier, Lagrangian optimizers often suffice for problems
+As was mentioned earlier, the Lagrangian optimizer often suffices for problems
 without proxy constraints, but proxy-Lagrangian optimizers are recommended for
 problems *with* proxy constraints. Since this problem contains proxy
 constraints, we use the `ProxyLagrangianOptimizer`.
