@@ -510,7 +510,7 @@ illustrating how to use this library:
     This notebook describes how to solve a rate-constrained training problem
     using *minibatches*. The notebook focuses on problems where one wishes to
     impose a constraint on a group of examples constituting an extreme minority
-    of the training set, and shows how one can speed up convergenceby using
+    of the training set, and shows how one can speed up convergence by using
     separate streams of minibatches for each group.
 
 *   [Oscillation_compas.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Oscillation_compas.ipynb):
