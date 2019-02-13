@@ -496,8 +496,14 @@ minimizing the average hinge loss, but naturally doesn't approach 90% recall.
 *   [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb):
     **Start here!** This is the above simple example as a
     [Jupyter](https://jupyter.org/) notebook.
+*   [Fairness_adult.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Fairness_adult.ipynb):
+    This notebook shows how to train classifiers for fairness constraints on the UCI Adult dataset using rate-constraints.
+*   [Generalization_communities.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Generalization_communities.ipynb):
+    This notebook shows how to improve fairness generalization performance on the UCI Communities and Crime dataset by using the split dataset approach.
 *   [Minibatch_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Minibatch_training.ipynb):
     This notebook describes how to solve a rate-constrained training problem using *minibatches*. The notebook focuses on problems where one wishes to impose constraints on small groups of examples, and shows how one can speed up the convergence of the optimizer by using separate streams of minibatches for each group.
+*   [Oscillation_compas.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Oscillation_compas.ipynb):
+    This notebook shows instances where it is possible that the iterates don't converge when using the Lagrangian approach to training with fairness constraintsthus motivating more careful selection of solutions or the use of stochastic classifiers.
 *   [Post_processing.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Post_processing.ipynb):
     This notebook describes how to use the shrinking procedure of [CoJiSr19] to post-process the iterates of a constrained optimizer and construct a stochastic classifier from them. For applications where a stochastic classifier is not acceptable, we show how to use a heuristic provided by [CoJiSr19] to pick the best deterministic classifier from the iterates of the optimizer.
 
