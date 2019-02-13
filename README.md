@@ -506,5 +506,7 @@ minimizing the average hinge loss, but naturally doesn't approach 90% recall.
     This notebook shows instances where it is possible that the iterates don't converge when using the Lagrangian approach to training with fairness constraintsthus motivating more careful selection of solutions or the use of stochastic classifiers.
 *   [Post_processing.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Post_processing.ipynb):
     This notebook describes how to use the shrinking procedure of [CoJiSr19] to post-process the iterates of a constrained optimizer and construct a stochastic classifier from them. For applications where a stochastic classifier is not acceptable, we show how to use a heuristic provided by [CoJiSr19] to pick the best deterministic classifier from the iterates of the optimizer.
+*   [Churn.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Churn.ipynb):
+    This notebook describes how to use rate constraints to enforce low-churn classification. That is, to train for accuracy while ensuring the predictions don't differ by much compared to a baseline model.
 
 
