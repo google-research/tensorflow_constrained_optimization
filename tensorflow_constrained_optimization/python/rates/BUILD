@@ -90,6 +90,7 @@ py_library(
         ":loss",
         ":subsettable_context",
         ":term",
+        # six dep,
         # tensorflow dep,
     ],
 )
@@ -185,7 +186,6 @@ py_test(
         ":basic_expression",
         ":expression",
         # numpy dep,
-        # six dep,
         # tensorflow dep,
     ],
 )
@@ -199,6 +199,7 @@ py_test(
         ":binary_rates",
         ":subsettable_context",
         # numpy dep,
+        # six dep,
         # tensorflow dep,
     ],
 )

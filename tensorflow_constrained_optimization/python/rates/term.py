@@ -923,8 +923,8 @@ class BinaryClassificationTerm(Term):
     restart_ops.update(negative_restart_ops)
 
     # Use broadcasting to make the positive_weights and negative_weights Tensors
-    # have the same shape (yes, this is sort of hacky). The _RatioWeights object
-    # has already checked that they're both rank-1, so this code just makes sure
+    # have the same shape (yes, this is inelegant). The _RatioWeights object has
+    # already checked that they're both rank-1, so this code just makes sure
     # that they're the same size before attempting to stack them.
     positive_weights += tf.zeros_like(negative_weights)
     negative_weights += tf.zeros_like(positive_weights)

@@ -28,11 +28,6 @@ function values, and n*m constraint function values), the
 these candidates, while "find_best_candidate_index" heuristically finds the
 single best candidate.
 
-Both of these functions have dependencies on scipy, so if you want to call them,
-then you must make sure that scipy is available. The imports are performed
-inside the functions themselves, so if they're not actually called, then scipy
-is not needed.
-
 For more specifics, please refer to:
 
 > Cotter, Jiang and Sridharan. "Two-Player Games for Efficient Non-Convex
@@ -49,6 +44,8 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+from scipy.optimize import linprog
+from scipy.stats import rankdata
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
 
@@ -94,7 +91,6 @@ def _find_best_candidate_distribution_helper(objective_vector,
   Raises:
     ValueError: if "objective_vector" and "constraints_matrix" have inconsistent
       shapes, or if "maximum_violation" is negative.
-    ImportError: if we're unable to import scipy.optimize.
   """
   if maximum_violation < 0.0:
     raise ValueError("maximum_violation must be nonnegative")
@@ -106,11 +102,6 @@ def _find_best_candidate_distribution_helper(objective_vector,
         " where n is the number of candidates, and m is the number of "
         "constraints")
 
-  # We import scipy inline, instead of at the top of the file, so that a scipy
-  # dependency is only introduced if either find_best_candidate_distribution()
-  # or find_best_candidate_index() are actually called.
-  import scipy.optimize  # pylint: disable=g-import-not-at-top
-
   # Feasibility (within maximum_violation) constraints.
   a_ub = np.transpose(constraints_matrix)
   b_ub = np.full((mm, 1), maximum_violation)
@@ -120,7 +111,7 @@ def _find_best_candidate_distribution_helper(objective_vector,
   # Nonnegativity constraints.
   bounds = (0, None)
 
-  result = scipy.optimize.linprog(
+  result = linprog(
       objective_vector,
       A_ub=a_ub,
       b_ub=b_ub,
@@ -184,7 +175,6 @@ def find_best_candidate_distribution(objective_vector,
   Raises:
     ValueError: if "objective_vector" and "constraints_matrix" have inconsistent
       shapes, or if "epsilon" is negative.
-    ImportError: if we're unable to import scipy.optimize.
   """
   if epsilon < 0.0:
     raise ValueError("epsilon must be nonnegative")
@@ -284,7 +274,6 @@ def find_best_candidate_index(objective_vector,
   Raises:
     ValueError: if "objective_vector" and "constraints_matrix" have inconsistent
       shapes.
-    ImportError: if we're unable to import scipy.stats.
   """
   nn, mm = np.shape(constraints_matrix)
   if (nn,) != np.shape(objective_vector):
@@ -300,13 +289,8 @@ def find_best_candidate_index(objective_vector,
     constraints_matrix = np.amax(constraints_matrix, axis=1, keepdims=True)
     mm = 1
 
-  # We import scipy inline, instead of at the top of the file, so that a scipy
-  # dependency is only introduced if either find_best_candidate_distribution()
-  # or find_best_candidate_index() are actually called.
-  import scipy.stats  # pylint: disable=g-import-not-at-top
-
   if rank_objectives:
-    maximum_ranks = scipy.stats.rankdata(objective_vector, method="min")
+    maximum_ranks = rankdata(objective_vector, method="min")
   else:
     maximum_ranks = np.zeros(nn, dtype=np.int64)
   for ii in xrange(mm):
@@ -314,8 +298,7 @@ def find_best_candidate_index(objective_vector,
     # rank the magnitude of constraint *violations*. If the constraint is
     # satisfied, then we don't care how much it's satisfied by (as a result, we
     # we expect all models satisfying a constraint to be tied at rank 1).
-    ranks = scipy.stats.rankdata(
-        np.maximum(0.0, constraints_matrix[:, ii]), method="min")
+    ranks = rankdata(np.maximum(0.0, constraints_matrix[:, ii]), method="min")
     maximum_ranks = np.maximum(maximum_ranks, ranks)
 
   best_index = None

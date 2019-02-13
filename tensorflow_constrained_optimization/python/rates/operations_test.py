@@ -28,7 +28,7 @@ from tensorflow_constrained_optimization.python.rates import operations
 class OperationsTest(tf.test.TestCase):
   """Tests for `Expression`-manipulation functions."""
 
-  def evaluate_expression(self, expression, pre_train_ops=None):
+  def _evaluate_expression(self, expression, pre_train_ops=None):
     """Evaluates and returns both portions of an Expression.
 
     Args:
@@ -86,7 +86,7 @@ class OperationsTest(tf.test.TestCase):
     penalty_tensor = tf.constant(penalty_value, dtype=tf.float32)
 
     wrapped = operations.wrap_rate(penalty_tensor)
-    actual_penalty_value, actual_constraint_value = self.evaluate_expression(
+    actual_penalty_value, actual_constraint_value = self._evaluate_expression(
         wrapped)
     # Both the penalty and the constraint portions of the Expression were
     # initialized to penalty_tensor.
@@ -102,7 +102,7 @@ class OperationsTest(tf.test.TestCase):
 
     wrapped = operations.wrap_rate(penalty_tensor, constraint_tensor)
     wrapped = operations.wrap_rate(penalty_tensor)
-    actual_penalty_value, actual_constraint_value = self.evaluate_expression(
+    actual_penalty_value, actual_constraint_value = self._evaluate_expression(
         wrapped)
     # The penalty and constraint portions of the Expression were initialized to
     # penalty_tensor and constraint_tensor, respectively.
@@ -160,7 +160,7 @@ class OperationsTest(tf.test.TestCase):
     # Evaluate the constraint expressions.
     actual_values = []
     for constraint in constraints:
-      actual_penalty_value, actual_constraint_value = self.evaluate_expression(
+      actual_penalty_value, actual_constraint_value = self._evaluate_expression(
           constraint.expression, pre_train_ops)
       self.assertEqual(actual_penalty_value, actual_constraint_value)
       actual_values.append(actual_penalty_value)
@@ -226,7 +226,7 @@ class OperationsTest(tf.test.TestCase):
     # Evaluate the constraint expressions.
     actual_values = []
     for constraint in constraints:
-      actual_penalty_value, actual_constraint_value = self.evaluate_expression(
+      actual_penalty_value, actual_constraint_value = self._evaluate_expression(
           constraint.expression, pre_train_ops)
       self.assertEqual(actual_penalty_value, actual_constraint_value)
       actual_values.append(actual_penalty_value)

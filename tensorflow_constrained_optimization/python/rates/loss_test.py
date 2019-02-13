@@ -80,7 +80,7 @@ class LossTest(tf.test.TestCase):
         [-0.665005832144, 1.76628797184],
     ])
 
-  def binary_loss_helper(self, expected_loss, actual_loss):
+  def _binary_loss_helper(self, expected_loss, actual_loss):
     minimum_weights = np.minimum(self._weights[:, 0], self._weights[:, 1])
     expected = minimum_weights + (
         expected_loss(self._predictions) *
@@ -127,11 +127,12 @@ class LossTest(tf.test.TestCase):
         expected_predictions, actual_predictions, rtol=0, atol=1e-6)
 
   def test_binary_zero_one_loss(self):
-    self.binary_loss_helper(binary_zero_one_loss, loss.ZeroOneLoss())
+    self._binary_loss_helper(binary_zero_one_loss, loss.ZeroOneLoss())
 
   def test_binary_hinge_loss(self):
     for margin in [0.5, 1.0, 1.3]:
-      self.binary_loss_helper(binary_hinge_loss(margin), loss.HingeLoss(margin))
+      self._binary_loss_helper(
+          binary_hinge_loss(margin), loss.HingeLoss(margin))
 
 
 if __name__ == "__main__":

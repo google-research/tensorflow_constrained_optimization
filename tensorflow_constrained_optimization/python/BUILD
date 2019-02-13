@@ -26,6 +26,7 @@ py_library(
     srcs_version = "PY2AND3",
     deps = [
         # numpy dep,
+        # scipy dep,
         # six dep,
     ],
 )
@@ -47,7 +48,6 @@ py_test(
     deps = [
         ":candidates",
         # numpy dep,
-        # scipy dep,
         # tensorflow dep,
     ],
 )
