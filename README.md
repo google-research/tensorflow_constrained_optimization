@@ -155,13 +155,13 @@ performance out of your model, consider using the "shrinking" procedure of
 *   [Helpers for constructing rate-based optimization problems](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/)
 
     *   [subsettable_context.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/subsettable_context.py):
-        contains the `rate_context` method, which takes a `Tensor` of
+        contains the `rate_context` function, which takes a `Tensor` of
         predictions (i.e. the output of a TensorFlow model, through which
         gradients can be propagated), and optionally `Tensor`s of labels and
         weights, and returns an object representing a (subset of a) minibatch on
         which one may calculate rates.
 
-        The related `split_rate_context` method takes *two* `Tensor`s of
+        The related `split_rate_context` function takes *two* `Tensor`s of
         predictions, labels and weights, the first for the "penalty" portion of
         the objective, and the second for the "constraint" portion. The purpose
         of splitting the context is to improve generalization performance: see
@@ -493,20 +493,47 @@ minimizing the average hinge loss, but naturally doesn't approach 90% recall.
 
 ## More examples
 
+The
+[examples/jupyter_notebooks](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/)
+directory contains several [Jupyter](https://jupyter.org/) notebooks
+illustrating how to use this library:
+
 *   [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb):
-    **Start here!** This is the above simple example as a
-    [Jupyter](https://jupyter.org/) notebook.
+    **Start here!** This is the above simple example.
+
 *   [Fairness_adult.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Fairness_adult.ipynb):
-    This notebook shows how to train classifiers for fairness constraints on the UCI Adult dataset using rate-constraints.
-*   [Generalization_communities.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Generalization_communities.ipynb):
-    This notebook shows how to improve fairness generalization performance on the UCI Communities and Crime dataset by using the split dataset approach.
+    This notebook shows how to train classifiers for fairness constraints on the
+    UCI Adult dataset using the helpers for constructing rate-based optimization
+    problems.
+
 *   [Minibatch_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Minibatch_training.ipynb):
-    This notebook describes how to solve a rate-constrained training problem using *minibatches*. The notebook focuses on problems where one wishes to impose constraints on small groups of examples, and shows how one can speed up the convergence of the optimizer by using separate streams of minibatches for each group.
+    This notebook describes how to solve a rate-constrained training problem
+    using *minibatches*. The notebook focuses on problems where one wishes to
+    impose a constraint on a group of examples constituting an extreme minority
+    of the training set, and shows how one can speed up convergenceby using
+    separate streams of minibatches for each group.
+
 *   [Oscillation_compas.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Oscillation_compas.ipynb):
-    This notebook shows instances where it is possible that the iterates don't converge when using the Lagrangian approach to training with fairness constraintsthus motivating more careful selection of solutions or the use of stochastic classifiers.
+    This notebook illustrates the oscillation issue raised in the "skrinking"
+    section (above): it's possible that the individual iterates won't converge
+    when using the Lagrangian approach to training with fairness constraints,
+    even though they do converge *on average*. This motivate more careful
+    selection of solutions or the use of a stochastic classifier.
+
 *   [Post_processing.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Post_processing.ipynb):
-    This notebook describes how to use the shrinking procedure of [CoJiSr19] to post-process the iterates of a constrained optimizer and construct a stochastic classifier from them. For applications where a stochastic classifier is not acceptable, we show how to use a heuristic provided by [CoJiSr19] to pick the best deterministic classifier from the iterates of the optimizer.
+    This notebook describes how to use the shrinking procedure of [CoJiSr19], as
+    discussed in the "shrinking" section (above), to post-process the iterates
+    of a constrained optimizer and construct a stochastic classifier from them.
+    For applications where a stochastic classifier is not acceptable, we show
+    how to use a heuristic to pick the best deterministic classifier from the
+    iterates found by the optimizer.
+
+*   [Generalization_communities.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Generalization_communities.ipynb):
+    This notebook shows how to improve fairness generalization performance on
+    the UCI Communities and Crime dataset with the split dataset approach of
+    [CotterEtAl18], using the `split_rate_context` helper.
+
 *   [Churn.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Churn.ipynb):
-    This notebook describes how to use rate constraints to enforce low-churn classification. That is, to train for accuracy while ensuring the predictions don't differ by much compared to a baseline model.
-
-
+    This notebook describes how to use rate constraints for low-churn
+    classification. That is, to train for accuracy while ensuring the
+    predictions don't differ by much compared to a baseline model.
