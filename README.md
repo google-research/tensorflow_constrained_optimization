@@ -496,3 +496,9 @@ minimizing the average hinge loss, but naturally doesn't approach 90% recall.
 *   [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb):
     **Start here!** This is the above simple example as a
     [Jupyter](https://jupyter.org/) notebook.
+*   [Minibatch_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Minibatch_training.ipynb):
+    This notebook describes how to solve a rate-constrained training problem using *minibatches*. The notebook focuses on problems where one wishes to impose constraints on small groups of examples, and shows how one can speed up the convergence of the optimizer by using separate streams of minibatches for each group.
+*   [Post_processing.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Post_processing.ipynb):
+    This notebook describes how to use the shrinking procedure of [CoJiSr19] to post-process the iterates of a constrained optimizer and construct a stochastic classifier from them. For applications where a stochastic classifier is not acceptable, we show how to use a heuristic provided by [CoJiSr19] to pick the best deterministic classifier from the iterates of the optimizer.
+
+
