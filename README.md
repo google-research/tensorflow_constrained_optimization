@@ -324,11 +324,10 @@ interface. The current task (minimizing the average hinge loss subject to a
 recall constraint) is a rate-based problem, but for illustrative reasons we will
 show how to create a `ConstrainedMinimizationProblem` for this task.
 
-The constructor will takes three parameters: a `Tensor` containing the
-classification labels (0 or 1) for every training example, another `Tensor`
-containing the model's predictions on every training example (sometimes called
-the "logits"), and the lower bound on recall that will be enforced using a
-constraint.
+The constructor takes three parameters: a `Tensor` containing the classification
+labels (0 or 1) for every training example, another `Tensor` containing the
+model's predictions on every training example (sometimes called the "logits"),
+and the lower bound on recall that will be enforced using a constraint.
 
 As before, this implementation will contain both constraints *and* proxy
 constraints: the former represents the constraint that the true recall (defined
