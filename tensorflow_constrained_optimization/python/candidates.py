@@ -51,7 +51,9 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 
 def _find_best_candidate_distribution_helper(objective_vector,
                                              constraints_matrix,
-                                             maximum_violation=0.0):
+                                             maximum_violation=0.0,
+                                             linprog_method="simplex",
+                                             linprog_options=None):
   """Finds a distribution minimizing an objective subject to constraints.
 
   This function deals with the constrained problem:
@@ -81,6 +83,10 @@ def _find_best_candidate_distribution_helper(objective_vector,
       constraint violation magnitudes.
     maximum_violation: nonnegative float, the maximum amount by which any
       constraint may be violated, in expectation.
+    linprog_method: string, passed unchanged as the "method" parameter to
+      scipy.linprog.
+    linprog_options: dict, passed unchanged as the "options" parameter to
+      scipy.linprog.
 
   Returns:
     A pair (result, message), exactly one of which is None. If "message" is
@@ -111,25 +117,37 @@ def _find_best_candidate_distribution_helper(objective_vector,
   # Nonnegativity constraints.
   bounds = (0, None)
 
-  result = linprog(
-      objective_vector,
-      A_ub=a_ub,
-      b_ub=b_ub,
-      A_eq=a_eq,
-      b_eq=b_eq,
-      bounds=bounds)
-  # Go-style error reporting. We don't raise on error, since
-  # find_best_candidate_distribution() needs to handle the failure case, and we
-  # shouldn't use exceptions as flow-control.
-  if not result.success:
-    return (None, result.message)
-  else:
-    return (result.x, None)
+  # We need to wrap linprog() in a try block, since it sometimes throws
+  # exceptions on failure, instead of returning an error.
+  try:
+    result = linprog(
+        objective_vector,
+        A_ub=a_ub,
+        b_ub=b_ub,
+        A_eq=a_eq,
+        b_eq=b_eq,
+        bounds=bounds,
+        method=linprog_method,
+        options=linprog_options)
+    # Go-style error reporting. We don't raise on error, since
+    # find_best_candidate_distribution() needs to handle the failure case, and
+    # we shouldn't use exceptions as flow-control.
+    if not result.success:
+      return (None, result.message)
+    else:
+      return (result.x, None)
+  # It seems that linprog() sometimes raises a ValueError when the problem is
+  # infeasible. We need to be able to detect and handle infeasibility, for
+  # find_best_candidate_distribution()'s bisection search).
+  except ValueError as error:
+    return (None, str(error))
 
 
 def find_best_candidate_distribution(objective_vector,
                                      constraints_matrix,
-                                     epsilon=0.0):
+                                     epsilon=0.0,
+                                     linprog_method="simplex",
+                                     linprog_options=None):
   """Finds a distribution minimizing an objective subject to constraints.
 
   This function deals with the constrained problem:
@@ -168,6 +186,10 @@ def find_best_candidate_distribution(objective_vector,
     epsilon: nonnegative float, the threshold at which to terminate the binary
       search while searching for the minimal expected constraint violation
       magnitude.
+    linprog_method: string, passed unchanged as the "method" parameter to
+      scipy.linprog.
+    linprog_options: dict, passed unchanged as the "options" parameter to
+      scipy.linprog.
 
   Returns:
     The optimal distribution, as a numpy array of shape (n,).
@@ -181,8 +203,11 @@ def find_best_candidate_distribution(objective_vector,
 
   # If there is a feasible solution (i.e. with maximum_violation=0), then that's
   # what we'll return.
-  pp, _ = _find_best_candidate_distribution_helper(objective_vector,
-                                                   constraints_matrix)
+  pp, _ = _find_best_candidate_distribution_helper(
+      objective_vector,
+      constraints_matrix,
+      linprog_method=linprog_method,
+      linprog_options=linprog_options)
   if pp is not None:
     return pp
 
@@ -191,7 +216,11 @@ def find_best_candidate_distribution(objective_vector,
   lower = 0.0
   upper = np.min(np.amax(constraints_matrix, axis=1))
   best_pp, _ = _find_best_candidate_distribution_helper(
-      objective_vector, constraints_matrix, maximum_violation=upper)
+      objective_vector,
+      constraints_matrix,
+      maximum_violation=upper,
+      linprog_method=linprog_method,
+      linprog_options=linprog_options)
   assert best_pp is not None
 
   # Throughout this loop, a maximum_violation of "lower" is not achievable,
@@ -202,7 +231,11 @@ def find_best_candidate_distribution(objective_vector,
       break
     else:
       pp, _ = _find_best_candidate_distribution_helper(
-          objective_vector, constraints_matrix, maximum_violation=middle)
+          objective_vector,
+          constraints_matrix,
+          maximum_violation=middle,
+          linprog_method=linprog_method,
+          linprog_options=linprog_options)
       if pp is None:
         lower = middle
       else:
