@@ -144,10 +144,10 @@ class RatesTest(tf.test.TestCase):
     """Checks that `positive_prediction_rate` calculates the right quantity."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
-        np.maximum(0.0, 1.0 + self._penalty_predictions) * self._penalty_weights
-        * self._penalty_predicate)
-    expected_penalty_denominator = np.sum(
+        np.maximum(0.0, 1.0 + self._penalty_predictions) *
         self._penalty_weights * self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
     expected_penalty_value = (
         expected_penalty_numerator / expected_penalty_denominator)
 
@@ -155,8 +155,8 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_numerator = np.sum(
         (0.5 * (1.0 + np.sign(self._constraint_predictions))) *
         self._constraint_weights * self._constraint_predicate)
-    expected_constraint_denominator = np.sum(
-        self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
@@ -169,10 +169,10 @@ class RatesTest(tf.test.TestCase):
     """Checks that `negative_prediction_rate` calculates the right quantity."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
-        np.maximum(0.0, 1.0 - self._penalty_predictions) * self._penalty_weights
-        * self._penalty_predicate)
-    expected_penalty_denominator = np.sum(
+        np.maximum(0.0, 1.0 - self._penalty_predictions) *
         self._penalty_weights * self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
     expected_penalty_value = (
         expected_penalty_numerator / expected_penalty_denominator)
 
@@ -180,8 +180,8 @@ class RatesTest(tf.test.TestCase):
     expected_constraint_numerator = np.sum(
         (0.5 * (1.0 - np.sign(self._constraint_predictions))) *
         self._constraint_weights * self._constraint_predicate)
-    expected_constraint_denominator = np.sum(
-        self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
@@ -199,20 +199,20 @@ class RatesTest(tf.test.TestCase):
             0.0,
             1.0 - expected_signed_penalty_labels * self._penalty_predictions) *
         self._penalty_weights * self._penalty_predicate)
-    expected_penalty_denominator = np.sum(
-        self._penalty_weights * self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
     expected_penalty_value = (
         expected_penalty_numerator / expected_penalty_denominator)
 
     # For the constraint, the default loss is zero-one.
-    expected_signed_constraint_labels = (
-        (self._constraint_labels > 0.0) * 2.0 - 1.0)
+    expected_signed_constraint_labels = ((self._constraint_labels > 0.0) * 2.0 -
+                                         1.0)
     expected_constraint_numerator = np.sum(
-        (0.5 * (1.0 - expected_signed_constraint_labels * np.sign(
-            self._constraint_predictions))) * self._constraint_weights *
-        self._constraint_predicate)
-    expected_constraint_denominator = np.sum(
+        (0.5 * (1.0 - expected_signed_constraint_labels *
+                np.sign(self._constraint_predictions))) *
         self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
@@ -229,20 +229,20 @@ class RatesTest(tf.test.TestCase):
             0.0,
             1.0 + expected_signed_penalty_labels * self._penalty_predictions) *
         self._penalty_weights * self._penalty_predicate)
-    expected_penalty_denominator = np.sum(
-        self._penalty_weights * self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
     expected_penalty_value = (
         expected_penalty_numerator / expected_penalty_denominator)
 
     # For the constraint, the default loss is zero-one.
-    expected_signed_constraint_labels = (
-        (self._constraint_labels > 0.0) * 2.0 - 1.0)
+    expected_signed_constraint_labels = ((self._constraint_labels > 0.0) * 2.0 -
+                                         1.0)
     expected_constraint_numerator = np.sum(
-        (0.5 * (1.0 + expected_signed_constraint_labels * np.sign(
-            self._constraint_predictions))) * self._constraint_weights *
-        self._constraint_predicate)
-    expected_constraint_denominator = np.sum(
+        (0.5 * (1.0 + expected_signed_constraint_labels *
+                np.sign(self._constraint_predictions))) *
         self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
     expected_constraint_value = (
         expected_constraint_numerator / expected_constraint_denominator)
 
@@ -254,9 +254,9 @@ class RatesTest(tf.test.TestCase):
     """Checks that `true_positive_rate` calculates the right quantity."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
-        np.maximum(
-            0.0, 1.0 + self._penalty_predictions) * (self._penalty_labels > 0.0)
-        * self._penalty_weights * self._penalty_predicate)
+        np.maximum(0.0, 1.0 + self._penalty_predictions) *
+        (self._penalty_labels > 0.0) * self._penalty_weights *
+        self._penalty_predicate)
     expected_penalty_denominator = np.sum(
         (self._penalty_labels > 0.0) * self._penalty_weights *
         self._penalty_predicate)
@@ -282,9 +282,9 @@ class RatesTest(tf.test.TestCase):
     """Checks that `false_negative_rate` calculates the right quantity."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
-        np.maximum(
-            0.0, 1.0 - self._penalty_predictions) * (self._penalty_labels > 0.0)
-        * self._penalty_weights * self._penalty_predicate)
+        np.maximum(0.0, 1.0 - self._penalty_predictions) *
+        (self._penalty_labels > 0.0) * self._penalty_weights *
+        self._penalty_predicate)
     expected_penalty_denominator = np.sum(
         (self._penalty_labels > 0.0) * self._penalty_weights *
         self._penalty_predicate)
@@ -361,6 +361,143 @@ class RatesTest(tf.test.TestCase):
     actual_expression = binary_rates.true_negative_rate(self._split_context)
     self._check_rates(expected_penalty_value, expected_constraint_value,
                       actual_expression)
+
+  def test_precision_ratio(self):
+    """Checks that `precision_ratio` calculates the right quantities."""
+    actual_numerator_expression, actual_denominator_expression = (
+        binary_rates.precision_ratio(self._split_context))
+
+    # First check the numerator of the precision (which is a rate that itself
+    # has a numerator and denominator).
+
+    # For the penalty, the default loss is hinge.
+    expected_penalty_numerator = np.sum(
+        np.maximum(0.0, 1.0 + self._penalty_predictions) *
+        (self._penalty_labels > 0.0) * self._penalty_weights *
+        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    # For the constraint, the default loss is zero-one.
+    expected_constraint_numerator = np.sum(
+        (0.5 * (1.0 + np.sign(self._constraint_predictions))) *
+        (self._constraint_labels > 0.0) * self._constraint_weights *
+        self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_numerator_expression)
+
+    # Next check the denominator of the precision (which is a rate that itself
+    # has a numerator and denominator, although this "inner" denominator is the
+    # same as above).
+
+    # For the penalty, the default loss is hinge.
+    expected_penalty_numerator = np.sum(
+        np.maximum(0.0, 1.0 + self._penalty_predictions) *
+        self._penalty_weights * self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    # For the constraint, the default loss is zero-one.
+    expected_constraint_numerator = np.sum(
+        (0.5 * (1.0 + np.sign(self._constraint_predictions))) *
+        self._constraint_weights * self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_denominator_expression)
+
+  def test_f_score_ratio(self):
+    """Checks that `f_score_ratio` calculates the right quantities."""
+    # We check the most common choices for the beta parameter to the F-score.
+    for beta in [0.0, 0.5, 1.0, 2.0]:
+      actual_numerator_expression, actual_denominator_expression = (
+          binary_rates.f_score_ratio(self._split_context, beta))
+
+      # First check the numerator of the F-score (which is a rate that itself
+      # has a numerator and denominator).
+
+      # For the penalty, the default loss is hinge.
+      expected_penalty_numerator = (1.0 + beta * beta) * np.sum(
+          np.maximum(0.0, 1.0 + self._penalty_predictions) *
+          (self._penalty_labels > 0.0) * self._penalty_weights *
+          self._penalty_predicate)
+      expected_penalty_denominator = np.sum(self._penalty_weights *
+                                            self._penalty_predicate)
+      expected_penalty_value = (
+          expected_penalty_numerator / expected_penalty_denominator)
+
+      # For the constraint, the default loss is zero-one.
+      expected_constraint_numerator = (1.0 + beta * beta) * np.sum(
+          (0.5 * (1.0 + np.sign(self._constraint_predictions))) *
+          (self._constraint_labels > 0.0) * self._constraint_weights *
+          self._constraint_predicate)
+      expected_constraint_denominator = np.sum(self._constraint_weights *
+                                               self._constraint_predicate)
+      expected_constraint_value = (
+          expected_constraint_numerator / expected_constraint_denominator)
+
+      self._check_rates(expected_penalty_value, expected_constraint_value,
+                        actual_numerator_expression)
+
+      # Next check the denominator of the F-score (which is a rate that itself
+      # has a numerator and denominator, although this "inner" denominator is
+      # the same as above).
+
+      # For the penalty, the default loss is hinge. Notice that, on the
+      # positively-labeled examples, we have positive predictions weighted as
+      # (1 + beta^2), and negative predictions weighted as beta^2. Internally,
+      # the rate-handling code simplifies this to a beta^2 weight on *all*
+      # positively-labeled examples (independently of the model, so there is no
+      # hinge loss), plus a weight of 1 on true positives. The idea here is that
+      # since what we actually want to constrain are rates, we only bound the
+      # quantities that need to be bounded--constants remain as constants.
+      # Hence, we do this:
+      expected_penalty_numerator = np.sum(
+          np.maximum(0.0, 1.0 + self._penalty_predictions) *
+          (self._penalty_labels > 0.0) * self._penalty_weights *
+          self._penalty_predicate)
+      expected_penalty_numerator += (beta * beta) * np.sum(
+          (self._penalty_labels > 0.0) * self._penalty_weights *
+          self._penalty_predicate)
+      # instead of this:
+      #   expected_penalty_numerator = (1.0 + beta * beta) * np.sum(
+      #       np.maximum(0.0, 1.0 + self._penalty_predictions) *
+      #       (self._penalty_labels > 0.0) * self._penalty_weights *
+      #       self._penalty_predicate)
+      #   expected_penalty_numerator += (beta * beta) * np.sum(
+      #       np.maximum(0.0, 1.0 - self._penalty_predictions) *
+      #       (self._penalty_labels > 0.0) * self._penalty_weights *
+      #       self._penalty_predicate)
+      # There is no such issue for the negatively-labeled examples.
+      expected_penalty_numerator += np.sum(
+          np.maximum(0.0, 1.0 + self._penalty_predictions) *
+          (self._penalty_labels <= 0.0) * self._penalty_weights *
+          self._penalty_predicate)
+      expected_penalty_value = (
+          expected_penalty_numerator / expected_penalty_denominator)
+
+      # For the constraint, the default loss is zero-one.
+      expected_constraint_numerator += (beta * beta) * np.sum(
+          (0.5 * (1.0 - np.sign(self._constraint_predictions))) *
+          (self._constraint_labels > 0.0) * self._constraint_weights *
+          self._constraint_predicate)
+      expected_constraint_numerator += np.sum(
+          (0.5 * (1.0 + np.sign(self._constraint_predictions))) *
+          (self._constraint_labels <= 0.0) * self._constraint_weights *
+          self._constraint_predicate)
+      expected_constraint_value = (
+          expected_constraint_numerator / expected_constraint_denominator)
+
+      self._check_rates(expected_penalty_value, expected_constraint_value,
+                        actual_denominator_expression)
 
   def _find_roc_auc_thresholds(self, bins):
     """Finds the thresholds associated with each of the ROC AUC bins."""

@@ -557,6 +557,161 @@ def true_negative_rate(context,
       constraint_loss=constraint_loss)
 
 
+def precision_ratio(context,
+                    penalty_loss=_DEFAULT_PENALTY_LOSS,
+                    constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+  """Creates two `Expression`s representing a precision as a ratio.
+
+  The result of this function represents:
+    numerator := sum_i{w_i * c_i * 1{y_i > 0} * 1{z_i > 0}} / sum_i{w_i * c_i}
+    denominator := sum_i{w_i * c_i * 1{z_i > 0}} / sum_i{w_i * c_i}
+  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
+  is an indicator for which examples to include in the rate (all four of z, y, w
+  and c are in the context).
+
+  The reason for decomposing a precision as a separate numerator and denominator
+  is to make it easy to set up constraints of the form:
+    precision := numerator / denominator >= 0.9
+  for which you can multiply through by the denominator to yield the equivalent
+  constraint:
+    numerator >= 0.9 * denominator
+  This latter form is something that we can straightforwardly handle.
+
+  Please see the documentation for _binary_classification_rate for further
+  details.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An (`Expression`, `Expression`) pair representing the numerator and
+      denominator of a precision (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("precision requires a context with labels")
+
+  positive_context = context.subset(raw_context.penalty_labels > 0,
+                                    raw_context.constraint_labels > 0)
+
+  numerator_expression = _binary_classification_rate(
+      positive_coefficient=1.0,
+      numerator_context=positive_context,
+      denominator_context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+  denominator_expression = _binary_classification_rate(
+      positive_coefficient=1.0,
+      numerator_context=context,
+      denominator_context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+  return numerator_expression, denominator_expression
+
+
+def f_score_ratio(context,
+                  beta=1.0,
+                  penalty_loss=_DEFAULT_PENALTY_LOSS,
+                  constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+  """Creates two `Expression`s representing an F-score as a ratio.
+
+  The result of this function represents:
+    numerator := sum_i{w_i * c_i * (1 + beta^2) * 1{y_i > 0} * 1{z_i > 0}}
+                     / sum_i{w_i * c_i}
+    denominator := sum_i{w_i * c_i * (
+                       (1 + beta^2) * 1{y_i > 0} * 1{z_i > 0} +
+                       beta^2 * 1{y_i > 0} * 1{z_i <= 0} +
+                       1{y_i <= 0} * 1{z_i > 0}
+                   )} / sum_i{w_i * c_i}
+  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
+  is an indicator for which examples to include in the rate (all four of z, y, w
+  and c are in the context).
+
+  The reason for decomposing an F-score as a separate numerator and denominator
+  is to make it easy to set up constraints of the form:
+    f_score := numerator / denominator >= 0.9
+  for which you can multiply through by the denominator to yield the equivalent
+  constraint:
+    numerator >= 0.9 * denominator
+  This latter form is something that we can straightforwardly handle.
+
+  Please see the documentation for _binary_classification_rate for further
+  details.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    beta: nonnegative float, the beta parameter to the f-score. If beta=0, then
+      the result is precision, and if beta=1 (the default), then the result is
+      the F1-score.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An (`Expression`, `Expression`) pair representing the numerator and
+      denominator of an F-score (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("f_score requires a context with labels")
+
+  if beta < 0.0:
+    raise ValueError("beta parameter to f_score must be nonnegative")
+  if beta <= 0.0:
+    # The F0-score is just the precision, and representing it as such results
+    # in a slightly simpler expression.
+    return precision_ratio(
+        context, penalty_loss=penalty_loss, constraint_loss=constraint_loss)
+
+  positive_context = context.subset(raw_context.penalty_labels > 0,
+                                    raw_context.constraint_labels > 0)
+  negative_context = context.subset(raw_context.penalty_labels <= 0,
+                                    raw_context.constraint_labels <= 0)
+
+  numerator_expression = _binary_classification_rate(
+      positive_coefficient=(1.0 + beta * beta),
+      numerator_context=positive_context,
+      denominator_context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+  denominator_expression = (
+      numerator_expression + _binary_classification_rate(
+          negative_coefficient=beta * beta,
+          numerator_context=positive_context,
+          denominator_context=context,
+          penalty_loss=penalty_loss,
+          constraint_loss=constraint_loss) + _binary_classification_rate(
+              positive_coefficient=1.0,
+              numerator_context=negative_context,
+              denominator_context=context,
+              penalty_loss=penalty_loss,
+              constraint_loss=constraint_loss))
+
+  return numerator_expression, denominator_expression
+
+
 def _roc_auc(context,
              bins,
              lower_bound=False,
@@ -612,13 +767,12 @@ def _roc_auc(context,
   raw_context = context.raw_context
   if (raw_context.penalty_labels is None or
       raw_context.constraint_labels is None):
-    raise ValueError("roc_auc_lower_bound requires a context with labels")
+    raise ValueError("roc_auc requires a context with labels")
 
   if not isinstance(bins, numbers.Integral):
-    raise TypeError("number of roc_auc_lower_bound bins must be an integer")
+    raise TypeError("number of roc_auc bins must be an integer")
   if bins <= 0:
-    raise ValueError("number of roc_auc_lower_bound bins must be strictly "
-                     "positive")
+    raise ValueError("number of roc_auc bins must be strictly positive")
 
   # One could set both lower_bound and upper_bound to True, in which case the
   # result of this function could be treated as the Riemann approximation to ROC
@@ -642,7 +796,7 @@ def _roc_auc(context,
   # positive rates will be equality constraints, which could be infeasible for
   # an unnormalized loss. This could be changed to a warning, however.
   if not constraint_loss.is_normalized:
-    raise ValueError("roc_auc_lower_bound can only be used with a normalized "
+    raise ValueError("roc_auc can only be used with a normalized "
                      "constraint_loss (e.g. zero/one, sigmoid or ramp)")
 
   dtype = raw_context.penalty_predictions.dtype.real_dtype
