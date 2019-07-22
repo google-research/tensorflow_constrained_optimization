@@ -219,8 +219,8 @@ class _RatioWeights(object):
             tf.assign(
                 running_average_count,
                 running_average_count * (1.0 - running_proportion) +
-                tf.cast(tf.size(denominator_weights),
-                        dtype=running_dtype) * running_proportion))
+                tf.cast(tf.size(denominator_weights), dtype=running_dtype) *
+                running_proportion))
 
         # This code calculates max(denominator_lower_bound, running_average_sum
         # / running_average_count) safely, even when running_average_count is
@@ -293,10 +293,10 @@ class _RatioWeights(object):
 
     Args:
       weights: `Tensor` of example weights.
-      numerator_predicate: boolean indicator `Tensor` representing whether each
-        example should be included in the ratio's numerator.
-      denominator_predicate: boolean indicator `Tensor` representing whether
-        each example should be included in the ratio's denominator.
+      numerator_predicate: `Predicate` object representing whether each example
+        should be included in the ratio's numerator.
+      denominator_predicate: `Predicate` object representing whether each
+        example should be included in the ratio's denominator.
 
     Returns:
       A new `_RatioWeights` representing the ratio.
@@ -693,10 +693,10 @@ class BinaryClassificationTerm(Term):
       predictions: `Tensor` of shape (n,), where n is the number of examples.
       weights: `Tensor` of example weights, with shape (m,), where m is
         broadcastable to n.
-      numerator_predicate: boolean indicator `Tensor` representing whether each
-        example should be included in the ratio's numerator.
-      denominator_predicate: boolean indicator `Tensor` representing whether
-        each example should be included in the ratio's denominator.
+      numerator_predicate: `Predicate` object representing whether each example
+        should be included in the ratio's numerator.
+      denominator_predicate: `Predicate` object representing whether each
+        example should be included in the ratio's denominator.
       loss: `BinaryClassificionLoss`, the loss function to use.
 
     Returns:
@@ -800,7 +800,7 @@ class BinaryClassificationTerm(Term):
     of `Term`s that can be added and subtracted to/from each other.
 
     `BinaryClassificationTerm`s are compatible iff they have the same
-    predictions and loss---they may, however, have different sets of weights.
+    predictions and loss--they may, however, have different sets of weights.
     Hence, the key returned by this method contains the predictions and loss, in
     addition to the type (`BinaryClassificationTerm`).
 
@@ -825,9 +825,10 @@ class BinaryClassificationTerm(Term):
       raise TypeError("Term objects only support *scalar* multiplication: "
                       "you cannot multiply two Terms")
 
-    return BinaryClassificationTerm(
-        self._predictions, self._positive_ratio_weights * scalar,
-        self._negative_ratio_weights * scalar, self._loss)
+    return BinaryClassificationTerm(self._predictions,
+                                    self._positive_ratio_weights * scalar,
+                                    self._negative_ratio_weights * scalar,
+                                    self._loss)
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
@@ -837,9 +838,10 @@ class BinaryClassificationTerm(Term):
       raise TypeError("Term objects only support *scalar* division: you "
                       "cannot divide two Terms")
 
-    return BinaryClassificationTerm(
-        self._predictions, self._positive_ratio_weights / scalar,
-        self._negative_ratio_weights / scalar, self._loss)
+    return BinaryClassificationTerm(self._predictions,
+                                    self._positive_ratio_weights / scalar,
+                                    self._negative_ratio_weights / scalar,
+                                    self._loss)
 
   # __rtruediv__ is not implemented since we only allow *scalar* division, i.e.
   # (Term / scalar) is allowed, but (scalar / Term) is not.
@@ -932,7 +934,7 @@ class BinaryClassificationTerm(Term):
     weights = tf.stack([positive_weights, negative_weights], axis=1)
     losses = self._loss.evaluate_binary_classification(self._predictions,
                                                        weights)
-    # If losses isn't one-dimensional, then something has gone badly wrong---we
+    # If losses isn't one-dimensional, then something has gone badly wrong--we
     # should have checked all of the dimensions before reaching this point.
     # Likewise, loss functions are required to return a Tensor of the same dtype
     # as the predictions.

@@ -137,25 +137,34 @@ class RateMinimizationProblemTest(tf.test.TestCase):
            tf.local_variables_initializer()])
 
       (initial_objective, initial_constraints,
-       initial_proxy_constraints) = session.run(
-           [problem.objective, problem.constraints, problem.proxy_constraints])
+       initial_proxy_constraints) = session.run([
+           problem.objective(),
+           problem.constraints(),
+           problem.proxy_constraints()
+       ])
 
       # We only need to run the pre-train ops once, since the entire dataset is
       # contained within the Tensors, so the denominators will be correct.
-      session.run(problem.pre_train_ops)
+      session.run(problem.pre_train_ops())
 
       (actual_objective, actual_constraints,
-       actual_proxy_constraints) = session.run(
-           [problem.objective, problem.constraints, problem.proxy_constraints])
+       actual_proxy_constraints) = session.run([
+           problem.objective(),
+           problem.constraints(),
+           problem.proxy_constraints()
+       ])
 
       # If we update the internal state, and then re-initialize, then the
       # resulting objective, constraints and proxy constraints should be the
       # same as they were before running the pre_train_ops.
-      session.run(problem.restart_ops)
+      session.run(problem.restart_ops())
 
       (reinitialized_objective, reinitialized_constraints,
-       reinitialized_proxy_constraints) = session.run(
-           [problem.objective, problem.constraints, problem.proxy_constraints])
+       reinitialized_proxy_constraints) = session.run([
+           problem.objective(),
+           problem.constraints(),
+           problem.proxy_constraints()
+       ])
 
     self.assertEqual(3, initial_constraints.size)
     self.assertEqual(3, initial_proxy_constraints.size)

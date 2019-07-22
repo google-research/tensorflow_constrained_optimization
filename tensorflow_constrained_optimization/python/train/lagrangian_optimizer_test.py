@@ -26,38 +26,8 @@ from tensorflow_constrained_optimization.python.train import lagrangian_optimize
 from tensorflow_constrained_optimization.python.train import test_util
 
 
-class LagrangianOptimizerWrapper(lagrangian_optimizer.LagrangianOptimizer):
-  """Testing wrapper class around LagrangianOptimizer.
-
-  This class is identical to LagrangianOptimizer, except that it caches the
-  internal optimization state when _create_multipliers() is called, so that we
-  can test that the Lagrange multipliers take on their expected values.
-  """
-
-  def __init__(self,
-               optimizer,
-               constraint_optimizer=None,
-               maximum_multiplier_radius=None):
-    """Same as LagrangianOptimizer.__init__."""
-    super(LagrangianOptimizerWrapper, self).__init__(
-        optimizer=optimizer,
-        constraint_optimizer=constraint_optimizer,
-        maximum_multiplier_radius=maximum_multiplier_radius)
-    self._cached_multipliers = None
-
-  @property
-  def multipliers(self):
-    """Returns the cached Lagrange multipliers."""
-    return self._cached_multipliers
-
-  def _create_multipliers(self, num_constraints):
-    """Caches the internal state for testing."""
-    self._cached_multipliers = super(LagrangianOptimizerWrapper,
-                                     self)._create_multipliers(num_constraints)
-    return self._cached_multipliers
-
-
-class LagrangianOptimizerTest(tf.test.TestCase):
+# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+class LagrangianOptimizerTest(test_util.GraphAndEagerTestCase):
   """Tests the `LagrangianOptimizer` and associated helper functions."""
 
   def test_project_multipliers_wrt_euclidean_norm(self):
@@ -71,7 +41,7 @@ class LagrangianOptimizerTest(tf.test.TestCase):
     multipliers3 = tf.constant([0.4, 0.7, -0.2, 0.5, 0.1])
     expected_projected_multipliers3 = np.array([0.2, 0.5, 0.0, 0.3, 0.0])
 
-    with self.session() as session:
+    with self.wrapped_session() as session:
       projected_multipliers1 = session.run(
           lagrangian_optimizer._project_multipliers_wrt_euclidean_norm(
               multipliers1, 1.0))
@@ -98,13 +68,16 @@ class LagrangianOptimizerTest(tf.test.TestCase):
         rtol=0,
         atol=1e-6)
 
-  def test_additive_lagrangian_optimizer(self):
+  def test_lagrangian_optimizer(self):
     """Tests that the Lagrange multipliers update as expected."""
     minimization_problem = test_util.ConstantMinimizationProblem(
         np.array([0.6, -0.1, 0.4]))
-    optimizer = LagrangianOptimizerWrapper(
+    optimizer = lagrangian_optimizer.LagrangianOptimizer(
         tf.train.GradientDescentOptimizer(1.0), maximum_multiplier_radius=1.0)
-    train_op = optimizer.minimize_constrained(minimization_problem)
+    # We force the Lagrange multipliers to be created here so that (1) in
+    # graph mode, it will be initialized correctly and (2) in eager mode,
+    # we'll be able to check its initial value.
+    optimizer._maybe_create_multipliers(minimization_problem.num_constraints)
 
     expected_multipliers = [
         np.array([0.0, 0.0, 0.0]),
@@ -117,11 +90,10 @@ class LagrangianOptimizerTest(tf.test.TestCase):
     ]
 
     multipliers = []
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
+    with self.wrapped_session() as session:
       while len(multipliers) < len(expected_multipliers):
-        multipliers.append(session.run(optimizer.multipliers))
-        session.run(train_op)
+        multipliers.append(session.run(optimizer._multipliers))
+        session.run(optimizer.minimize(minimization_problem))
 
     for expected, actual in zip(expected_multipliers, multipliers):
       self.assertAllClose(expected, actual, rtol=0, atol=1e-6)

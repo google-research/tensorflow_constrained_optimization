@@ -465,7 +465,7 @@ with tf.Session() as session:
   # For optimizing the unconstrained problem, we just minimize the "objective"
   # portion of the minimization problem. We could instead have used the
   # "minimize_unconstrained" method of a ConstrainedOptimizer.
-  train_op = optimizer.minimize(problem.objective)
+  train_op = optimizer.minimize(problem.objective())
 
   session.run(tf.global_variables_initializer())
   for ii in xrange(1000):

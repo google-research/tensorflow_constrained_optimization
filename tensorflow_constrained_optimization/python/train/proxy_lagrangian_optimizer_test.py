@@ -26,45 +26,8 @@ from tensorflow_constrained_optimization.python.train import proxy_lagrangian_op
 from tensorflow_constrained_optimization.python.train import test_util
 
 
-class ProxyLagrangianOptimizerWrapper(
-    proxy_lagrangian_optimizer.ProxyLagrangianOptimizer):
-  """Testing wrapper class around ProxyLagrangianOptimizer.
-
-  This class is identical to ProxyLagrangianOptimizer, except that it caches the
-  internal optimization state when _create_state() is called, so that we can
-  test that the stochastic matrices take on their expected values.
-  """
-
-  def __init__(self,
-               optimizer,
-               constraint_optimizer=None,
-               regret_type="swap",
-               update_type="multiplicative",
-               minimum_multiplier_radius=None,
-               initial_multiplier_radius=None):
-    """Same as ProxyLagrangianOptimizer.__init__()."""
-    super(ProxyLagrangianOptimizerWrapper, self).__init__(
-        optimizer=optimizer,
-        constraint_optimizer=constraint_optimizer,
-        regret_type=regret_type,
-        update_type=update_type,
-        minimum_multiplier_radius=minimum_multiplier_radius,
-        initial_multiplier_radius=initial_multiplier_radius)
-    self._cached_state = None
-
-  @property
-  def state(self):
-    """Returns the cached state."""
-    return self._cached_state
-
-  def _create_state(self, num_constraints):
-    """Caches the internal state for testing."""
-    self._cached_state = super(ProxyLagrangianOptimizerWrapper,
-                               self)._create_state(num_constraints)
-    return self._cached_state
-
-
-class ProxyLagrangianOptimizerTest(tf.test.TestCase):
+# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+class ProxyLagrangianOptimizerTest(test_util.GraphAndEagerTestCase):
   """Tests the `ProxyLagrangianOptimizer` and associated helper functions."""
 
   def _optimizer_test_helper(self,
@@ -75,20 +38,22 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
                              minimum_multiplier_radius=None,
                              initial_multiplier_radius=None):
     """Tests that the states at each iteration match the expected states."""
-    optimizer = ProxyLagrangianOptimizerWrapper(
+    optimizer = proxy_lagrangian_optimizer.ProxyLagrangianOptimizer(
         tf.train.GradientDescentOptimizer(1.0),
         regret_type=regret_type,
         update_type=update_type,
         minimum_multiplier_radius=minimum_multiplier_radius,
         initial_multiplier_radius=initial_multiplier_radius)
-    train_op = optimizer.minimize_constrained(minimization_problem)
+    # We force the internal state to be created here so that (1) in graph mode,
+    # it will be initialized correctly and (2) in eager mode, we'll be able to
+    # check its initial value.
+    optimizer._maybe_create_state(minimization_problem.num_constraints)
 
     states = []
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
+    with self.wrapped_session() as session:
       while len(states) < len(expected_states):
-        states.append(session.run(optimizer.state))
-        session.run(train_op)
+        states.append(session.run(optimizer._state))
+        session.run(optimizer.minimize(minimization_problem))
 
     for expected, actual in zip(expected_states, states):
       self.assertAllClose(expected, actual, rtol=0, atol=1e-6)
@@ -98,7 +63,7 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
     matrix1 = np.matrix([[0.6, 0.1, 0.1], [0.0, 0.6, 0.9], [0.4, 0.3, 0.0]])
     matrix2 = np.matrix([[0.4, 0.4, 0.2], [0.2, 0.1, 0.5], [0.4, 0.5, 0.3]])
 
-    with self.session() as session:
+    with self.wrapped_session() as session:
       eigenvector1 = session.run(
           proxy_lagrangian_optimizer._maximal_eigenvector_power_method(
               tf.constant(matrix1)))
@@ -127,7 +92,7 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
     ]
 
     projected_distributions = []
-    with self.session() as session:
+    with self.wrapped_session() as session:
       for distribution in distributions:
         projected_distributions.append(
             session.run(
@@ -147,7 +112,7 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
     expected_projected_matrix = np.array([[0.6, 0.1, 0.1], [0.0, 0.6, 0.9],
                                           [0.4, 0.3, 0.0]])
 
-    with self.session() as session:
+    with self.wrapped_session() as session:
       projected_matrix = session.run(
           proxy_lagrangian_optimizer._project_distribution_wrt_euclidean_norm(
               matrix))
@@ -169,7 +134,7 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
     ]
 
     projected_distributions = []
-    with self.session() as session:
+    with self.wrapped_session() as session:
       for distribution in distributions:
         projected_distributions.append(
             session.run(
@@ -190,7 +155,7 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
     expected_projected_matrix = np.array([[0.4, 0.4, 0.2], [0.2, 0.1, 0.5],
                                           [0.4, 0.5, 0.3]])
 
-    with self.session() as session:
+    with self.wrapped_session() as session:
       projected_matrix = session.run(
           tf.exp(
               proxy_lagrangian_optimizer

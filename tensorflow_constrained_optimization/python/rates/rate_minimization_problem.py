@@ -81,8 +81,8 @@ class RateMinimizationProblem(
   It's important to understand that this object is *stateful*. The denominators
   of the rates are estimated from running sums over all of the data that have
   been seen by pre_train_ops (which will be executed at the start of every
-  train_op). Hence, these estimated denominators---upon which the objective,
-  constraints and proxy_constraints `Tensor`s depend---will change from
+  train_op). Hence, these estimated denominators--upon which the objective,
+  constraints and proxy_constraints `Tensor`s depend--will change from
   iteration-to-iteration as they converge to their true values. This state can
   be re-initialized by executing the restart_ops.
   """
@@ -111,9 +111,13 @@ class RateMinimizationProblem(
         denominator of a rate.
 
     Raises:
+      RuntimeError: if we're running in eager mode.
       ValueError: if the "penalty" portion of the objective or a constraint is
         non-differentiable, or if denominator_lower_bound is negative.
     """
+    if tf.executing_eagerly():
+      raise RuntimeError("the TFCO rate helpers cannot be used in eager mode")
+
     # We do permit denominator_lower_bound to be zero. In this case, division by
     # zero is possible, and it's the user's responsibility to ensure that it
     # doesn't happen.
@@ -178,6 +182,9 @@ class RateMinimizationProblem(
         constraints.update(constraint.expression.extra_constraints)
       checked_constraints.update(new_constraints)
 
+    self._num_constraints = len(penalty_values)
+    assert self._num_constraints == len(constraint_values)
+
     self._proxy_constraints = tf.stack(penalty_values)
     self._constraints = tf.stack(constraint_values)
 
@@ -188,7 +195,6 @@ class RateMinimizationProblem(
     restart_ops.add(tf.assign(global_step, 0))
     self._restart_ops = list(restart_ops)
 
-  @property
   def objective(self):
     """Returns the objective function.
 
@@ -198,6 +204,14 @@ class RateMinimizationProblem(
     return self._objective
 
   @property
+  def num_constraints(self):
+    """Returns the number of constraints.
+
+    Returns:
+      An int containing the number of constraints.
+    """
+    return self._num_constraints
+
   def constraints(self):
     """Returns the `Tensor` of constraint functions.
 
@@ -210,7 +224,6 @@ class RateMinimizationProblem(
     """
     return self._constraints
 
-  @property
   def proxy_constraints(self):
     """Returns the optional `Tensor` of proxy constraint functions.
 
@@ -223,7 +236,6 @@ class RateMinimizationProblem(
     """
     return self._proxy_constraints
 
-  @property
   def pre_train_ops(self):
     """Returns a list of `tf.Operation`s to run at the start of train_op.
 
@@ -236,7 +248,6 @@ class RateMinimizationProblem(
     """
     return self._pre_train_ops[:]
 
-  @property
   def restart_ops(self):
     """Returns a list of `tf.Operation`s that restart the pre_train_ops.
 

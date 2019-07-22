@@ -42,12 +42,16 @@ class BasicExpressionTest(tf.test.TestCase):
     denominator_predicate1 = helpers.Predicate(True)
     denominator_predicate2 = helpers.Predicate(tf.constant([True, False, True]))
     # The two terms have the same predictions and loss, so they're compatible.
-    term_object1 = term.BinaryClassificationTerm.ratio(
-        1.0, 0.0, predictions, weights1, numerator_predicate1,
-        denominator_predicate1, loss.ZeroOneLoss())
-    term_object2 = term.BinaryClassificationTerm.ratio(
-        1.0, 0.0, predictions, weights2, numerator_predicate2,
-        denominator_predicate2, loss.ZeroOneLoss())
+    term_object1 = term.BinaryClassificationTerm.ratio(1.0, 0.0, predictions,
+                                                       weights1,
+                                                       numerator_predicate1,
+                                                       denominator_predicate1,
+                                                       loss.ZeroOneLoss())
+    term_object2 = term.BinaryClassificationTerm.ratio(1.0, 0.0, predictions,
+                                                       weights2,
+                                                       numerator_predicate2,
+                                                       denominator_predicate2,
+                                                       loss.ZeroOneLoss())
     self.assertEqual(term_object1.key, term_object2.key)
 
     expression_object1 = basic_expression.BasicExpression([term_object1])
@@ -76,12 +80,16 @@ class BasicExpressionTest(tf.test.TestCase):
     denominator_predicate1 = helpers.Predicate(True)
     denominator_predicate2 = helpers.Predicate(tf.constant([True, False, True]))
     # The two terms have different losses, so they're incompatible.
-    term_object1 = term.BinaryClassificationTerm.ratio(
-        1.0, 0.0, predictions, weights1, numerator_predicate1,
-        denominator_predicate1, loss.ZeroOneLoss())
-    term_object2 = term.BinaryClassificationTerm.ratio(
-        1.0, 0.0, predictions, weights2, numerator_predicate2,
-        denominator_predicate2, loss.HingeLoss())
+    term_object1 = term.BinaryClassificationTerm.ratio(1.0, 0.0, predictions,
+                                                       weights1,
+                                                       numerator_predicate1,
+                                                       denominator_predicate1,
+                                                       loss.ZeroOneLoss())
+    term_object2 = term.BinaryClassificationTerm.ratio(1.0, 0.0, predictions,
+                                                       weights2,
+                                                       numerator_predicate2,
+                                                       denominator_predicate2,
+                                                       loss.HingeLoss())
     self.assertNotEqual(term_object1.key, term_object2.key)
 
     expression_object1 = basic_expression.BasicExpression([term_object1])
@@ -119,16 +127,13 @@ class BasicExpressionTest(tf.test.TestCase):
     dummy_predictions = tf.constant(0, dtype=tf.float32, shape=(1,))
     dummy_weights = 1.0
     true_predicate = helpers.Predicate(True)
-    term_objects = [
-        term.BinaryClassificationTerm.ratio(
-            positive_coefficients[ii], negative_coefficients[ii],
-            dummy_predictions, dummy_weights, true_predicate, true_predicate,
-            losses[ii]) for ii in xrange(3)
-    ]
-    expression_objects = [
-        basic_expression.BasicExpression([term_object])
-        for term_object in term_objects
-    ]
+    expression_objects = []
+    for ii in xrange(3):
+      term_object = term.BinaryClassificationTerm.ratio(
+          positive_coefficients[ii], negative_coefficients[ii],
+          dummy_predictions, dummy_weights, true_predicate, true_predicate,
+          losses[ii])
+      expression_objects.append(basic_expression.BasicExpression([term_object]))
 
     # This expression exercises all of the operators.
     expression_object = (
@@ -162,7 +167,7 @@ class BasicExpressionTest(tf.test.TestCase):
     actual_constant = expression_object.tensor
     self.assertAllClose(expected_constant, actual_constant, rtol=0, atol=1e-6)
 
-    # Ignore the pre_train_ops---we'll just check the values of the weights.
+    # Ignore the pre_train_ops--we'll just check the values of the weights.
     actual_zero_one_positive_weights, _, _ = (
         zero_one_term.positive_ratio_weights.evaluate(evaluation_context))
     actual_zero_one_negative_weights, _, _ = (

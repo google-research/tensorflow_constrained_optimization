@@ -70,9 +70,9 @@ class Expression(object):
 
   An `Expression`, like a `BasicExpression`, represents a linear combination of
   `Term`s and `Tensor`s. Internally, it's actually represented as *two*
-  `BasicExpression`s, one of which---the "penalty" portion---is used when the
+  `BasicExpression`s, one of which--the "penalty" portion--is used when the
   expression is being minimized (in the objective function) or penalized (to
-  satisfy a constraint), and the second of which---the "constraint" portion---is
+  satisfy a constraint), and the second of which--the "constraint" portion--is
   used when the expression is being constrained.
 
   Typically, the "penalty" and "constraint" portions will be different
@@ -101,13 +101,13 @@ class Expression(object):
 
     An `Expression` represents a quantity that will be minimized/maximized or
     constrained. Internally, it's actually represented as *two*
-    `BasicExpression`s, one of which---the "penalty" portion---is used when the
+    `BasicExpression`s, one of which--the "penalty" portion--is used when the
     expression is being minimized (in the objective function) or penalized (to
-    satisfy a constraint), and the second of which---the "constraint"
-    portion---is used when the expression is being constrained. These two
-    `BasicExpression`s are the first two parameters of this function.
+    satisfy a constraint), and the second of which--the "constraint" portion--is
+    used when the expression is being constrained. These two `BasicExpression`s
+    are the first two parameters of this function.
 
-    The third parameter---"extra_constraints"---is used to specify additional
+    The third parameter--"extra_constraints"--is used to specify additional
     constraints that should be added to any optimization problem involving this
     `Expression`. Technically, these can be anything: they're simply additional
     constraints, which may or may not have anything to do with the `Expression`
@@ -142,10 +142,10 @@ class Expression(object):
   def penalty_expression(self):
     """Returns the `BasicExpression` used for the "penalty" portion.
 
-    An `Expression` contains *two* `BasicExpression`s, one of which---the
-    "penalty" portion---is used when the expression is being minimized (in the
+    An `Expression` contains *two* `BasicExpression`s, one of which--the
+    "penalty" portion--is used when the expression is being minimized (in the
     objective function) or penalized (to satisfy a constraint), while the
-    second---the "constraint" portion---is used when the expression is being
+    second--the "constraint" portion--is used when the expression is being
     constrained.
     """
     return self._penalty_expression
@@ -154,10 +154,10 @@ class Expression(object):
   def constraint_expression(self):
     """Returns the `BasicExpression` used for the "constraint" portion.
 
-    An `Expression` contains *two* `BasicExpression`s, one of which---the
-    "penalty" portion---is used when the expression is being minimized (in the
+    An `Expression` contains *two* `BasicExpression`s, one of which--the
+    "penalty" portion--is used when the expression is being minimized (in the
     objective function) or penalized (to satisfy a constraint), while the
-    second---the "constraint" portion---is used when the expression is being
+    second--the "constraint" portion--is used when the expression is being
     constrained.
     """
     return self._constraint_expression
