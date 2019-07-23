@@ -289,7 +289,11 @@ class LagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
       return (objective + tf.tensordot(
           tf.cast(multipliers, proxy_constraints.dtype), proxy_constraints, 1))
 
-    # Create a list of (gradient,variable) pairs for the model parameters.
+    # Create a list of (gradient,variable) pairs for the model parameters. In
+    # graph mode, Optimizer.compute_gradients() expects a Tensor, while in eager
+    # mode, it expects a function returning a Tensor.
+    if not tf.executing_eagerly():
+      loss_fn = loss_fn()
     grads_and_vars = self.optimizer.compute_gradients(loss_fn, var_list)
 
     # Compute the gradient w.r.t. the Lagrange multipliers (which is simply the

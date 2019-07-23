@@ -590,7 +590,11 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
           tf.cast(distribution, objective_and_proxy_constraints.dtype),
           objective_and_proxy_constraints, 1)
 
-    # Create a list of (gradient,variable) pairs for the model parameters.
+    # Create a list of (gradient,variable) pairs for the model parameters. In
+    # graph mode, Optimizer.compute_gradients() expects a Tensor, while in eager
+    # mode, it expects a function returning a Tensor.
+    if not tf.executing_eagerly():
+      loss_fn = loss_fn()
     grads_and_vars = self.optimizer.compute_gradients(loss_fn, var_list)
 
     # Compute the gradient w.r.t. the internal state.
