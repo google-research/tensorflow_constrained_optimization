@@ -634,7 +634,7 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
             self.optimizer.apply_gradients(grads_and_vars, name="update"))
         update_ops.append(
             self._constraint_optimizer.apply_gradients(
-                state_grads_and_vars, name="optimizer_state_update"))
+                state_grads_and_vars, name="proxy_lagrangian_state_update"))
 
     with tf.control_dependencies(update_ops):
       if global_step is None:
@@ -644,7 +644,7 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
         # If we have a global step, then we need to increment it in addition to
         # projecting.
         projection_op = self._projection_op(
-            state, name="optimizer_state_project")
+            state, name="proxy_lagrangian_state_projection")
         with tf.colocate_with(global_step):
           global_step_op = global_step.assign_add(
               1, name="global_step_increment")

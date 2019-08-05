@@ -99,6 +99,45 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     for expected, actual in zip(expected_multipliers, multipliers):
       self.assertAllClose(expected, actual, rtol=0, atol=1e-6)
 
+  def test_lagrangian_loss(self):
+    """Tests that the Lagrange multipliers update as expected."""
+    minimization_problem = test_util.ConstantMinimizationProblem(
+        np.array([0.6, -0.1, 0.4]))
+    loss_fn, pre_train_ops_fn, multipliers_variable = (
+        lagrangian_optimizer.create_lagrangian_loss(
+            minimization_problem, maximum_multiplier_radius=1.0))
+    optimizer = tf.train.GradientDescentOptimizer(1.0)
+
+    loss = loss_fn
+    if not tf.executing_eagerly():
+      loss = loss()
+
+    expected_multipliers = [
+        np.array([0.0, 0.0, 0.0]),
+        np.array([0.6, 0.0, 0.4]),
+        np.array([0.7, 0.0, 0.3]),
+        np.array([0.8, 0.0, 0.2]),
+        np.array([0.9, 0.0, 0.1]),
+        np.array([1.0, 0.0, 0.0]),
+        np.array([1.0, 0.0, 0.0]),
+    ]
+
+    multipliers = []
+    with self.wrapped_session() as session:
+      while len(multipliers) < len(expected_multipliers):
+        # We need to explicitly project here, since we're reading the Lagrange
+        # multipliers *after* the train_op, but the projection takes place
+        # *before* the train_op.
+        multipliers.append(
+            session.run(
+                lagrangian_optimizer._project_multipliers_wrt_euclidean_norm(
+                    multipliers_variable, 1.0)))
+        session.run_ops(pre_train_ops_fn())
+        session.run_ops([optimizer.minimize(loss)])
+
+    for expected, actual in zip(expected_multipliers, multipliers):
+      self.assertAllClose(expected, actual, rtol=0, atol=1e-6)
+
 
 if __name__ == "__main__":
   tf.test.main()

@@ -65,7 +65,6 @@ py_library(
 
 py_test(
     name = "lagrangian_optimizer_test",
-    size = "small",
     srcs = ["lagrangian_optimizer_test.py"],
     srcs_version = "PY2AND3",
     deps = [

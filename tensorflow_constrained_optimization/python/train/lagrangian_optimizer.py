@@ -224,7 +224,7 @@ class LagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
       self._multipliers = tf.Variable(
           initial_multipliers,
           trainable=False,
-          name="lagrangian_state",
+          name="lagrange_multipliers",
           dtype=tf.float32,
           use_resource=True)
 
@@ -331,7 +331,7 @@ class LagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
             self.optimizer.apply_gradients(grads_and_vars, name="update"))
         update_ops.append(
             self._constraint_optimizer.apply_gradients(
-                multiplier_grads_and_vars, name="optimizer_state_update"))
+                multiplier_grads_and_vars, name="lagrange_multipliers_update"))
 
     with tf.control_dependencies(update_ops):
       if global_step is None:
@@ -341,8 +341,81 @@ class LagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
         # If we have a global step, then we need to increment it in addition to
         # projecting.
         projection_op = self._projection_op(
-            multipliers, name="optimizer_state_project")
+            multipliers, name="lagrange_multipliers_projection")
         with tf.colocate_with(global_step):
           global_step_op = global_step.assign_add(
               1, name="global_step_increment")
         return tf.group(projection_op, global_step_op, name=name)
+
+
+def create_lagrangian_loss(minimization_problem,
+                           maximum_multiplier_radius=None):
+  """Creates a loss function from a `ConstrainedMinimizationProblem`.
+
+  In addition to a loss function, this method returns a function returning a
+  list of operations that should be executed before each iteration ("pre-train
+  ops").
+
+  In graph mode, the result of this pre-train ops function could be "attached"
+  to the train_op using tf.control_dependencies. In eager mode, it should be
+  called before each iteration.
+
+  Args:
+    minimization_problem: `ConstrainedMinimizationProblem`, the problem to
+      optimize.
+    maximum_multiplier_radius: float, an optional upper bound to impose on the
+      sum of the Lagrange multipliers.
+
+  Returns:
+    A (loss_fn, pre_train_ops_fn, lagrange_multipliers) tuple, where loss_fn is
+    a nullary function returning a `Tensor` that can be minimized to optimize
+    the Lagrangian, pre_train_ops_fn is a nullary function that returns a list
+    of operations that should be executed before each training iteration, and
+    lagrange_multipliers is a tf.Variable of Lagrange multipliers.
+  """
+  initial_multipliers = np.zeros((minimization_problem.num_constraints,),
+                                 dtype=np.float32)
+  multipliers = tf.Variable(
+      initial_multipliers,
+      trainable=True,
+      name="lagrange_multipliers",
+      dtype=tf.float32,
+      use_resource=True)
+
+  def loss_fn():
+    """Returns a `Tensor` that should be minimized."""
+    objective = minimization_problem.objective()
+    constraints = minimization_problem.constraints()
+    proxy_constraints = minimization_problem.proxy_constraints()
+    if proxy_constraints is None:
+      proxy_constraints = constraints
+
+    # We want to minimize the "primal" Tensor, and maximize the "dual" Tensor,
+    # so we subtract them.
+    primal = (
+        objective + tf.tensordot(
+            tf.stop_gradient(
+                tf.cast(multipliers, proxy_constraints.dtype.base_dtype)),
+            proxy_constraints, 1))
+    dual = tf.tensordot(
+        tf.cast(multipliers, constraints.dtype.base_dtype),
+        tf.stop_gradient(constraints), 1)
+    return primal - dual
+
+  def pre_train_ops_fn():
+    """Returns a list of `Operation`s to run before the train_op."""
+    pre_train_ops = minimization_problem.pre_train_ops()
+
+    with tf.colocate_with(multipliers):
+      if maximum_multiplier_radius:
+        projected_multipliers = _project_multipliers_wrt_euclidean_norm(
+            multipliers, maximum_multiplier_radius)
+      else:
+        projected_multipliers = tf.maximum(multipliers, 0.0)
+      pre_train_ops.append(
+          multipliers.assign(
+              projected_multipliers, name="lagrange_multipliers_projection"))
+
+    return pre_train_ops
+
+  return loss_fn, pre_train_ops_fn, multipliers
