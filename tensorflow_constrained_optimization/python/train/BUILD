@@ -73,6 +73,7 @@ py_test(
         ":test_util",
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )
 
@@ -86,5 +87,6 @@ py_test(
         ":test_util",
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )

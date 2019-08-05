@@ -22,12 +22,13 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.train import lagrangian_optimizer
 from tensorflow_constrained_optimization.python.train import test_util
 
 
 # @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
-class LagrangianOptimizerTest(test_util.GraphAndEagerTestCase):
+class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests the `LagrangianOptimizer` and associated helper functions."""
 
   def test_project_multipliers_wrt_euclidean_norm(self):
