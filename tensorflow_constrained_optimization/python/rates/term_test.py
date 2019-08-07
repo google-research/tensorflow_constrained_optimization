@@ -42,8 +42,8 @@ class TermTest(tf.test.TestCase):
     #
     #   self._predictions = np.random.randn(size)
     #   self._weights = np.random.rand(size, 3)  # These weights must be >= 0.
-    #   self._positive_weights = np.random.randn(size, 3)
-    #   self._negative_weights = np.random.randn(size, 3)
+    #   self._positive_weights = np.abs(np.random.randn(size, 3))
+    #   self._negative_weights = np.abs(np.random.randn(size, 3))
     #
     #   numerator_count = int(size / 3)
     #   numerator_indices = set(random.sample(range(size), numerator_count))
@@ -94,48 +94,48 @@ class TermTest(tf.test.TestCase):
         [0.140311759457, 0.157850262752, 0.370491094206],
     ])
     self._positive_weights = np.array([
-        [0.368879241431, 0.776283778201, -0.922791023591],
-        [-0.479167701857, -0.346558378353, 0.710694447574],
-        [-1.43551507315, 0.908609260426, -1.2048088488],
-        [-0.566753206511, -1.99042543647, -1.18133627163],
+        [0.368879241431, 0.776283778201, 0.922791023591],
+        [0.479167701857, 0.346558378353, 0.710694447574],
+        [1.43551507315, 0.908609260426, 1.2048088488],
+        [0.566753206511, 1.99042543647, 1.18133627163],
         [0.453050286383, 1.42491505353, 0.470967482097],
-        [2.03454082335, -0.377569624532, 0.833301377769],
-        [-1.16157676163, 0.497598685605, -0.288470160892],
-        [-2.27255332987, -0.350871636523, -0.592990995235],
-        [0.715961282376, 0.74996983227, -0.625752113108],
-        [-1.79041415884, 1.38971438305, 1.00465078918],
-        [1.96777275689, -2.04654802919, 0.147776670171],
-        [-0.15385256971, -0.977058328072, 0.106955594983],
+        [2.03454082335, 0.377569624532, 0.833301377769],
+        [1.16157676163, 0.497598685605, 0.288470160892],
+        [2.27255332987, 0.350871636523, 0.592990995235],
+        [0.715961282376, 0.74996983227, 0.625752113108],
+        [1.79041415884, 1.38971438305, 1.00465078918],
+        [1.96777275689, 2.04654802919, 0.147776670171],
+        [0.15385256971, 0.977058328072, 0.106955594983],
         [0.303448743856, 0.232478561899, 1.4492977573],
-        [-1.72497915945, -1.11767175531, 0.591949244909],
-        [0.484786597662, -0.0477333948402, 1.02891263901],
-        [1.11440680359, -0.0711480171322, -2.06228440953],
-        [0.242549467822, -0.758649745143, -0.11736812012],
-        [0.842942238643, 0.83167306903, -0.852899753813],
-        [-0.841449544315, 0.662098892203, -0.69720901344],
-        [-0.730600225006, -1.55963637073, 0.395150457709],
+        [1.72497915945, 1.11767175531, 0.591949244909],
+        [0.484786597662, 0.0477333948402, 1.02891263901],
+        [1.11440680359, 0.0711480171322, 2.06228440953],
+        [0.242549467822, 0.758649745143, 0.11736812012],
+        [0.842942238643, 0.83167306903, 0.852899753813],
+        [0.841449544315, 0.662098892203, 0.69720901344],
+        [0.730600225006, 1.55963637073, 0.395150457709],
     ])
     self._negative_weights = np.array([
         [0.94119137969, 0.457577723139, 1.35379028598],
-        [1.94403888363, -0.109948295025, -0.855261861779],
-        [-0.519643638412, 1.17592742071, -0.771248449529],
-        [2.11864153683, 2.02543613619, -0.645954942694],
+        [1.94403888363, 0.109948295025, 0.855261861779],
+        [0.519643638412, 1.17592742071, 0.771248449529],
+        [2.11864153683, 2.02543613619, 0.645954942694],
         [0.0482497767808, 1.28632126984, 0.00924264320825],
-        [-1.05315451703, -0.718584385367, 0.185098145457],
-        [0.110022539127, -2.12282472908, -0.767980152035],
-        [-1.01391368028, 1.46060647161, 0.172538114564],
-        [-1.14967160138, 0.382091947887, -0.359917609479],
+        [1.05315451703, 0.718584385367, 0.185098145457],
+        [0.110022539127, 2.12282472908, 0.767980152035],
+        [1.01391368028, 1.46060647161, 0.172538114564],
+        [1.14967160138, 0.382091947887, 0.359917609479],
         [0.755304203266, 0.484833554786, 1.45780607174],
-        [0.871276472033, -0.143186753181, -0.391562221716],
-        [1.4504998766, -1.46002538742, 0.176054388245],
-        [0.0475175253581, -0.0124053824983, 0.839016925593],
-        [-1.49997568438, -0.424100741707, 0.873922164513],
-        [-0.469077055039, -0.222382249017, 1.05446101882],
-        [-0.250843812691, 1.70255685948, 0.367081938199],
-        [0.779788091612, -0.534183374808, 0.845266167632],
-        [1.96668468564, 1.21420194107, -0.679016878896],
-        [-1.14222874548, 1.60752422957, -0.759153421009],
-        [2.71462022507, 0.0845003688757, -2.11593571334],
+        [0.871276472033, 0.143186753181, 0.391562221716],
+        [1.4504998766, 1.46002538742, 0.176054388245],
+        [0.0475175253581, 0.0124053824983, 0.839016925593],
+        [1.49997568438, 0.424100741707, 0.873922164513],
+        [0.469077055039, 0.222382249017, 1.05446101882],
+        [0.250843812691, 1.70255685948, 0.367081938199],
+        [0.779788091612, 0.534183374808, 0.845266167632],
+        [1.96668468564, 1.21420194107, 0.679016878896],
+        [1.14222874548, 1.60752422957, 0.759153421009],
+        [2.71462022507, 0.0845003688757, 2.11593571334],
     ])
     self._numerator_predicate = np.array([
         False, True, True, True, False, False, False, True, False, True, False,
@@ -178,8 +178,9 @@ class TermTest(tf.test.TestCase):
 
     numerator_predicate = helpers.Predicate(numerator_predicate_placeholder)
     denominator_predicate = helpers.Predicate(denominator_predicate_placeholder)
-    ratio_weights = term._RatioWeights.ratio(
-        weights_placeholder, numerator_predicate, denominator_predicate)
+    ratio_weights = term._RatioWeights.ratio(weights_placeholder,
+                                             numerator_predicate,
+                                             denominator_predicate)
     actual_weights_tensor, pre_train_ops, _ = ratio_weights.evaluate(
         evaluation_context)
 
@@ -194,8 +195,8 @@ class TermTest(tf.test.TestCase):
         size = end_index - begin_index
 
         weights_subarray = self._weights[begin_index:end_index, 0]
-        numerator_predicate_subarray = self._numerator_predicate[begin_index:
-                                                                 end_index]
+        numerator_predicate_subarray = self._numerator_predicate[
+            begin_index:end_index]
         denominator_predicate_subarray = self._denominator_predicate[
             begin_index:end_index]
 
@@ -281,10 +282,12 @@ class TermTest(tf.test.TestCase):
     numerator2_predicate = helpers.Predicate(numerator2_tensor)
     denominator_predicate = helpers.Predicate(True)
 
-    ratio_weights1 = term._RatioWeights.ratio(
-        weights_tensor, numerator1_predicate, denominator_predicate)
-    ratio_weights2 = term._RatioWeights.ratio(
-        weights_tensor, numerator2_predicate, denominator_predicate)
+    ratio_weights1 = term._RatioWeights.ratio(weights_tensor,
+                                              numerator1_predicate,
+                                              denominator_predicate)
+    ratio_weights2 = term._RatioWeights.ratio(weights_tensor,
+                                              numerator2_predicate,
+                                              denominator_predicate)
     result1, pre_train_ops1, restart_ops1 = ratio_weights1.evaluate(
         evaluation_context)
     result2, pre_train_ops2, restart_ops2 = ratio_weights2.evaluate(
@@ -303,8 +306,9 @@ class TermTest(tf.test.TestCase):
     evaluation_context = term.Term.EvaluationContext(denominator_lower_bound,
                                                      global_step)
 
-    def numpy_binary_classification_loss(
-        positive_weights_array, negative_weights_array, predictions_array):
+    def numpy_binary_classification_loss(positive_weights_array,
+                                         negative_weights_array,
+                                         predictions_array):
       constant_weights = np.minimum(positive_weights_array,
                                     negative_weights_array)
       positive_weights = positive_weights_array - constant_weights
@@ -314,17 +318,19 @@ class TermTest(tf.test.TestCase):
       return np.mean(constant_weights + positive_weights * positive_losses +
                      negative_weights * negative_losses)
 
-    def create_binary_classification_term(
-        predictions_tensor, positive_weights_tensor, negative_weights_tensor):
+    def create_binary_classification_term(predictions_tensor,
+                                          positive_weights_tensor,
+                                          negative_weights_tensor):
       positive_ratio_weights = term._RatioWeights.ratio(positive_weights_tensor,
                                                         helpers.Predicate(True),
                                                         helpers.Predicate(True))
       negative_ratio_weights = term._RatioWeights.ratio(negative_weights_tensor,
                                                         helpers.Predicate(True),
                                                         helpers.Predicate(True))
-      return term.BinaryClassificationTerm(
-          predictions_tensor, positive_ratio_weights, negative_ratio_weights,
-          loss.HingeLoss())
+      return term.BinaryClassificationTerm(predictions_tensor,
+                                           positive_ratio_weights,
+                                           negative_ratio_weights,
+                                           loss.HingeLoss())
 
     # Randomly construct arrays of predictions and weights.
     predictions_tensor = tf.constant(self._predictions, dtype=tf.float32)
@@ -340,19 +346,22 @@ class TermTest(tf.test.TestCase):
     term_objects = []
     for positive_weights_tensor, negative_weights_tensor in zip(
         positive_weights_tensors, negative_weights_tensors):
-      term_object = create_binary_classification_term(
-          predictions_tensor, positive_weights_tensor, negative_weights_tensor)
+      term_object = create_binary_classification_term(predictions_tensor,
+                                                      positive_weights_tensor,
+                                                      negative_weights_tensor)
       term_objects.append(term_object)
 
     # We only check one particular expression, but all operations are exercised.
     term_object = (-term_objects[0] + 0.3 * term_objects[1] -
                    term_objects[2] / 3.1 + term_objects[0] * 0.5)
-    expected_positive_weights = (
-        -self._positive_weights[:, 0] + 0.3 * self._positive_weights[:, 1] -
-        self._positive_weights[:, 2] / 3.1 + self._positive_weights[:, 0] * 0.5)
-    expected_negative_weights = (
-        -self._negative_weights[:, 0] + 0.3 * self._negative_weights[:, 1] -
-        self._negative_weights[:, 2] / 3.1 + self._negative_weights[:, 0] * 0.5)
+    expected_positive_weights = (-self._positive_weights[:, 0] +
+                                 0.3 * self._positive_weights[:, 1] -
+                                 self._positive_weights[:, 2] / 3.1 +
+                                 self._positive_weights[:, 0] * 0.5)
+    expected_negative_weights = (-self._negative_weights[:, 0] +
+                                 0.3 * self._negative_weights[:, 1] -
+                                 self._negative_weights[:, 2] / 3.1 +
+                                 self._negative_weights[:, 0] * 0.5)
     expected_value = numpy_binary_classification_loss(
         expected_positive_weights, expected_negative_weights, self._predictions)
 
