@@ -837,17 +837,16 @@ def _roc_auc(context,
     penalty_average_tpr_terms.append(penalty_tpr_term / bins)
     constraint_average_tpr_terms.append(constraint_tpr_term / bins)
 
-    # We wrap tf.stop_gradient() around the predictions because we want to
-    # adjust the thresholds, and only the thresholds, to satisfy the false
-    # positive rate constraints.
+    # The original version of this code wraped tf.stop_gradient() around the
+    # predictions, because we wanted to adjust the thresholds, and only the
+    # thresholds, to satisfy the false positive rate constraints. However, we
+    # found that this hurt performance, so it was removed.
     penalty_fpr_term = term.BinaryClassificationTerm.ratio(
-        1.0, 0.0,
-        tf.stop_gradient(raw_context.penalty_predictions) - threshold,
+        1.0, 0.0, raw_context.penalty_predictions - threshold,
         raw_context.penalty_weights, negative_context.penalty_predicate,
         negative_context.penalty_predicate, penalty_loss)
     constraint_fpr_term = term.BinaryClassificationTerm.ratio(
-        1.0, 0.0,
-        tf.stop_gradient(raw_context.constraint_predictions) - threshold,
+        1.0, 0.0, raw_context.constraint_predictions - threshold,
         raw_context.constraint_weights, negative_context.constraint_predicate,
         negative_context.constraint_predicate, constraint_loss)
 
