@@ -66,7 +66,6 @@ py_library(
     srcs = ["basic_expression.py"],
     srcs_version = "PY2AND3",
     deps = [
-        ":term",
         # tensorflow dep,
     ],
 )
@@ -111,7 +110,6 @@ py_library(
     srcs = ["rate_minimization_problem.py"],
     srcs_version = "PY2AND3",
     deps = [
-        ":basic_expression",
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:constrained_minimization_problem",
     ],
@@ -195,7 +193,6 @@ py_test(
     srcs = ["binary_rates_test.py"],
     srcs_version = "PY2AND3",
     deps = [
-        ":basic_expression",
         ":binary_rates",
         ":subsettable_context",
         # numpy dep,
@@ -209,7 +206,6 @@ py_test(
     srcs = ["operations_test.py"],
     srcs_version = "PY2AND3",
     deps = [
-        ":basic_expression",
         ":operations",
         # tensorflow dep,
     ],

@@ -27,6 +27,9 @@ from tensorflow_constrained_optimization.python.rates import helpers
 from tensorflow_constrained_optimization.python.rates import loss
 from tensorflow_constrained_optimization.python.rates import term
 
+_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
+_GLOBAL_STEP_KEY = "global_step"
+
 
 class TermTest(tf.test.TestCase):
   """Tests for `_RatioWeights` and `Term` classes."""
@@ -149,14 +152,14 @@ class TermTest(tf.test.TestCase):
 
   def test_ratio_weights_zero(self):
     """Tests `_RatioWeights` with all-zero weights class method."""
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = term._RatioWeights.EvaluationContext(
-        denominator_lower_bound, global_step)
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     ratio_weights = term._RatioWeights(tf.float32, {})
     actual_weights_tensor, pre_train_ops, restart_ops = ratio_weights.evaluate(
-        evaluation_context)
+        memoizer)
     self.assertEqual(0, len(pre_train_ops))
     self.assertEqual(0, len(restart_ops))
 
@@ -171,18 +174,17 @@ class TermTest(tf.test.TestCase):
     weights_placeholder = tf.placeholder(tf.float32, shape=(None,))
     numerator_predicate_placeholder = tf.placeholder(tf.bool, shape=(None,))
     denominator_predicate_placeholder = tf.placeholder(tf.bool, shape=(None,))
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = term._RatioWeights.EvaluationContext(
-        denominator_lower_bound, global_step)
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     numerator_predicate = helpers.Predicate(numerator_predicate_placeholder)
     denominator_predicate = helpers.Predicate(denominator_predicate_placeholder)
     ratio_weights = term._RatioWeights.ratio(weights_placeholder,
                                              numerator_predicate,
                                              denominator_predicate)
-    actual_weights_tensor, pre_train_ops, _ = ratio_weights.evaluate(
-        evaluation_context)
+    actual_weights_tensor, pre_train_ops, _ = ratio_weights.evaluate(memoizer)
 
     with self.session() as session:
       session.run(tf.global_variables_initializer())
@@ -233,14 +235,14 @@ class TermTest(tf.test.TestCase):
 
         self.assertAllClose(expected_weights, actual_weights, rtol=0, atol=1e-6)
 
-        session.run(tf.assign(global_step, global_step + 1))
+        session.run(memoizer[_GLOBAL_STEP_KEY].assign_add(1))
 
   def test_ratio_weights_arithmetic(self):
     """Tests `_RatioWeights`'s arithmetic operators."""
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = term._RatioWeights.EvaluationContext(
-        denominator_lower_bound, global_step)
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     def create_ratio_weights(weights_tensor):
       return term._RatioWeights.ratio(weights_tensor, helpers.Predicate(True),
@@ -260,7 +262,7 @@ class TermTest(tf.test.TestCase):
     expected_weights = (-self._weights[:, 0] + 0.3 * self._weights[:, 1] -
                         self._weights[:, 2] / 3.1 + self._weights[:, 0] * 0.5)
 
-    actual_weights_tensor, _, _ = ratio_weights.evaluate(evaluation_context)
+    actual_weights_tensor, _, _ = ratio_weights.evaluate(memoizer)
 
     with self.session() as session:
       session.run(tf.global_variables_initializer())
@@ -268,12 +270,12 @@ class TermTest(tf.test.TestCase):
       actual_weights = session.run(actual_weights_tensor)
       self.assertAllClose(expected_weights, actual_weights, rtol=0, atol=1e-6)
 
-  def test_ratio_weights_evaluation_context(self):
-    """Tests `_RatioWeights.EvaluationContext`'s caching."""
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = term._RatioWeights.EvaluationContext(
-        denominator_lower_bound, global_step)
+  def test_ratio_weights_memoizer(self):
+    """Tests memoization."""
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     weights_tensor = tf.constant([0.5, 0.1, 1.0], dtype=tf.float32)
     numerator1_tensor = tf.constant([True, False, True], dtype=tf.bool)
@@ -288,10 +290,8 @@ class TermTest(tf.test.TestCase):
     ratio_weights2 = term._RatioWeights.ratio(weights_tensor,
                                               numerator2_predicate,
                                               denominator_predicate)
-    result1, pre_train_ops1, restart_ops1 = ratio_weights1.evaluate(
-        evaluation_context)
-    result2, pre_train_ops2, restart_ops2 = ratio_weights2.evaluate(
-        evaluation_context)
+    result1, pre_train_ops1, restart_ops1 = ratio_weights1.evaluate(memoizer)
+    result2, pre_train_ops2, restart_ops2 = ratio_weights2.evaluate(memoizer)
 
     # The numerators differ, so the results should be different, but the
     # weights and denominators match, so the ops should be the same.
@@ -301,10 +301,10 @@ class TermTest(tf.test.TestCase):
 
   def test_binary_classification_term(self):
     """Tests `BinaryClassificationTerm`."""
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = term.Term.EvaluationContext(denominator_lower_bound,
-                                                     global_step)
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     def numpy_binary_classification_loss(positive_weights_array,
                                          negative_weights_array,
@@ -365,7 +365,7 @@ class TermTest(tf.test.TestCase):
     expected_value = numpy_binary_classification_loss(
         expected_positive_weights, expected_negative_weights, self._predictions)
 
-    actual_value_tensor, _, _ = term_object.evaluate(evaluation_context)
+    actual_value_tensor, _, _ = term_object.evaluate(memoizer)
 
     with self.session() as session:
       session.run(tf.global_variables_initializer())
@@ -374,5 +374,5 @@ class TermTest(tf.test.TestCase):
       self.assertAllClose(expected_value, actual_value, rtol=0, atol=1e-6)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   tf.test.main()

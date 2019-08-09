@@ -57,6 +57,9 @@ import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import helpers
 
+_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
+_GLOBAL_STEP_KEY = "global_step"
+
 
 class _RatioWeights(object):
   """Object representing a `Tensor` of example weights for a ratio or ratios.
@@ -88,158 +91,6 @@ class _RatioWeights(object):
         / (mean_i weights_k[i] 1{i in denominator_subset_k})
   where c_k is the coefficient of the kth element of the linear combination.
   """
-
-  class EvaluationContext(object):
-    """Evaluation context for `_RatioWeights` class.
-
-    A rate constraints problem is constructed as an objective function and set
-    of constraints, all of which are represented as `Expression`s, each of which
-    contains two `BasicExpression`s, each of which is a linear combination of
-    `Term`s. Often, the same `Term` will be included in multiple
-    `BasicExpression`s, which normally would result in the construction of a
-    TensorFlow graph with a lot of redundant calculations.
-
-    We would prefer the more expensive parts of the graph to be shared when they
-    occur multiple times. To accomplish this, we use an `EvaluationContext`,
-    which remembers (some) `Variable`s and `Operation`s that have already been
-    created, and re-uses them, instead of recreating them each time they're
-    needed.
-
-    In the specific case of the `_RatioWeights.EvaluationContext`, the memoized
-    quantities are the denominators of the ratios.
-    """
-
-    def __init__(self, denominator_lower_bound, global_step):
-      """Constructs a new `EvaluationContext`.
-
-      Args:
-        denominator_lower_bound: float, smallest allowed value of the
-          denominator of a ratio.
-        global_step: `Tensor`, the number of iterations that have been performed
-          so far (starting at zero).
-      """
-      self._denominator_lower_bound = denominator_lower_bound
-      self._global_step = global_step
-      self._denominators = {}
-
-    def evaluate_denominator(self, denominator):
-      """Evaluates the denominator portion of a ratio.
-
-      Recall that a `_RatioWeights` object is responsible for computing:
-        ratio_weights[j] = weights[j] 1{j in numerator_subset}
-            / (mean_i weights[i] 1{i in denominator_subset})
-      This method returns (an approximation of) the denominator portion of this
-      ratio. The numerator is calculated in the `_RatioWeights`.evaluate method.
-
-      The implementation is complicated by the fact that, although the
-      denominators of our ratios should evaluate to "the average weight of the
-      examples included in the ratio's denominator", we don't have access to the
-      entire dataset (instead, we will typically just get a sequence of
-      minibatches). Hence, we can't compute the average weight across the entire
-      dataset directly. Instead, we keep running sums of the total weight of
-      examples included in the denominator, and the number of examples seen, and
-      update them before each minibatch (in the set of `Operation`s returned by
-      this method).
-
-      Args:
-        denominator: (`Tensor`, `Predicate`) pair, the first being the example
-          weights, and the second the predicate indicating which examples are
-          included in the denominator.
-
-      Returns:
-        A (`Tensor`, set, set) tuple containing the (approximate) denominator, a
-        set of `Operation`s that should be executed before each training step
-        (to update the internal state upon which the denominator depends), and a
-        set of `Operation`s that can be executed to re-initialize this state.
-
-      Raises:
-        TypeError: if "weights" is not floating-point.
-        ValueError: if "weights" cannot be converted to a rank-1 `Tensor`.
-      """
-      if denominator not in self._denominators:
-        weights, denominator_predicate = denominator
-        weights = helpers.convert_to_1d_tensor(weights, name="weights")
-        dtype = weights.dtype.base_dtype
-        if not dtype.is_floating:
-          raise TypeError("weights must be floating-point")
-
-        pre_train_ops = set()
-        pre_train_ops.add(
-            tf.assert_non_negative(
-                weights, message="weights must be non-negative"))
-
-        denominator_weights = weights * tf.cast(
-            denominator_predicate.predicate, dtype=dtype)
-
-        # The running_average_sum variable will contain the sum of the weights
-        # included in the denominator that we've seen so far, divided by the
-        # number of minibatches that we've seen so far. Similarly,
-        # running_average_count will contain the average size of the minibatches
-        # we've seen so far. Their ratio will therefore be the sum of the
-        # weights included in the denominator, divided by the number of examples
-        # we've seen so far. The reason for dividing both quantities by the
-        # number of minibatches is to prevent them from growing without bound
-        # during training.
-        #
-        # We use double precision arithmetic for the running sums because we
-        # don't want numerical errors to ruin our estimates if we perform a very
-        # large number of iterations.
-        running_dtype = tf.float64
-        running_average_sum = tf.Variable(
-            1.0,
-            trainable=False,
-            dtype=running_dtype,
-            name="running_average_sum")
-        running_average_count = tf.Variable(
-            1.0,
-            trainable=False,
-            dtype=running_dtype,
-            name="running_average_count")
-
-        # To restart the denominator calculations, we set the two running
-        # averages to their initial values.
-        restart_ops = set([
-            tf.assign(running_average_sum, 1.0),
-            tf.assign(running_average_count, 1.0)
-        ])
-
-        # We take convex combinations (with parameter running_proportion) to
-        # make sure that both running_average_sum and running_average_count are
-        # divided by the number of minibatches, as explained above.
-        running_proportion = 1.0 / (
-            tf.maximum(tf.cast(self._global_step, dtype=running_dtype), 0.0) +
-            1.0)
-        pre_train_ops.add(
-            tf.assign(
-                running_average_sum,
-                running_average_sum * (1.0 - running_proportion) + tf.cast(
-                    tf.reduce_sum(denominator_weights), dtype=running_dtype) *
-                running_proportion))
-        pre_train_ops.add(
-            tf.assign(
-                running_average_count,
-                running_average_count * (1.0 - running_proportion) +
-                tf.cast(tf.size(denominator_weights), dtype=running_dtype) *
-                running_proportion))
-
-        # This code calculates max(denominator_lower_bound, running_average_sum
-        # / running_average_count) safely, even when running_average_count is
-        # zero (including when running_average_sum is also zero, in which case
-        # the result will be denominator_lower_bound). We use a tf.cond to make
-        # sure that we only perform the division if we know that it will result
-        # in a quantity larger than denominator_lower_bound.
-        running_denominator_lower_bound = tf.cast(
-            self._denominator_lower_bound, dtype=running_dtype)
-        average_denominator_weight = tf.cond(
-            running_average_count * running_denominator_lower_bound <
-            running_average_sum,
-            true_fn=lambda: running_average_sum / running_average_count,
-            false_fn=lambda: running_denominator_lower_bound)
-
-        self._denominators[denominator] = (average_denominator_weight,
-                                           pre_train_ops, restart_ops)
-
-      return self._denominators[denominator]
 
   def __init__(self, dtype, ratios):
     """Creates a new `_RatioWeights` object.
@@ -406,12 +257,137 @@ class _RatioWeights(object):
 
     return _RatioWeights(self._dtype, ratios)
 
-  def evaluate(self, evaluation_context):
+  def _evaluate_denominator(self, denominator, memoizer):
+    """Evaluates the denominator portion of a ratio.
+
+    Recall that a `_RatioWeights` object is responsible for computing:
+      ratio_weights[j] = weights[j] 1{j in numerator_subset}
+          / (mean_i weights[i] 1{i in denominator_subset})
+    This method returns (an approximation of) the denominator portion of this
+    ratio. The numerator is calculated in the `_RatioWeights`.evaluate method.
+
+    The implementation is complicated by the fact that, although the
+    denominators of our ratios should evaluate to "the average weight of the
+    examples included in the ratio's denominator", we don't have access to the
+    entire dataset (instead, we will typically just get a sequence of
+    minibatches). Hence, we can't compute the average weight across the entire
+    dataset directly. Instead, we keep running sums of the total weight of
+    examples included in the denominator, and the number of examples seen, and
+    update them before each minibatch (in the set of `Operation`s returned by
+    this method).
+
+    Args:
+      denominator: (`Tensor`, `Predicate`) pair, the first being the example
+        weights, and the second the predicate indicating which examples are
+        included in the denominator.
+      memoizer: dict, which memoizes portions of the calculation to simplify the
+        resulting TensorFlow graph. It must contain the keys
+        "denominator_lower_bound" and "global_step", with the corresponding
+        values being the minimum allowed value of a rate denominator (a python
+        float), and the current iterate (starting at zero), respectively.
+
+    Returns:
+      A (`Tensor`, set, set) tuple containing the (approximate) denominator, a
+      set of `Operation`s that should be executed before each training step
+      (to update the internal state upon which the denominator depends), and a
+      set of `Operation`s that can be executed to re-initialize this state.
+
+    Raises:
+      TypeError: if "weights" is not floating-point.
+      ValueError: if "weights" cannot be converted to a rank-1 `Tensor`.
+    """
+    key = (_RatioWeights, denominator)
+    if key not in memoizer:
+      weights, denominator_predicate = denominator
+      weights = helpers.convert_to_1d_tensor(weights, name="weights")
+      dtype = weights.dtype.base_dtype
+      if not dtype.is_floating:
+        raise TypeError("weights must be floating-point")
+
+      pre_train_ops = set()
+      pre_train_ops.add(
+          tf.assert_non_negative(
+              weights, message="weights must be non-negative"))
+
+      denominator_weights = weights * tf.cast(
+          denominator_predicate.predicate, dtype=dtype)
+
+      # The running_average_sum variable will contain the sum of the weights
+      # included in the denominator that we've seen so far, divided by the
+      # number of minibatches that we've seen so far. Similarly,
+      # running_average_count will contain the average size of the minibatches
+      # we've seen so far. Their ratio will therefore be the sum of the
+      # weights included in the denominator, divided by the number of examples
+      # we've seen so far. The reason for dividing both quantities by the
+      # number of minibatches is to prevent them from growing without bound
+      # during training.
+      #
+      # We use double precision arithmetic for the running sums because we
+      # don't want numerical errors to ruin our estimates if we perform a very
+      # large number of iterations.
+      running_dtype = tf.float64
+      running_average_sum = tf.Variable(
+          1.0, trainable=False, dtype=running_dtype, name="running_average_sum")
+      running_average_count = tf.Variable(
+          1.0,
+          trainable=False,
+          dtype=running_dtype,
+          name="running_average_count")
+
+      # To restart the denominator calculations, we set the two running
+      # averages to their initial values.
+      restart_ops = set([
+          tf.assign(running_average_sum, 1.0),
+          tf.assign(running_average_count, 1.0)
+      ])
+
+      # We take convex combinations (with parameter running_proportion) to
+      # make sure that both running_average_sum and running_average_count are
+      # divided by the number of minibatches, as explained above.
+      running_proportion = 1.0 / (
+          tf.maximum(
+              tf.cast(memoizer[_GLOBAL_STEP_KEY], dtype=running_dtype), 0.0) +
+          1.0)
+      pre_train_ops.add(
+          tf.assign(
+              running_average_sum,
+              running_average_sum * (1.0 - running_proportion) +
+              tf.cast(tf.reduce_sum(denominator_weights), dtype=running_dtype) *
+              running_proportion))
+      pre_train_ops.add(
+          tf.assign(
+              running_average_count,
+              running_average_count * (1.0 - running_proportion) +
+              tf.cast(tf.size(denominator_weights), dtype=running_dtype) *
+              running_proportion))
+
+      # This code calculates max(denominator_lower_bound, running_average_sum
+      # / running_average_count) safely, even when running_average_count is
+      # zero (including when running_average_sum is also zero, in which case
+      # the result will be denominator_lower_bound). We use a tf.cond to make
+      # sure that we only perform the division if we know that it will result
+      # in a quantity larger than denominator_lower_bound.
+      running_denominator_lower_bound = tf.cast(
+          memoizer[_DENOMINATOR_LOWER_BOUND_KEY], dtype=running_dtype)
+      average_denominator_weight = tf.cond(
+          running_average_count * running_denominator_lower_bound <
+          running_average_sum,
+          true_fn=lambda: running_average_sum / running_average_count,
+          false_fn=lambda: running_denominator_lower_bound)
+
+      memoizer[key] = (average_denominator_weight, pre_train_ops, restart_ops)
+
+    return memoizer[key]
+
+  def evaluate(self, memoizer):
     """Computes and returns the `Tensor` of ratio weights.
 
     Args:
-      evaluation_context: `_RatioWeights.EvaluationContext`, which memoizes
-        portions of the calculation to simplify the resulting TensorFlow graph.
+      memoizer: dict, which memoizes portions of the calculation to simplify the
+        resulting TensorFlow graph. It must contain the keys
+        "denominator_lower_bound" and "global_step", with the corresponding
+        values being the minimum allowed value of a rate denominator (a python
+        float), and the current iterate (starting at zero), respectively.
 
     Returns:
       A (`Tensor`, set) tuple containing the weights associated with each
@@ -425,8 +401,9 @@ class _RatioWeights(object):
     restart_ops = set()
 
     for denominator, numerator in six.iteritems(self._ratios):
-      denominator_value, denominator_pre_train_ops, denominator_restart_ops = (
-          evaluation_context.evaluate_denominator(denominator))
+      (denominator_value, denominator_pre_train_ops,
+       denominator_restart_ops) = self._evaluate_denominator(
+           denominator, memoizer)
       # The numerator should already be the correct dtype--this cast just makes
       # extra sure.
       value += tf.cast(
@@ -457,28 +434,6 @@ class Term(object):
   `BasicExpression` class stores its terms in a dictionary with its keys being
   the results of the `Term`.key method.
   """
-
-  # In the future, we might want Term to have its own EvaluationContexts, so
-  # that Terms can perform their own memoization. At the moment, however, only
-  # _RatioWeights creates variables and operations, and therefore needs an
-  # EvaluationContext, so Term just grabs its EvaluationContext from
-  # _RatioWeights.
-  class EvaluationContext(_RatioWeights.EvaluationContext):
-    """Evaluation context for `Term` class.
-
-    A rate constraints problem is constructed as an objective function and set
-    of constraints, all of which are represented as `Expression`s, each of which
-    contains two `BasicExpression`s, each of which is a linear combination of
-    `Term`s. Often, the same `Term` will be included in multiple
-    `BasicExpression`s, which normally would result in the construction of a
-    TensorFlow graph with a lot of redundant calculations.
-
-    We would prefer the more expensive parts of the graph to be shared when they
-    occur multiple times. To accomplish this, we use an `EvaluationContext`,
-    which remembers (some) `Variable`s and `Operation`s that have already been
-    created, and re-uses them, instead of recreating them each time they're
-    needed.
-    """
 
   @abc.abstractproperty
   def dtype(self):
@@ -554,12 +509,15 @@ class Term(object):
     """
 
   @abc.abstractmethod
-  def evaluate(self, evaluation_context):
+  def evaluate(self, memoizer):
     """Computes and returns the value of this `Term`.
 
     Args:
-      evaluation_context: `Term.EvaluationContext`, which memoizes portions of
-        the calculation to simplify the resulting TensorFlow graph.
+      memoizer: dict, which memoizes portions of the calculation to simplify the
+        resulting TensorFlow graph. It must contain the keys
+        "denominator_lower_bound" and "global_step", with the corresponding
+        values being the minimum allowed value of a rate denominator (a python
+        float), and the current iterate (starting at zero), respectively.
 
     Returns:
       A (`Tensor`, set, set) tuple containing the value of this `Term`, a set of
@@ -897,12 +855,15 @@ class BinaryClassificationTerm(Term):
         self._positive_ratio_weights - other.positive_ratio_weights,
         self._negative_ratio_weights - other.negative_ratio_weights, self._loss)
 
-  def evaluate(self, evaluation_context):
+  def evaluate(self, memoizer):
     """Computes and returns the value of this `BinaryClassificationTerm`.
 
     Args:
-      evaluation_context: `Term.EvaluationContext`, which memoizes portions of
-        the calculation to simplify the resulting TensorFlow graph.
+      memoizer: dict, which memoizes portions of the calculation to simplify the
+        resulting TensorFlow graph. It must contain the keys
+        "denominator_lower_bound" and "global_step", with the corresponding
+        values being the minimum allowed value of a rate denominator (a python
+        float), and the current iterate (starting at zero), respectively.
 
     Returns:
       A (`Tensor`, set, set) tuple containing the value of this
@@ -916,9 +877,9 @@ class BinaryClassificationTerm(Term):
 
     # Evalaute the weights on the positive and negative approximate indicators.
     positive_weights, positive_pre_train_ops, positive_restart_ops = (
-        self._positive_ratio_weights.evaluate(evaluation_context))
+        self._positive_ratio_weights.evaluate(memoizer))
     negative_weights, negative_pre_train_ops, negative_restart_ops = (
-        self._negative_ratio_weights.evaluate(evaluation_context))
+        self._negative_ratio_weights.evaluate(memoizer))
     pre_train_ops.update(positive_pre_train_ops)
     pre_train_ops.update(negative_pre_train_ops)
     restart_ops.update(positive_restart_ops)

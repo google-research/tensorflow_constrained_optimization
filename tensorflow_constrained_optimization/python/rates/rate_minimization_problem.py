@@ -65,7 +65,8 @@ from __future__ import print_function
 import tensorflow as tf
 from tensorflow_constrained_optimization.python import constrained_minimization_problem
 
-from tensorflow_constrained_optimization.python.rates import basic_expression
+_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
+_GLOBAL_STEP_KEY = "global_step"
 
 
 class RateMinimizationProblem(
@@ -141,16 +142,18 @@ class RateMinimizationProblem(
     global_step = tf.Variable(
         0, trainable=False, dtype=tf.int64, name="global_step")
 
-    # This evaluation context will remember and re-use certain intermediate
-    # values, causing the TensorFlow graph we construct to contain fewer
-    # redundancies than it would otherwise.
-    evaluation_context = basic_expression.BasicExpression.EvaluationContext(
-        denominator_lower_bound, global_step)
+    # This memoizer will remember and re-use certain intermediate values,
+    # causing the TensorFlow graph we construct to contain fewer redundancies
+    # than it would otherwise.
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: denominator_lower_bound,
+        _GLOBAL_STEP_KEY: global_step
+    }
 
     # We ignore the "constraint_expression" field here, since we're not inside a
     # constraint (this is the objective function).
     self._objective, pre_train_ops, restart_ops = (
-        objective.penalty_expression.evaluate(evaluation_context))
+        objective.penalty_expression.evaluate(memoizer))
     constraints.update(objective.extra_constraints)
 
     # Evaluating expressions can result in extra constraints being introduced,
@@ -168,11 +171,9 @@ class RateMinimizationProblem(
           raise ValueError("non-differentiable losses (e.g. the zero-one loss) "
                            "cannot be optimized--they can only be constrained")
         penalty_value, penalty_pre_train_ops, penalty_restart_ops = (
-            constraint.expression.penalty_expression.evaluate(
-                evaluation_context))
+            constraint.expression.penalty_expression.evaluate(memoizer))
         constraint_value, constraint_pre_train_ops, constraint_restart_ops = (
-            constraint.expression.constraint_expression.evaluate(
-                evaluation_context))
+            constraint.expression.constraint_expression.evaluate(memoizer))
         penalty_values.append(penalty_value)
         constraint_values.append(constraint_value)
         pre_train_ops.update(penalty_pre_train_ops)

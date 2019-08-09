@@ -28,6 +28,9 @@ from tensorflow_constrained_optimization.python.rates import helpers
 from tensorflow_constrained_optimization.python.rates import loss
 from tensorflow_constrained_optimization.python.rates import term
 
+_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
+_GLOBAL_STEP_KEY = "global_step"
+
 
 class BasicExpressionTest(tf.test.TestCase):
   """Tests for `BasicExpression` class."""
@@ -112,10 +115,10 @@ class BasicExpressionTest(tf.test.TestCase):
     """Tests `BasicExpression`'s arithmetic operators."""
     # We need a _RatioWeights evaluation context, instead of a BasicExpression
     # one, since we'll be evaluating _RatioWeights objects directly.
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = term._RatioWeights.EvaluationContext(
-        denominator_lower_bound, global_step)
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     positive_coefficients = np.array([1.0, 0.5, 0.0], dtype=np.float32)
     negative_coefficients = np.array([0.0, 0.5, 1.0], dtype=np.float32)
@@ -169,13 +172,13 @@ class BasicExpressionTest(tf.test.TestCase):
 
     # Ignore the pre_train_ops--we'll just check the values of the weights.
     actual_zero_one_positive_weights, _, _ = (
-        zero_one_term.positive_ratio_weights.evaluate(evaluation_context))
+        zero_one_term.positive_ratio_weights.evaluate(memoizer))
     actual_zero_one_negative_weights, _, _ = (
-        zero_one_term.negative_ratio_weights.evaluate(evaluation_context))
+        zero_one_term.negative_ratio_weights.evaluate(memoizer))
     actual_hinge_positive_weights, _, _ = (
-        hinge_term.positive_ratio_weights.evaluate(evaluation_context))
+        hinge_term.positive_ratio_weights.evaluate(memoizer))
     actual_hinge_negative_weights, _, _ = (
-        hinge_term.negative_ratio_weights.evaluate(evaluation_context))
+        hinge_term.negative_ratio_weights.evaluate(memoizer))
 
     with self.session() as session:
       session.run(

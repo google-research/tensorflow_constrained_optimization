@@ -49,8 +49,6 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from tensorflow_constrained_optimization.python.rates import term
-
 
 class BasicExpression(object):
   """Object representing a linear combination of `Term`s and `Tensor`s.
@@ -67,28 +65,6 @@ class BasicExpression(object):
   that, unlike `Tensor`s, two `Term`s can only be added or subtracted if they're
   "compatible" (which is a notion defined by the `Term` itself).
   """
-
-  # In the future, we might want BasicExpression to have its own
-  # EvaluationContexts, so that BasicExpressions can perform their own
-  # memoization. At the moment, however, only _RatioWeights creates variables
-  # and operations, and therefore needs an EvaluationContext, so BasicExpression
-  # just grabs its EvaluationContext from Term.
-  class EvaluationContext(term.Term.EvaluationContext):
-    """Evaluation context for `BasicExpression` class.
-
-    A rate constraints problem is constructed as an objective function and set
-    of constraints, all of which are represented as `Expression`s, each of which
-    contains two `BasicExpression`s, each of which is a linear combination of
-    `Term`s. Often, the same `Term` will be included in multiple
-    `BasicExpression`s, which normally would result in the construction of a
-    TensorFlow graph with a lot of redundant calculations.
-
-    We would prefer the more expensive parts of the graph to be shared when they
-    occur multiple times. To accomplish this, we use an `EvaluationContext`,
-    which remembers (some) `Variable`s and `Operation`s that have already been
-    created, and re-uses them, instead of recreating them each time they're
-    needed.
-    """
 
   def _add_terms(self, source):
     """Adds a list of `Term`s to this `BasicExpression` (in place).
@@ -281,12 +257,15 @@ class BasicExpression(object):
     """Returns the result of subtracting two `BasicExpression`s."""
     return self.__neg__().__add__(other)
 
-  def evaluate(self, evaluation_context):
+  def evaluate(self, memoizer):
     """Computes and returns the value of this `BasicExpression`.
 
     Args:
-      evaluation_context: `BasicExpression.EvaluationContext`, which memoizes
-        portions of the calculation to simplify the resulting TensorFlow graph.
+      memoizer: dict, which memoizes portions of the calculation to simplify the
+        resulting TensorFlow graph. It must contain the keys
+        "denominator_lower_bound" and "global_step", with the corresponding
+        values being the minimum allowed value of a rate denominator (a python
+        float), and the current iterate (starting at zero), respectively.
 
     Returns:
       A (`Tensor`, set, set) tuple containing the value of this
@@ -299,8 +278,7 @@ class BasicExpression(object):
     pre_train_ops = set()
     restart_ops = set()
     for tt in self._terms.values():
-      tt_value, tt_pre_train_ops, tt_restart_ops = tt.evaluate(
-          evaluation_context)
+      tt_value, tt_pre_train_ops, tt_restart_ops = tt.evaluate(memoizer)
       value += tt_value
       pre_train_ops.update(tt_pre_train_ops)
       restart_ops.update(tt_restart_ops)

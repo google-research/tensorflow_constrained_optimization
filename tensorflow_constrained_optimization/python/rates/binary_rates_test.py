@@ -24,9 +24,11 @@ import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import binary_rates
 from tensorflow_constrained_optimization.python.rates import subsettable_context
+
+_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
+_GLOBAL_STEP_KEY = "global_step"
 
 
 class RatesTest(tf.test.TestCase):
@@ -110,15 +112,15 @@ class RatesTest(tf.test.TestCase):
 
   def _check_rates(self, expected_penalty_value, expected_constraint_value,
                    actual_expression):
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = basic_expression.BasicExpression.EvaluationContext(
-        denominator_lower_bound, global_step)
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     actual_penalty_value, penalty_pre_train_ops, _ = (
-        actual_expression.penalty_expression.evaluate(evaluation_context))
+        actual_expression.penalty_expression.evaluate(memoizer))
     actual_constraint_value, constraint_pre_train_ops, _ = (
-        actual_expression.constraint_expression.evaluate(evaluation_context))
+        actual_expression.constraint_expression.evaluate(memoizer))
 
     with self.session() as session:
       session.run(
@@ -599,10 +601,10 @@ class RatesTest(tf.test.TestCase):
   def test_roc_auc_lower_bound(self):
     """Tests that roc_auc_lower_bound's constraints give correct thresholds."""
     bins = 3
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = basic_expression.BasicExpression.EvaluationContext(
-        denominator_lower_bound, global_step)
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     expression = binary_rates.roc_auc_lower_bound(self._context, bins)
 
@@ -611,8 +613,7 @@ class RatesTest(tf.test.TestCase):
     constraints_tensor = []
     for constraint in expression.extra_constraints:
       constraint_tensor, constraint_pre_train_ops, _ = (
-          constraint.expression.constraint_expression.evaluate(
-              evaluation_context))
+          constraint.expression.constraint_expression.evaluate(memoizer))
       constraints_tensor.append(constraint_tensor)
       pre_train_ops.update(constraint_pre_train_ops)
     self.assertEqual(bins, len(constraints_tensor))
@@ -630,10 +631,10 @@ class RatesTest(tf.test.TestCase):
   def test_roc_auc_upper_bound(self):
     """Tests that roc_auc_upper_bound's constraints give correct thresholds."""
     bins = 4
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = basic_expression.BasicExpression.EvaluationContext(
-        denominator_lower_bound, global_step)
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     expression = binary_rates.roc_auc_upper_bound(self._context, bins)
 
@@ -642,8 +643,7 @@ class RatesTest(tf.test.TestCase):
     constraints_tensor = []
     for constraint in expression.extra_constraints:
       constraint_tensor, constraint_pre_train_ops, _ = (
-          constraint.expression.constraint_expression.evaluate(
-              evaluation_context))
+          constraint.expression.constraint_expression.evaluate(memoizer))
       constraints_tensor.append(constraint_tensor)
       pre_train_ops.update(constraint_pre_train_ops)
     self.assertEqual(bins, len(constraints_tensor))

@@ -24,16 +24,19 @@ import tensorflow as tf
 from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import expression
 
+_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
+_GLOBAL_STEP_KEY = "global_step"
+
 
 class ExpressionTest(tf.test.TestCase):
   """Tests for `Expression` class."""
 
   def test_arithmetic(self):
     """Tests `Expression`'s arithmetic operators."""
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = basic_expression.BasicExpression.EvaluationContext(
-        denominator_lower_bound, global_step)
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     penalty_values = [-3.6, 1.5, 0.4]
     constraint_values = [-0.2, -0.5, 2.3]
@@ -58,9 +61,9 @@ class ExpressionTest(tf.test.TestCase):
         (1.2 + expression_objects[2] - 0.1) * 0.6 + 0.8)
 
     actual_penalty_value, _, _ = expression_object.penalty_expression.evaluate(
-        evaluation_context)
+        memoizer)
     actual_constraint_value, _, _ = (
-        expression_object.constraint_expression.evaluate(evaluation_context))
+        expression_object.constraint_expression.evaluate(memoizer))
 
     # This is the same expression as above, applied directly to the python
     # floats.

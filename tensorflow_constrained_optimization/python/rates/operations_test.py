@@ -21,8 +21,10 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import operations
+
+_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
+_GLOBAL_STEP_KEY = "global_step"
 
 
 class OperationsTest(tf.test.TestCase):
@@ -44,16 +46,16 @@ class OperationsTest(tf.test.TestCase):
     else:
       pre_train_ops = set(pre_train_ops)
 
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = basic_expression.BasicExpression.EvaluationContext(
-        denominator_lower_bound, global_step)
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     penalty_tensor, penalty_pre_train_ops, _ = (
-        expression.penalty_expression.evaluate(evaluation_context))
+        expression.penalty_expression.evaluate(memoizer))
     pre_train_ops |= penalty_pre_train_ops
     constraint_tensor, constraint_pre_train_ops, _ = (
-        expression.constraint_expression.evaluate(evaluation_context))
+        expression.constraint_expression.evaluate(memoizer))
     pre_train_ops |= constraint_pre_train_ops
 
     with self.session() as session:
