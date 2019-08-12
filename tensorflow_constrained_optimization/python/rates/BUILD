@@ -42,6 +42,17 @@ py_library(
 )
 
 py_library(
+    name = "deferred_tensor",
+    srcs = ["deferred_tensor.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        # numpy dep,
+        # six dep,
+        # tensorflow dep,
+    ],
+)
+
+py_library(
     name = "subsettable_context",
     srcs = ["subsettable_context.py"],
     srcs_version = "PY2AND3",
@@ -133,6 +144,17 @@ py_test(
         ":loss",
         # numpy dep,
         # tensorflow dep,
+    ],
+)
+
+py_test(
+    name = "deferred_tensor_test",
+    srcs = ["deferred_tensor_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":deferred_tensor",
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )
 
