@@ -23,6 +23,7 @@ import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import expression
+from tensorflow_constrained_optimization.python.rates import helpers
 
 
 def wrap_rate(penalty_tensor, constraint_tensor=None):
@@ -47,15 +48,16 @@ def wrap_rate(penalty_tensor, constraint_tensor=None):
     TypeError: if wrap_rate() is called on an `Expression`.
   """
   # Ideally, we'd check that "penalty_tensor" and "constraint_tensor" are scalar
-  # Tensors, or are types that can be converted to scalar Tensors.
+  # Tensors, or are types that can be converted to a scalar Tensor.
   # Unfortunately, this includes a lot of possible types, so the easiest
   # solution would be to actually perform the conversion, and then check that
   # the resulting Tensor has only one element. This, however, would add a dummy
   # element to the Tensorflow graph, and wouldn't work for a Tensor with an
-  # unknown size. Hence, we check only the most common failure case (trying to
-  # wrap an Expression).
-  if (isinstance(penalty_tensor, expression.Expression) or
-      isinstance(constraint_tensor, expression.Expression)):
+  # unknown size. Hence, we only check that "penalty_tensor" and
+  # "constraint_tensor" are not types that we know for certain are disallowed:
+  # objects internal to this library.
+  if (isinstance(penalty_tensor, helpers.RateObject) or
+      isinstance(constraint_tensor, helpers.RateObject)):
     raise TypeError("you cannot wrap an object that has already been wrapped")
 
   penalty_expression = basic_expression.BasicExpression(
@@ -100,8 +102,8 @@ def _create_slack_variable(expressions, name):
   dtypes = set(ee.penalty_expression.dtype for ee in expressions)
   dtypes.update(ee.constraint_expression.dtype for ee in expressions)
   if len(dtypes) != 1:
-    raise TypeError(
-        "all Expressions passed to %s must have the same dtype" % name)
+    raise TypeError("all Expressions passed to %s must have the same dtype" %
+                    name)
   dtype = dtypes.pop()
   return tf.Variable(0.0, dtype=dtype, name=name)
 

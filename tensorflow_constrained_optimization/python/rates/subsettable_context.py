@@ -83,7 +83,7 @@ from __future__ import print_function
 from tensorflow_constrained_optimization.python.rates import helpers
 
 
-class _RawContext(object):
+class _RawContext(helpers.RateObject):
   """Helper class containing model predictions, example labels and weights.
 
   Every rate in a rate constraints problem is based on six quantities: the model
@@ -189,7 +189,7 @@ class _RawContext(object):
     return self._constraint_weights
 
 
-class SubsettableContext(object):
+class SubsettableContext(helpers.RateObject):
   """Represents a subset of model predictions, example labels and weights.
 
   Every rate in a rate constraints problem is calculated over a (weighted) set
@@ -414,7 +414,24 @@ def rate_context(predictions, labels=None, weights=1.0):
 
   Returns:
     `SubsettableContext` representing the given predictions, labels and weights.
+
+  Raises:
+    TypeError: if any arguments are internal rate library objects, instead of
+      `Tensor`s or scalars.
   """
+  # Ideally, we'd check that these objects are Tensors, or are types that can be
+  # converted to Tensors. Unfortunately, this includes a lot of possible types,
+  # so the easiest solution would be to actually perform the conversion, and
+  # then check that the resulting Tensor has only one element. This, however,
+  # would add a dummy element to the Tensorflow graph, and wouldn't work for a
+  # Tensor with an unknown size. Hence, we only check that they are not types
+  # that we know for certain are disallowed: objects internal to this library.
+  if (isinstance(predictions, helpers.RateObject) or
+      isinstance(labels, helpers.RateObject) or
+      isinstance(weights, helpers.RateObject)):
+    raise TypeError("parameters to rate_context() should all be Tensors or "
+                    "scalars")
+
   raw_context = _RawContext(
       penalty_predictions=predictions,
       penalty_labels=labels,
@@ -462,7 +479,21 @@ def split_rate_context(penalty_predictions,
 
   Returns:
     `SubsettableContext` representing the given predictions, labels and weights.
+
+  Raises:
+    TypeError: if any arguments are internal rate library objects, instead of
+      `Tensor`s or scalars.
   """
+  # See comment in rate_context.
+  if (isinstance(penalty_predictions, helpers.RateObject) or
+      isinstance(constraint_predictions, helpers.RateObject) or
+      isinstance(penalty_labels, helpers.RateObject) or
+      isinstance(constraint_labels, helpers.RateObject) or
+      isinstance(penalty_weights, helpers.RateObject) or
+      isinstance(constraint_weights, helpers.RateObject)):
+    raise TypeError("parameters to split_rate_context() should all be Tensors "
+                    "or scalars")
+
   raw_context = _RawContext(
       penalty_predictions=penalty_predictions,
       penalty_labels=penalty_labels,

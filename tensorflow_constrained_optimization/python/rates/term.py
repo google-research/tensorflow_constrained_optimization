@@ -61,7 +61,7 @@ _DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
 _GLOBAL_STEP_KEY = "global_step"
 
 
-class _RatioWeights(object):
+class _RatioWeights(helpers.RateObject):
   """Object representing a `Tensor` of example weights for a ratio or ratios.
 
   This is a helper class which is used to find weights for sums of ratios. For
@@ -177,12 +177,12 @@ class _RatioWeights(object):
     # possible types, so the easiest solution would be to actually perform the
     # conversion, and then check that the resulting Tensor has only one element.
     # This, however, would add a dummy element to the Tensorflow graph, and
-    # wouldn't work for a Tensor with an unknown size. Hence, we check only the
-    # most common failure case (multiplication of two _RatioWeights objects).
-    if isinstance(scalar, _RatioWeights):
-      raise TypeError(
-          "_RatioWeights objects only support *scalar* multiplication: you "
-          "cannot multiply two _RatioWeights objects")
+    # wouldn't work for a Tensor with an unknown size. Hence, we only check that
+    # "scalar" is not a type that we know for certain is disallowed: an object
+    # internal to this library.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("_RatioWeights objects only support *scalar* "
+                      "multiplication")
 
     if scalar == 0:
       return _RatioWeights(self._dtype, {})
@@ -198,11 +198,9 @@ class _RatioWeights(object):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing the ratio weights by a scalar."""
-    # We check that "scalar" is not a _RatioWeights object, instead of checking
-    # that it is a scalar, for the same reason as in __mul__.
-    if isinstance(scalar, _RatioWeights):
-      raise TypeError("_RatioWeights objects only support *scalar* division: "
-                      "you cannot divide two _RatioWeights objects")
+    # See comment in __mul__.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("_RatioWeights objects only support *scalar* division")
 
     if scalar == 0:
       raise ValueError("cannot divide by zero")
@@ -419,7 +417,7 @@ class _RatioWeights(object):
 
 
 @six.add_metaclass(abc.ABCMeta)
-class Term(object):
+class Term(helpers.RateObject):
   """Represents a rate term within a rate optimization problem.
 
   `Term`s support several arithmetic operations: addition, subtraction,
@@ -777,11 +775,11 @@ class BinaryClassificationTerm(Term):
     # possible types, so the easiest solution would be to actually perform the
     # conversion, and then check that the resulting Tensor has only one element.
     # This, however, would add a dummy element to the Tensorflow graph, and
-    # wouldn't work for a Tensor with an unknown size. Hence, we check only the
-    # most common failure case (multiplication of two Terms).
-    if isinstance(scalar, Term):
-      raise TypeError("Term objects only support *scalar* multiplication: "
-                      "you cannot multiply two Terms")
+    # wouldn't work for a Tensor with an unknown size. Hence, we only check that
+    # "scalar" is not a type that we know for certain is disallowed: an object
+    # internal to this library.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("Term objects only support *scalar* multiplication")
 
     return BinaryClassificationTerm(self._predictions,
                                     self._positive_ratio_weights * scalar,
@@ -790,11 +788,9 @@ class BinaryClassificationTerm(Term):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    # We check that "scalar" is not a Term, instead of checking that it is a
-    # scalar, for the same reason as in __mul__.
-    if isinstance(scalar, Term):
-      raise TypeError("Term objects only support *scalar* division: you "
-                      "cannot divide two Terms")
+    # See comment in __mul__.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("Term objects only support *scalar* division")
 
     return BinaryClassificationTerm(self._predictions,
                                     self._positive_ratio_weights / scalar,

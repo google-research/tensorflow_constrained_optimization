@@ -23,6 +23,19 @@ import numpy as np
 import tensorflow as tf
 
 
+class RateObject(object):
+  """Empty base class for all rate objects.
+
+  Every class involving the rate helpers will inherit from this one. This
+  enables us to easily check, using isinstance(..., RateObject), whether an
+  object comes from inside or outside of this library. This is especially useful
+  for distinguishing between input types (e.g. `Tensor`s, numpy arrays, scalars,
+  lists, etc.) and internal abstract representations of operations (e.g. `Term`,
+  `BasicExpression`, `Expression`), and thereby ensuring that each class of
+  types is encountered only where it is expected.
+  """
+
+
 def tensors_equal(left, right):
   """Returns true if (but not only if) two objects are equal.
 

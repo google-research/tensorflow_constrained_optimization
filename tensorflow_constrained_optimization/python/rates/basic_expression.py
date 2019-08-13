@@ -49,8 +49,10 @@ from __future__ import print_function
 
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python.rates import helpers
 
-class BasicExpression(object):
+
+class BasicExpression(helpers.RateObject):
   """Object representing a linear combination of `Term`s and `Tensor`s.
 
   The `BasicExpression` object is, along with `Expression`, one of the two core
@@ -193,12 +195,12 @@ class BasicExpression(object):
     # possible types, so the easiest solution would be to actually perform the
     # conversion, and then check that the resulting Tensor has only one element.
     # This, however, would add a dummy element to the Tensorflow graph, and
-    # wouldn't work for a Tensor with an unknown size. Hence, we check only the
-    # most common failure case (multiplication of two BasicExpressions).
-    if isinstance(scalar, BasicExpression):
-      raise TypeError(
-          "BasicExpression objects only support *scalar* "
-          "multiplication: you cannot multiply two BasicExpressions")
+    # wouldn't work for a Tensor with an unknown size. Hence, we only check that
+    # "scalar" is not a type that we know for certain is disallowed: an object
+    # internal to this library.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("BasicExpression objects only support *scalar* "
+                      "multiplication")
     terms = [tt * scalar for tt in self._terms.values()]
     return BasicExpression(terms, self._tensor * scalar)
 
@@ -208,11 +210,9 @@ class BasicExpression(object):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    # We check that "scalar" is not a BasicExpression, instead of checking that
-    # it is a scalar, for the same reason as in __mul__.
-    if isinstance(scalar, BasicExpression):
-      raise TypeError("BasicExpression objects only support *scalar* "
-                      "division: you cannot divide two BasicExpressions")
+    # See comment in __mul__.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("BasicExpression objects only support *scalar* division")
     terms = [tt / scalar for tt in self._terms.values()]
     return BasicExpression(terms, self._tensor / scalar)
 
@@ -234,8 +234,11 @@ class BasicExpression(object):
       result._add_terms(other.terms)
       # pylint: enable=protected-access
       return result
-    else:
+    elif not isinstance(other, helpers.RateObject):
       return BasicExpression(self._terms.values(), self._tensor + other)
+    else:
+      raise TypeError("BasicExpression objects can only be added to each "
+                      "other, or scalars")
 
   def __radd__(self, other):
     """Returns the result of adding two `BasicExpression`s."""
@@ -250,8 +253,11 @@ class BasicExpression(object):
       result._sub_terms(other.terms)
       # pylint: enable=protected-access
       return result
-    else:
+    elif not isinstance(other, helpers.RateObject):
       return BasicExpression(self._terms.values(), self._tensor - other)
+    else:
+      raise TypeError("BasicExpression objects can only be subtracted from "
+                      "each other, or scalars")
 
   def __rsub__(self, other):
     """Returns the result of subtracting two `BasicExpression`s."""

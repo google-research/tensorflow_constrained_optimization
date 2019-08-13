@@ -46,6 +46,7 @@ py_library(
     srcs = ["deferred_tensor.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":helpers",
         # numpy dep,
         # six dep,
         # tensorflow dep,
@@ -77,6 +78,7 @@ py_library(
     srcs = ["basic_expression.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":helpers",
         # tensorflow dep,
     ],
 )
@@ -86,6 +88,7 @@ py_library(
     srcs = ["expression.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":helpers",
         # tensorflow dep,
     ],
 )
@@ -112,6 +115,7 @@ py_library(
     deps = [
         ":basic_expression",
         ":expression",
+        ":helpers",
         # tensorflow dep,
     ],
 )

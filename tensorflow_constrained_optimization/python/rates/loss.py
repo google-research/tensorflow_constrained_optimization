@@ -63,7 +63,7 @@ def _convert_to_binary_classification_predictions(predictions):
 
 
 @six.add_metaclass(abc.ABCMeta)
-class Loss(object):
+class Loss(helpers.RateObject):
   """Abstract base class for losses.
 
   We use `Loss`es as keys in dictionaries (see the Term.key property), so every

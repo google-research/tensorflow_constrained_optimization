@@ -25,9 +25,11 @@ import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python.rates import helpers
+
 
 @six.add_metaclass(abc.ABCMeta)
-class _DeferredTensorState(object):
+class _DeferredTensorState(helpers.RateObject):
   """Base class for internal state of a `DeferredTensor`."""
 
   @abc.abstractmethod
@@ -192,7 +194,7 @@ class _DerivedDeferredTensorState(_DeferredTensorState):
     return hash(self._callback)
 
 
-class DeferredTensor(object):
+class DeferredTensor(helpers.RateObject):
   """Wrapper around `Tensor`-like objects, and functions returning such.
 
   In graph mode, a `Tensor` is an edge in the graph, so it's possible to
@@ -261,9 +263,11 @@ class DeferredTensor(object):
         automatic type promotion on the resulting `DeferredTensor`. Only applies
         if "value" is a `Tensor` or a function returning a `Tensor`:
           non-`Tensor` types are always auto-castable.
+
+    Raises:
+      TypeError: if value is neither a `Tensor`-like object nor a nullary
+        function returning such an object.
     """
-    if isinstance(value, DeferredTensor):
-      raise ValueError("cannot create a DeferredTensor from a DeferredTensor")
     if isinstance(value, _DeferredTensorState):
       # We permit a DeferredTensor to be created from a _DeferredTensorState,
       # but this is for internal use *only* (it's used to create a
@@ -275,10 +279,13 @@ class DeferredTensor(object):
       # If we're given a callable value, then we treat it as a nullary function
       # returning a Tensor-like object.
       self._state = _CallableDeferredTensorState(value, auto_cast)
-    else:
+    elif not isinstance(value, helpers.RateObject):
       # If we're not given a callable value, then we treat it as a Tensor-like
       # object.
       self._state = _StaticDeferredTensorState(value, auto_cast)
+    else:
+      raise TypeError("a DeferredTensor may only be created from a Tensor-like "
+                      "object, or a nullary function returning such")
 
   def __call__(self, memoizer):
     """Returns the value of this `DeferredTensor`.
@@ -324,19 +331,27 @@ class DeferredTensor(object):
     Args:
       callback: an n-ary function mapping `Tensor`-like objects to a
         `Tensor`-like object.
-      *args: the `DeferredTensor`s to evaluate, and pass to the callback.
+      *args: the `DeferredTensor`s or `Tensor`-like objects to evaluate, and
+        pass to the callback.
 
     Returns:
       A new `DeferredTensor` representing the requested function application.
       This is an *abstract* representation: the function application will not
       actually be *performed* until one calls the result.
+
+    Raises:
+      TypeError: if any of the arguments are not `DeferredTensor`s or
+        `Tensor`-like objects.
     """
     deferred_args = []
     for arg in args:
       if isinstance(arg, DeferredTensor):
         deferred_args.append(arg)
-      else:
+      elif not isinstance(arg, helpers.RateObject):
         deferred_args.append(DeferredTensor(arg))
+      else:
+        raise TypeError("apply can only be called on DeferredTensor or "
+                        "Tensor-like arguments")
 
     states = [
         arg._state  # pylint: disable=protected-access
@@ -428,8 +443,10 @@ class DeferredTensor(object):
     return DeferredTensor(_DerivedDeferredTensorState(value_and_auto_cast_fn))
 
   def __eq__(self, other):
-    if not isinstance(other, DeferredTensor):
+    if not isinstance(other, helpers.RateObject):
       other = DeferredTensor(other)
+    elif not isinstance(other, DeferredTensor):
+      return NotImplemented
     return self._state == other._state  # pylint: disable=protected-access
 
   def __ne__(self, other):

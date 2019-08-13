@@ -47,8 +47,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow_constrained_optimization.python.rates import helpers
 
-class Constraint(object):
+
+class Constraint(helpers.RateObject):
   """Represents an inequality constraint.
 
   This class is nothing but a thin wrapper around an `Expression`, and
@@ -65,7 +67,7 @@ class Constraint(object):
     return self._expression
 
 
-class Expression(object):
+class Expression(helpers.RateObject):
   """Represents an expression that can be penalized or constrained.
 
   An `Expression`, like a `BasicExpression`, represents a linear combination of
@@ -174,11 +176,11 @@ class Expression(object):
     # possible types, so the easiest solution would be to actually perform the
     # conversion, and then check that the resulting Tensor has only one element.
     # This, however, would add a dummy element to the Tensorflow graph, and
-    # wouldn't work for a Tensor with an unknown size. Hence, we check only the
-    # most common failure case (multiplication of two Expressions).
-    if isinstance(scalar, Expression):
-      raise TypeError("Expression objects only support *scalar* "
-                      "multiplication: you cannot multiply two Expressions")
+    # wouldn't work for a Tensor with an unknown size. Hence, we only check that
+    # "scalar" is not a type that we know for certain is disallowed: an object
+    # internal to this library.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("Expression objects only support *scalar* multiplication")
     return Expression(self._penalty_expression * scalar,
                       self._constraint_expression * scalar,
                       self._extra_constraints)
@@ -189,11 +191,9 @@ class Expression(object):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    # We check that "scalar" is not an Expression, instead of checking that it
-    # is a scalar, for the same reason as in __mul__.
-    if isinstance(scalar, Expression):
-      raise TypeError("Expression objects only support *scalar* division: you "
-                      "cannot divide two Expressions")
+    # See comment in __mul__.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("Expression objects only support *scalar* division")
     return Expression(self._penalty_expression / scalar,
                       self._constraint_expression / scalar,
                       self._extra_constraints)
@@ -235,10 +235,13 @@ class Expression(object):
           self._penalty_expression + other.penalty_expression,
           self._constraint_expression + other.constraint_expression,
           self._extra_constraints | other.extra_constraints)
-    else:
+    elif not isinstance(other, helpers.RateObject):
       return Expression(self._penalty_expression + other,
                         self._constraint_expression + other,
                         self._extra_constraints)
+    else:
+      raise TypeError("Expression objects can only be added to each other, "
+                      "or scalars")
 
   def __radd__(self, other):
     """Returns the result of adding two `Expression`s."""
@@ -251,10 +254,13 @@ class Expression(object):
           self._penalty_expression - other.penalty_expression,
           self._constraint_expression - other.constraint_expression,
           self._extra_constraints | other.extra_constraints)
-    else:
+    elif not isinstance(other, helpers.RateObject):
       return Expression(self._penalty_expression - other,
                         self._constraint_expression - other,
                         self._extra_constraints)
+    else:
+      raise TypeError("Expression objects can only be subtracted from each "
+                      "other, or scalars")
 
   def __rsub__(self, other):
     """Returns the result of subtracting two `Expression`s."""
