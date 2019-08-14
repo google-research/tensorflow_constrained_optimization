@@ -54,11 +54,22 @@ py_library(
 )
 
 py_library(
+    name = "predicate",
+    srcs = ["predicate.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":helpers",
+        # tensorflow dep,
+    ],
+)
+
+py_library(
     name = "subsettable_context",
     srcs = ["subsettable_context.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":helpers",
+        ":predicate",
     ],
 )
 
@@ -94,6 +105,18 @@ py_library(
 )
 
 py_library(
+    name = "operations",
+    srcs = ["operations.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":basic_expression",
+        ":expression",
+        ":helpers",
+        # tensorflow dep,
+    ],
+)
+
+py_library(
     name = "binary_rates",
     srcs = ["binary_rates.py"],
     srcs_version = "PY2AND3",
@@ -104,18 +127,6 @@ py_library(
         ":subsettable_context",
         ":term",
         # six dep,
-        # tensorflow dep,
-    ],
-)
-
-py_library(
-    name = "operations",
-    srcs = ["operations.py"],
-    srcs_version = "PY2AND3",
-    deps = [
-        ":basic_expression",
-        ":expression",
-        ":helpers",
         # tensorflow dep,
     ],
 )
@@ -163,6 +174,17 @@ py_test(
 )
 
 py_test(
+    name = "predicate_test",
+    srcs = ["predicate_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":predicate",
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+    ],
+)
+
+py_test(
     name = "subsettable_context_test",
     srcs = ["subsettable_context_test.py"],
     srcs_version = "PY2AND3",
@@ -178,8 +200,8 @@ py_test(
     srcs = ["term_test.py"],
     srcs_version = "PY2AND3",
     deps = [
-        ":helpers",
         ":loss",
+        ":predicate",
         ":term",
         # numpy dep,
         # six dep,
@@ -193,8 +215,8 @@ py_test(
     srcs_version = "PY2AND3",
     deps = [
         ":basic_expression",
-        ":helpers",
         ":loss",
+        ":predicate",
         ":term",
         # numpy dep,
         # six dep,
@@ -215,6 +237,16 @@ py_test(
 )
 
 py_test(
+    name = "operations_test",
+    srcs = ["operations_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":operations",
+        # tensorflow dep,
+    ],
+)
+
+py_test(
     name = "binary_rates_test",
     srcs = ["binary_rates_test.py"],
     srcs_version = "PY2AND3",
@@ -223,16 +255,6 @@ py_test(
         ":subsettable_context",
         # numpy dep,
         # six dep,
-        # tensorflow dep,
-    ],
-)
-
-py_test(
-    name = "operations_test",
-    srcs = ["operations_test.py"],
-    srcs_version = "PY2AND3",
-    deps = [
-        ":operations",
         # tensorflow dep,
     ],
 )

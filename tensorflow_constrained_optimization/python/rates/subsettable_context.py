@@ -81,6 +81,7 @@ from __future__ import division
 from __future__ import print_function
 
 from tensorflow_constrained_optimization.python.rates import helpers
+from tensorflow_constrained_optimization.python.rates import predicate
 
 
 class _RawContext(helpers.RateObject):
@@ -142,14 +143,17 @@ class _RawContext(helpers.RateObject):
             getattr(self, attr_name), getattr(other, attr_name))
         for attr_name in attr_names)
 
+  def __ne__(self, other):
+    return not self.__eq__(other)
+
   @property
   def penalty_predictions(self):
-    """Accessor for the predictions `Tensor` associated with the penalties."""
+    """Returns the predictions `Tensor` for the penalties."""
     return self._penalty_predictions
 
   @property
   def penalty_labels(self):
-    """Accessor for the labels `Tensor` associated with the penalties.
+    """Returns the labels `Tensor` for the penalties.
 
     The labels are permitted to be absent, in which case this method will return
     None.
@@ -162,17 +166,17 @@ class _RawContext(helpers.RateObject):
 
   @property
   def penalty_weights(self):
-    """Accessor for the weights `Tensor` associated with the penalties."""
+    """Returns the weights `Tensor` for the penalties."""
     return self._penalty_weights
 
   @property
   def constraint_predictions(self):
-    """Accessor for the predictions `Tensor` associated with the constraints."""
+    """Returns the predictions `Tensor` for the constraints."""
     return self._constraint_predictions
 
   @property
   def constraint_labels(self):
-    """Accessor for the labels `Tensor` associated with the constraints.
+    """Returns the labels `Tensor` for the constraints.
 
     The labels are permitted to be absent, in which case this method will return
     None.
@@ -185,7 +189,7 @@ class _RawContext(helpers.RateObject):
 
   @property
   def constraint_weights(self):
-    """Accessor for the weights `Tensor` associated with the constraints."""
+    """Returns the weights `Tensor` for the constraints."""
     return self._constraint_weights
 
 
@@ -252,17 +256,17 @@ class SubsettableContext(helpers.RateObject):
 
   @property
   def raw_context(self):
-    """Accessor for `_RawContext` object subsetted by this object."""
+    """Returns the `_RawContext` object subsetted by this object."""
     return self._raw_context
 
   @property
   def penalty_predicate(self):
-    """Accessor for the penalty `Predicate`."""
+    """Returns the penalty `Predicate`."""
     return self._penalty_predicate
 
   @property
   def constraint_predicate(self):
-    """Accessor for the constraint `Predicate`."""
+    """Returns the constraint `Predicate`."""
     return self._constraint_predicate
 
   def subset(self, penalty_predicate, constraint_predicate=None):
@@ -330,11 +334,11 @@ class SubsettableContext(helpers.RateObject):
     # object) to a split context (the predicates are different objects) unless
     # it's necessary.
     if helpers.tensors_equal(penalty_predicate, constraint_predicate):
-      penalty_predicate = helpers.Predicate(penalty_predicate)
+      penalty_predicate = predicate.Predicate(penalty_predicate)
       constraint_predicate = penalty_predicate
     else:
-      penalty_predicate = helpers.Predicate(penalty_predicate)
-      constraint_predicate = helpers.Predicate(constraint_predicate)
+      penalty_predicate = predicate.Predicate(penalty_predicate)
+      constraint_predicate = predicate.Predicate(constraint_predicate)
 
     return SubsettableContext(
         raw_context=self._raw_context,
@@ -439,7 +443,7 @@ def rate_context(predictions, labels=None, weights=1.0):
       constraint_predictions=predictions,
       constraint_labels=labels,
       constraint_weights=weights)
-  true_predicate = helpers.Predicate(True)
+  true_predicate = predicate.Predicate(True)
   return SubsettableContext(raw_context, true_predicate, true_predicate)
 
 
@@ -501,5 +505,5 @@ def split_rate_context(penalty_predictions,
       constraint_predictions=constraint_predictions,
       constraint_labels=constraint_labels,
       constraint_weights=constraint_weights)
-  true_predicate = helpers.Predicate(True)
+  true_predicate = predicate.Predicate(True)
   return SubsettableContext(raw_context, true_predicate, true_predicate)

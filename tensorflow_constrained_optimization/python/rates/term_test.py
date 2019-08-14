@@ -23,8 +23,8 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-from tensorflow_constrained_optimization.python.rates import helpers
 from tensorflow_constrained_optimization.python.rates import loss
+from tensorflow_constrained_optimization.python.rates import predicate
 from tensorflow_constrained_optimization.python.rates import term
 
 _DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
@@ -179,8 +179,9 @@ class TermTest(tf.test.TestCase):
         _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
-    numerator_predicate = helpers.Predicate(numerator_predicate_placeholder)
-    denominator_predicate = helpers.Predicate(denominator_predicate_placeholder)
+    numerator_predicate = predicate.Predicate(numerator_predicate_placeholder)
+    denominator_predicate = predicate.Predicate(
+        denominator_predicate_placeholder)
     ratio_weights = term._RatioWeights.ratio(weights_placeholder,
                                              numerator_predicate,
                                              denominator_predicate)
@@ -245,8 +246,8 @@ class TermTest(tf.test.TestCase):
     }
 
     def create_ratio_weights(weights_tensor):
-      return term._RatioWeights.ratio(weights_tensor, helpers.Predicate(True),
-                                      helpers.Predicate(True))
+      return term._RatioWeights.ratio(weights_tensor, predicate.Predicate(True),
+                                      predicate.Predicate(True))
 
     weights_tensors = [
         tf.constant(self._weights[:, ii], dtype=tf.float32) for ii in xrange(3)
@@ -280,9 +281,9 @@ class TermTest(tf.test.TestCase):
     weights_tensor = tf.constant([0.5, 0.1, 1.0], dtype=tf.float32)
     numerator1_tensor = tf.constant([True, False, True], dtype=tf.bool)
     numerator2_tensor = tf.constant([True, True, False], dtype=tf.bool)
-    numerator1_predicate = helpers.Predicate(numerator1_tensor)
-    numerator2_predicate = helpers.Predicate(numerator2_tensor)
-    denominator_predicate = helpers.Predicate(True)
+    numerator1_predicate = predicate.Predicate(numerator1_tensor)
+    numerator2_predicate = predicate.Predicate(numerator2_tensor)
+    denominator_predicate = predicate.Predicate(True)
 
     ratio_weights1 = term._RatioWeights.ratio(weights_tensor,
                                               numerator1_predicate,
@@ -321,12 +322,12 @@ class TermTest(tf.test.TestCase):
     def create_binary_classification_term(predictions_tensor,
                                           positive_weights_tensor,
                                           negative_weights_tensor):
-      positive_ratio_weights = term._RatioWeights.ratio(positive_weights_tensor,
-                                                        helpers.Predicate(True),
-                                                        helpers.Predicate(True))
-      negative_ratio_weights = term._RatioWeights.ratio(negative_weights_tensor,
-                                                        helpers.Predicate(True),
-                                                        helpers.Predicate(True))
+      positive_ratio_weights = term._RatioWeights.ratio(
+          positive_weights_tensor, predicate.Predicate(True),
+          predicate.Predicate(True))
+      negative_ratio_weights = term._RatioWeights.ratio(
+          negative_weights_tensor, predicate.Predicate(True),
+          predicate.Predicate(True))
       return term.BinaryClassificationTerm(predictions_tensor,
                                            positive_ratio_weights,
                                            negative_ratio_weights,

@@ -80,11 +80,6 @@ class SubsettableContextTest(tf.test.TestCase):
     """Tests that taking the subset-of-a-subset works correctly."""
     context1, context2 = create_contexts()
 
-    context1_penalty_predicate = context1.penalty_predicate.predicate
-    context1_constraint_predicate = context1.constraint_predicate.predicate
-    context2_penalty_predicate = context2.penalty_predicate.predicate
-    context2_constraint_predicate = context2.constraint_predicate.predicate
-
     with self.session() as session:
       session.run(tf.global_variables_initializer())
 
@@ -95,28 +90,24 @@ class SubsettableContextTest(tf.test.TestCase):
       expected_constraint_predicate = np.array([0, 1, 0, 0, 0, 0, 0, 1, 0, 1],
                                                dtype=np.float32)
       self.assertAllEqual(expected_penalty_predicate,
-                          session.run(context1_penalty_predicate))
+                          session.run(context1.penalty_predicate.tensor))
       self.assertAllEqual(expected_constraint_predicate,
-                          session.run(context1_constraint_predicate))
+                          session.run(context1.constraint_predicate.tensor))
       # Likewise in condition2.
       expected_penalty_predicate = np.array([0, 0, 0, 0, 1, 0, 1, 0, 0, 0],
                                             dtype=np.float32)
       expected_constraint_predicate = np.array([0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
                                                dtype=np.float32)
       self.assertAllEqual(expected_penalty_predicate,
-                          session.run(context2_penalty_predicate))
+                          session.run(context2.penalty_predicate.tensor))
       self.assertAllEqual(expected_constraint_predicate,
-                          session.run(context2_constraint_predicate))
+                          session.run(context2.constraint_predicate.tensor))
 
   def test_and(self):
     """Tests `SubsettableContext`'s logical AND operator."""
     context1, context2 = create_contexts()
 
     and_context = context1 & context2
-
-    and_context_penalty_predicate = and_context.penalty_predicate.predicate
-    and_context_constraint_predicate = (
-        and_context.constraint_predicate.predicate)
 
     with self.session() as session:
       session.run(tf.global_variables_initializer())
@@ -127,18 +118,15 @@ class SubsettableContextTest(tf.test.TestCase):
       expected_constraint_predicate = np.array([0, 1, 0, 0, 0, 0, 0, 0, 0, 1],
                                                dtype=np.float32)
       self.assertAllEqual(expected_penalty_predicate,
-                          session.run(and_context_penalty_predicate))
+                          session.run(and_context.penalty_predicate.tensor))
       self.assertAllEqual(expected_constraint_predicate,
-                          session.run(and_context_constraint_predicate))
+                          session.run(and_context.constraint_predicate.tensor))
 
   def test_or(self):
     """Tests `SubsettableContext`'s logical OR operator."""
     context1, context2 = create_contexts()
 
     or_context = context1 | context2
-
-    or_context_penalty_predicate = or_context.penalty_predicate.predicate
-    or_context_constraint_predicate = or_context.constraint_predicate.predicate
 
     with self.session() as session:
       session.run(tf.global_variables_initializer())
@@ -149,9 +137,9 @@ class SubsettableContextTest(tf.test.TestCase):
       expected_constraint_predicate = np.array([0, 1, 0, 1, 0, 0, 0, 1, 0, 1],
                                                dtype=np.float32)
       self.assertAllEqual(expected_penalty_predicate,
-                          session.run(or_context_penalty_predicate))
+                          session.run(or_context.penalty_predicate.tensor))
       self.assertAllEqual(expected_constraint_predicate,
-                          session.run(or_context_constraint_predicate))
+                          session.run(or_context.constraint_predicate.tensor))
 
 
 if __name__ == "__main__":

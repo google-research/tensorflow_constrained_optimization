@@ -85,28 +85,6 @@ class HelpersTest(tf.test.TestCase):
     tensor = tf.convert_to_tensor([[1, 2, 3]])
     self.assertEqual(3, helpers.get_num_columns_of_2d_tensor(tensor))
 
-  def test_predicate(self):
-    """Tests the `Predicate` class."""
-
-    predicate1 = helpers.Predicate([-0.2, 0.4, 1.0, 0.3])
-    predicate2 = helpers.Predicate([0.8, 1.1, 0.6, 0.0])
-
-    # We'll calculate the XOR of predicate1 and predicate2 in three ways. This
-    # is the expected result.
-    expected = [0.8, 0.6, 0.4, 0.3]
-
-    actual1 = predicate1 ^ predicate2
-    actual2 = (predicate1 & ~predicate2) | (~predicate1 & predicate2)
-    actual3 = (predicate1 | predicate2) & ~(predicate1 & predicate2)
-
-    with self.session() as session:
-      self.assertAllClose(
-          expected, session.run(actual1.predicate), rtol=0, atol=1e-6)
-      self.assertAllClose(
-          expected, session.run(actual2.predicate), rtol=0, atol=1e-6)
-      self.assertAllClose(
-          expected, session.run(actual3.predicate), rtol=0, atol=1e-6)
-
 
 if __name__ == "__main__":
   tf.test.main()

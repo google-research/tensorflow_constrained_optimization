@@ -138,9 +138,9 @@ class _RatioWeights(helpers.RateObject):
     numerator of the ratio, and "denominator_predicate" which should be included
     in the denominator.
 
-    The numerator and denominator predicates can be arbitrary indicator
-    `Tensor`s, but the numerator subset will be intersected with the
-    denominator's before the rate is calculated.
+    The numerator and denominator predicates can be arbitrary indicators, but
+    the numerator subset will be intersected with the denominator's before the
+    rate is calculated.
 
     Args:
       weights: `Tensor` of example weights.
@@ -166,7 +166,7 @@ class _RatioWeights(helpers.RateObject):
     # subset of those in the denominator. It'll actually work fine either way,
     # but this should be closer to what users expect.
     value *= tf.cast(
-        (numerator_predicate & denominator_predicate).predicate, dtype=dtype)
+        (numerator_predicate & denominator_predicate).tensor, dtype=dtype)
 
     return _RatioWeights(dtype, {key: value})
 
@@ -308,7 +308,7 @@ class _RatioWeights(helpers.RateObject):
               weights, message="weights must be non-negative"))
 
       denominator_weights = weights * tf.cast(
-          denominator_predicate.predicate, dtype=dtype)
+          denominator_predicate.tensor, dtype=dtype)
 
       # The running_average_sum variable will contain the sum of the weights
       # included in the denominator that we've seen so far, divided by the
