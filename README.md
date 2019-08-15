@@ -29,8 +29,8 @@ this library, please refer to:
 
 > Cotter, Jiang and Sridharan. "Two-Player Games for Efficient Non-Convex
 > Constrained Optimization".
-> [ALT'19](http://alt2019.algorithmiclearningtheory.org/).
-> [https://arxiv.org/abs/1804.06500](https://arxiv.org/abs/1804.06500)
+> [ALT'19](http://proceedings.mlr.press/v98/cotter19a.html),
+> [arXiv](https://arxiv.org/abs/1804.06500)
 
 which will be referred to as [CoJiSr19] throughout the remainder of this
 document, and:
@@ -38,7 +38,8 @@ document, and:
 > Cotter, Gupta, Jiang, Srebro, Sridharan, Wang, Woodworth and You. "Training
 > Well-Generalizing Classifiers for Fairness Metrics and Other Data-Dependent
 > Constraints".
-> [https://arxiv.org/abs/1807.00028](https://arxiv.org/abs/1807.00028)
+> [ICML'19](http://proceedings.mlr.press/v97/cotter19b/cotter19b.pdf),
+> [arXiv](https://arxiv.org/abs/1807.00028)
 
 which will be referred to as [CotterEtAl18].
 
