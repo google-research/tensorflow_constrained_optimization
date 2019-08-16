@@ -125,15 +125,9 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     multipliers = []
     with self.wrapped_session() as session:
       while len(multipliers) < len(expected_multipliers):
-        # We need to explicitly project here, since we're reading the Lagrange
-        # multipliers *after* the train_op, but the projection takes place
-        # *before* the train_op.
-        multipliers.append(
-            session.run(
-                lagrangian_optimizer._project_multipliers_wrt_euclidean_norm(
-                    multipliers_variable, 1.0)))
-        session.run_ops(pre_train_ops_fn())
-        session.run_ops([optimizer.minimize(loss)])
+        session.run_ops(pre_train_ops_fn)
+        multipliers.append(session.run(multipliers_variable))
+        session.run_ops(lambda: optimizer.minimize(loss))
 
     for expected, actual in zip(expected_multipliers, multipliers):
       self.assertAllClose(expected, actual, rtol=0, atol=1e-6)

@@ -46,6 +46,7 @@ py_library(
     srcs = ["graph_and_eager_test_case.py"],
     srcs_version = "PY2AND3",
     deps = [
+        # six dep,
         # tensorflow dep,
     ],
 )
