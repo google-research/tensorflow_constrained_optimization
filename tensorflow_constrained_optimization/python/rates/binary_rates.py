@@ -60,10 +60,12 @@ from __future__ import division
 from __future__ import print_function
 
 import numbers
+import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import basic_expression
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import expression
 from tensorflow_constrained_optimization.python.rates import loss
 from tensorflow_constrained_optimization.python.rates import subsettable_context
@@ -134,7 +136,7 @@ def _binary_classification_rate(positive_coefficient=0.0,
       isinstance(numerator_context, subsettable_context.SubsettableContext) and
       isinstance(denominator_context, subsettable_context.SubsettableContext)):
     raise TypeError("numerator and denominator contexts must be "
-                    "SubsettableContexts")
+                    "SubsettableContext objects")
   raw_context = numerator_context.raw_context
   if denominator_context.raw_context != raw_context:
     raise ValueError("numerator and denominator contexts must be compatible")
@@ -142,7 +144,7 @@ def _binary_classification_rate(positive_coefficient=0.0,
   if not (isinstance(penalty_loss, loss.BinaryClassificationLoss) and
           isinstance(constraint_loss, loss.BinaryClassificationLoss)):
     raise TypeError("penalty and constraint losses must be "
-                    "BinaryClassificationLosses")
+                    "BinaryClassificationLoss objects")
 
   penalty_term = term.BinaryClassificationTerm.ratio(
       positive_coefficient, negative_coefficient,
@@ -763,7 +765,7 @@ def _roc_auc(context,
       constraint_loss is not normalized.
   """
   if not isinstance(context, subsettable_context.SubsettableContext):
-    raise TypeError("context must be a SubsettableContext")
+    raise TypeError("context must be a SubsettableContext object")
   raw_context = context.raw_context
   if (raw_context.penalty_labels is None or
       raw_context.constraint_labels is None):
@@ -787,7 +789,7 @@ def _roc_auc(context,
   if not (isinstance(penalty_loss, loss.BinaryClassificationLoss) and
           isinstance(constraint_loss, loss.BinaryClassificationLoss)):
     raise TypeError("penalty and constraint losses must be "
-                    "BinaryClassificationLosses")
+                    "BinaryClassificationLoss objects")
 
   # For the constraints on the false positive rates to make sense, it would be
   # best to be using a normalized loss. The reason for this is that, if both
@@ -799,15 +801,15 @@ def _roc_auc(context,
     raise ValueError("roc_auc can only be used with a normalized "
                      "constraint_loss (e.g. zero/one, sigmoid or ramp)")
 
-  dtype = raw_context.penalty_predictions.dtype.real_dtype
-  if dtype != raw_context.constraint_predictions.dtype.real_dtype:
-    raise ValueError("penalty and constraint predictions must have the same "
-                     "dtype")
-  # We use a lambda to initialize the thresholds so that, if this function call
-  # is inside the scope of a tf.control_dependencies() block, the dependencies
-  # will not be applied to the initializer.
-  thresholds = tf.Variable(
-      lambda: tf.zeros((bins,)), dtype=dtype, name="roc_auc_thresholds")
+  # Ideally the slack variable would have the same dtype as the predictions, but
+  # we might not know their dtype (e.g. in eager mode), so instead we always use
+  # float32 with auto_cast=True.
+  thresholds = deferred_tensor.DeferredVariable(
+      np.zeros((bins,)),
+      trainable=True,
+      name="roc_auc_thresholds",
+      dtype=tf.float32,
+      auto_cast=True)
 
   positive_context = context.subset(raw_context.penalty_labels > 0,
                                     raw_context.constraint_labels > 0)
@@ -837,7 +839,7 @@ def _roc_auc(context,
     penalty_average_tpr_terms.append(penalty_tpr_term / bins)
     constraint_average_tpr_terms.append(constraint_tpr_term / bins)
 
-    # The original version of this code wraped tf.stop_gradient() around the
+    # The original version of this code wrapped tf.stop_gradient() around the
     # predictions, because we wanted to adjust the thresholds, and only the
     # thresholds, to satisfy the false positive rate constraints. However, we
     # found that this hurt performance, so it was removed.
@@ -852,7 +854,8 @@ def _roc_auc(context,
 
     fpr_expression = expression.Expression(
         basic_expression.BasicExpression([penalty_fpr_term]),
-        basic_expression.BasicExpression([constraint_fpr_term]))
+        basic_expression.BasicExpression([constraint_fpr_term]),
+        extra_variables=[thresholds])
     target_fpr = (bin_index + 0.5) / bins
     # Ideally fpr_expression would equal target_fpr, but we prefer to only
     # impose a one-sided constraint (when exactly one of lower_bound or
@@ -875,7 +878,8 @@ def _roc_auc(context,
   return expression.Expression(
       basic_expression.BasicExpression(penalty_average_tpr_terms),
       basic_expression.BasicExpression(constraint_average_tpr_terms),
-      extra_constraints)
+      extra_variables=[thresholds],
+      extra_constraints=extra_constraints)
 
 
 def roc_auc_lower_bound(context,

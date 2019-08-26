@@ -22,6 +22,7 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import loss
 
 
@@ -35,7 +36,8 @@ def binary_hinge_loss(margin):
   return lambda predictions: np.maximum(0.0, margin + predictions)
 
 
-class LossTest(tf.test.TestCase):
+# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+class LossTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `Loss` classes."""
 
   def __init__(self, *args, **kwargs):
@@ -88,8 +90,7 @@ class LossTest(tf.test.TestCase):
         expected_loss(-self._predictions) *
         (self._weights[:, 1] - minimum_weights))
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
+    with self.wrapped_session() as session:
       actual = session.run(
           actual_loss.evaluate_binary_classification(
               tf.constant(self._predictions), tf.constant(self._weights)))
@@ -119,8 +120,7 @@ class LossTest(tf.test.TestCase):
     expected_predictions = [1.0, 2.0, 3.0, 4.0]
     tensor = tf.convert_to_tensor([[[1.0], [2.0], [3.0], [4.0]]],
                                   dtype=tf.float32)
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
+    with self.wrapped_session() as session:
       actual_predictions = session.run(
           loss._convert_to_binary_classification_predictions(tensor))
     self.assertAllClose(

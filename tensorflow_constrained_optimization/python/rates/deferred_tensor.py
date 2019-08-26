@@ -232,7 +232,7 @@ class DeferredTensor(helpers.RateObject):
   `Tensor` without calling the function. So, creating a new `DeferredTensor`
   with the same dtype as an existing `DeferredTensor` isn't really possible.
   Instead, we can create a new `DeferredTensor` with a potentially-different
-  dtype, and then flag is as auto-castable.
+  dtype, and then flag it as auto-castable.
 
   For example, imagine that "tensor1" is a float32 `Tensor`, and "tensor2" is an
   int16 `Tensor`. Consider the following code:
@@ -275,17 +275,17 @@ class DeferredTensor(helpers.RateObject):
       # auto_cast parameter is ignored (since it's a part of the state).
       del auto_cast
       self._state = value
+    elif isinstance(value, helpers.RateObject):
+      raise TypeError("a DeferredTensor may only be created from a Tensor-like "
+                      "object, or a nullary function returning such")
     elif callable(value):
       # If we're given a callable value, then we treat it as a nullary function
       # returning a Tensor-like object.
       self._state = _CallableDeferredTensorState(value, auto_cast)
-    elif not isinstance(value, helpers.RateObject):
+    else:
       # If we're not given a callable value, then we treat it as a Tensor-like
       # object.
       self._state = _StaticDeferredTensorState(value, auto_cast)
-    else:
-      raise TypeError("a DeferredTensor may only be created from a Tensor-like "
-                      "object, or a nullary function returning such")
 
   def __call__(self, memoizer):
     """Returns the value of this `DeferredTensor`.
@@ -365,7 +365,7 @@ class DeferredTensor(helpers.RateObject):
       ]
       values = [value for value, _ in values_and_auto_casts]
       # The auto_cast flag is only meaningful for Tensors. For all other types,
-      # we take auto_cast to be False by convention (but don't me misled: all
+      # we take auto_cast to be False by convention (but don't be misled: all
       # non-Tensor types will undergo type promotion automatically).
       auto_casts = [
           tf.is_tensor(value) and auto_cast

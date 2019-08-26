@@ -21,14 +21,23 @@ from __future__ import print_function
 
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import predicate
 
+_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
+_GLOBAL_STEP_KEY = "global_step"
 
-class PredicateTest(tf.test.TestCase):
+
+# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+class PredicateTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for helper functions in predicate.py."""
 
   def test_predicate(self):
     """Tests the `Predicate` class."""
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     predicate1 = predicate.Predicate([-0.2, 0.4, 1.0, 0.3])
     predicate2 = predicate.Predicate([0.8, 1.1, 0.6, 0.0])
@@ -41,13 +50,13 @@ class PredicateTest(tf.test.TestCase):
     actual2 = (predicate1 & ~predicate2) | (~predicate1 & predicate2)
     actual3 = (predicate1 | predicate2) & ~(predicate1 & predicate2)
 
-    with self.session() as session:
+    with self.wrapped_session() as session:
       self.assertAllClose(
-          expected, session.run(actual1.tensor), rtol=0, atol=1e-6)
+          expected, session.run(actual1.tensor(memoizer)), rtol=0, atol=1e-6)
       self.assertAllClose(
-          expected, session.run(actual2.tensor), rtol=0, atol=1e-6)
+          expected, session.run(actual2.tensor(memoizer)), rtol=0, atol=1e-6)
       self.assertAllClose(
-          expected, session.run(actual3.tensor), rtol=0, atol=1e-6)
+          expected, session.run(actual3.tensor(memoizer)), rtol=0, atol=1e-6)
 
 
 if __name__ == "__main__":

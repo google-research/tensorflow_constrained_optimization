@@ -21,49 +21,61 @@ from __future__ import print_function
 
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import operations
 
 _DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
 _GLOBAL_STEP_KEY = "global_step"
 
 
-class OperationsTest(tf.test.TestCase):
+# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `Expression`-manipulation functions."""
 
-  def _evaluate_expression(self, expression, pre_train_ops=None):
+  def _evaluate_expression(self, expression, extra_pre_train_ops_fn=None):
     """Evaluates and returns both portions of an Expression.
 
     Args:
       expression: `Expression` to evaluate.
-      pre_train_ops: collection of `Operation`s to execute before evaluation.
+      extra_pre_train_ops_fn: function that takes a `EvaluationMemoizer`, and
+        returns a list of `Operation`s to execute before evaluation.
 
     Returns:
       A pair (penalty,constraint) containing the values of the penalty and
       constraint portions of the `Expression`.
     """
-    if not pre_train_ops:
-      pre_train_ops = set()
-    else:
-      pre_train_ops = set(pre_train_ops)
-
     memoizer = {
         _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
-    penalty_tensor, penalty_pre_train_ops, _ = (
+    penalty_value, penalty_variables = (
         expression.penalty_expression.evaluate(memoizer))
-    pre_train_ops |= penalty_pre_train_ops
-    constraint_tensor, constraint_pre_train_ops, _ = (
+    constraint_value, constraint_variables = (
         expression.constraint_expression.evaluate(memoizer))
-    pre_train_ops |= constraint_pre_train_ops
 
-    with self.session() as session:
-      session.run(
-          [tf.global_variables_initializer(),
-           tf.local_variables_initializer()])
-      session.run(list(pre_train_ops))
-      return session.run([penalty_tensor, constraint_tensor])
+    # We need to explicitly create the variables before the call to
+    # global_variables_initializer().
+    variables = (
+        expression.extra_variables | penalty_variables | constraint_variables)
+    for variable in variables:
+      variable.create(memoizer)
+
+    def pre_train_ops_fn():
+      if not extra_pre_train_ops_fn:
+        pre_train_ops = []
+      else:
+        pre_train_ops = extra_pre_train_ops_fn(memoizer)
+      for variable in variables:
+        pre_train_ops += variable.pre_train_ops(memoizer)
+      return pre_train_ops
+
+    with self.wrapped_session() as session:
+      session.run_ops(pre_train_ops_fn)
+      return [
+          session.run(penalty_value(memoizer)),
+          session.run(constraint_value(memoizer))
+      ]
 
   def test_wrap_rate_raises(self):
     """Make sure that wrap_rate() raises if given an `Expression`."""
@@ -127,17 +139,6 @@ class OperationsTest(tf.test.TestCase):
     with self.assertRaises(TypeError):
       operations.upper_bound([tensor1, expression2])
 
-  def test_upper_bound_raises_on_different_dtypes(self):
-    """Make sure that upper_bound() raises when given different dtypes."""
-    value1 = 3.1
-    value2 = 2.7
-    expression1 = operations.wrap_rate(tf.constant(value1, dtype=tf.float32))
-    expression2 = operations.wrap_rate(tf.constant(value2, dtype=tf.float64))
-
-    # List elements have different dtypes.
-    with self.assertRaises(TypeError):
-      operations.upper_bound([expression1, expression2])
-
   def test_upper_bound(self):
     """Make sure that upper_bound() creates the correct Expression."""
     values = [0.8, 3.1, -1.6, 2.7]
@@ -150,9 +151,9 @@ class OperationsTest(tf.test.TestCase):
     # Before evaluating any expressions, we'll assign "bound_value" to the slack
     # variable, so that we can make sure that the same slack variable is being
     # used for all of the constraints.
-    bound_tensor = bounded.penalty_expression.tensor
-    self.assertEqual(tf.float32, bound_tensor.dtype.base_dtype)
-    pre_train_ops = [tf.assign(bound_tensor, bound_value)]
+    def pre_train_ops_fn(memoizer):
+      bound_tensor = bounded.penalty_expression.tensor(memoizer)
+      return [bound_tensor.assign(bound_value)]
 
     # Extract the set of constraints, and make sure that there is one for each
     # quantity that is being bounded.
@@ -163,7 +164,7 @@ class OperationsTest(tf.test.TestCase):
     actual_values = []
     for constraint in constraints:
       actual_penalty_value, actual_constraint_value = self._evaluate_expression(
-          constraint.expression, pre_train_ops)
+          constraint.expression, pre_train_ops_fn)
       self.assertEqual(actual_penalty_value, actual_constraint_value)
       actual_values.append(actual_penalty_value)
     # Constraints take the form expression <= 0, and these are upper-bound
@@ -193,17 +194,6 @@ class OperationsTest(tf.test.TestCase):
     with self.assertRaises(TypeError):
       operations.lower_bound([tensor1, expression2])
 
-  def test_lower_bound_raises_on_different_dtypes(self):
-    """Make sure that lower_bound() raises when given different dtypes."""
-    value1 = 3.1
-    value2 = 2.7
-    expression1 = operations.wrap_rate(tf.constant(value1, dtype=tf.float32))
-    expression2 = operations.wrap_rate(tf.constant(value2, dtype=tf.float64))
-
-    # List elements have different dtypes.
-    with self.assertRaises(TypeError):
-      operations.lower_bound([expression1, expression2])
-
   def test_lower_bound(self):
     """Make sure that lower_bound() creates the correct Expression."""
     values = [0.8, 3.1, -1.6, 2.7]
@@ -216,9 +206,9 @@ class OperationsTest(tf.test.TestCase):
     # Before evaluating any expressions, we'll assign "bound_value" to the slack
     # variable, so that we can make sure that the same slack variable is being
     # used for all of the constraints.
-    bound_tensor = bounded.penalty_expression.tensor
-    self.assertEqual(tf.float32, bound_tensor.dtype.base_dtype)
-    pre_train_ops = [tf.assign(bound_tensor, bound_value)]
+    def pre_train_ops_fn(memoizer):
+      bound_tensor = bounded.penalty_expression.tensor(memoizer)
+      return [bound_tensor.assign(bound_value)]
 
     # Extract the set of constraints, and make sure that there is one for each
     # quantity that is being bounded.
@@ -229,7 +219,7 @@ class OperationsTest(tf.test.TestCase):
     actual_values = []
     for constraint in constraints:
       actual_penalty_value, actual_constraint_value = self._evaluate_expression(
-          constraint.expression, pre_train_ops)
+          constraint.expression, pre_train_ops_fn)
       self.assertEqual(actual_penalty_value, actual_constraint_value)
       actual_values.append(actual_penalty_value)
     # Constraints take the form expression <= 0, and these are lower-bound

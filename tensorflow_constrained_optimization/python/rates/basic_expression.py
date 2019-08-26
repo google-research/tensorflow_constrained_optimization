@@ -47,8 +47,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow as tf
-
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers
 
 
@@ -104,13 +103,18 @@ class BasicExpression(helpers.RateObject):
 
     Args:
       terms: list of `Term`s to sum in the `BasicExpression`.
-      tensor: optional scalar `Tensor` to add to the sum of `Term`s.
+      tensor: optional scalar `DeferredTensor` or `Tensor`-like object to add to
+        the sum of `Term`s.
+
+    Raises:
+      TypeError: if "tensor" is not a `DeferredTensor` or `Tensor`-like object.
     """
     # This object contains two member variables: "_terms", representing a linear
     # combination of `Term` objects, and "_tensor", representing an additional
-    # `Tensor` object to include in the sum. The "_tensor" variable is capable
-    # of representing a linear combination of `Tensor`s, since `Tensor`s support
-    # negation, addition, subtraction, scalar multiplication and division.
+    # `Tensor`-like object to include in the sum. The "_tensor" variable is
+    # capable of representing a linear combination of `Tensor`s, since `Tensor`s
+    # support negation, addition, subtraction, scalar multiplication and
+    # division.
     #
     # It isn't so simple for `Term`s. Like `Tensor`s, they support negation,
     # scalar multiplication and division without restriction. Unlike `Tensor`s,
@@ -122,7 +126,13 @@ class BasicExpression(helpers.RateObject):
     # entries.
     self._terms = {}
     self._add_terms(terms)
-    self._tensor = tensor
+    if isinstance(tensor, deferred_tensor.DeferredTensor):
+      self._tensor = tensor
+    elif not isinstance(tensor, helpers.RateObject):
+      self._tensor = deferred_tensor.DeferredTensor(tensor)
+    else:
+      raise TypeError("tensor argument to BasicExpression's constructor "
+                      "should be a DeferredTensor or a Tensor-like object")
 
   @property
   def terms(self):
@@ -133,43 +143,8 @@ class BasicExpression(helpers.RateObject):
 
   @property
   def tensor(self):
-    """Returns the `Tensor` contained in this `BasicExpression`."""
+    """Returns the `DeferredTensor` contained in this `BasicExpression`."""
     return self._tensor
-
-  @property
-  def dtype(self):
-    """Returns the `tf.DType` of this `BasicExpression`.
-
-    Returns:
-      The dtype of this `BasicExpression`, i.e. the dtype of the `Tensor` that
-      will be returned by evaluate().
-
-    Raises:
-      TypeError: if we are unable to determine the dtype (most likely because
-        the `BasicExpression` contains terms with different dtypes).
-    """
-    result = None
-
-    # If the tensor is actually a Tensor (and not a python float), then its
-    # dtype must match those of the Terms.
-    if tf.contrib.framework.is_tensor(self._tensor):
-      result = self._tensor.dtype.base_dtype
-
-    # Make sure that all terms have the same dtype.
-    for tt in self._terms.values():
-      tt_dtype = tt.dtype
-      if result is None:
-        result = tt_dtype
-      elif tt_dtype != result:
-        raise TypeError("all terms in an expression must have the same dtype")
-
-    # Raise an error if the entire BasicExpression is just a python float (which
-    # would be completely useless, since it would be a constant, hence couldn't
-    # be minimized or constrained).
-    if result is None:
-      raise TypeError("unable to determine dtype of expression")
-
-    return result
 
   @property
   def is_differentiable(self):
@@ -274,20 +249,19 @@ class BasicExpression(helpers.RateObject):
         float), and the current iterate (starting at zero), respectively.
 
     Returns:
-      A (`Tensor`, set, set) tuple containing the value of this
-      `BasicExpression`, a set of `Operation`s that should be executed before
-      each training step (to update the internal state upon which the
-      `BasicExpression` evaluation depends), and a set of `Operation`s that can
-      be executed to re-initialize this state.
+      A (`DeferredTensor`, set) pair containing (i) the value of this
+      `BasicExpression`, and (ii) a set of `DeferredVariable`s containing the
+      internal state upon which the `BasicExpression` evaluation depends.
     """
-    value = self._tensor
-    pre_train_ops = set()
-    restart_ops = set()
+    values = [self._tensor]
+    variables = set()
     for tt in self._terms.values():
-      tt_value, tt_pre_train_ops, tt_restart_ops = tt.evaluate(memoizer)
-      value += tt_value
-      pre_train_ops.update(tt_pre_train_ops)
-      restart_ops.update(tt_restart_ops)
-    # The value should already be the correct dtype--this cast just makes extra
-    # sure.
-    return tf.cast(value, dtype=self.dtype), pre_train_ops, restart_ops
+      term_value, term_variables = tt.evaluate(memoizer)
+      values.append(term_value)
+      variables.update(term_variables)
+
+    # We create a list of values, and sum them all-at-once (instead of adding
+    # them one-by-one inside the above loop) to limit how deeply the closures
+    # inside the DeferredTensor will be nested.
+    return deferred_tensor.DeferredTensor.apply(lambda *args: sum(args),
+                                                *values), variables

@@ -54,7 +54,7 @@ def _convert_to_binary_classification_predictions(predictions):
     TypeError: if "predictions" is not a floating-point `Tensor`.
     ValueError: if "predictions" is not trivially convertible to rank-1.
   """
-  if not tf.contrib.framework.is_tensor(predictions):
+  if not tf.is_tensor(predictions):
     raise TypeError("predictions must be a tensor")
   if not predictions.dtype.is_floating:
     raise TypeError("predictions must be floating-point")

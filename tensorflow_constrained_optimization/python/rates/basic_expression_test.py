@@ -23,7 +23,9 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import basic_expression
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import loss
 from tensorflow_constrained_optimization.python.rates import predicate
 from tensorflow_constrained_optimization.python.rates import term
@@ -32,14 +34,17 @@ _DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
 _GLOBAL_STEP_KEY = "global_step"
 
 
-class BasicExpressionTest(tf.test.TestCase):
+# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `BasicExpression` class."""
 
   def test_merging(self):
     """Checks that `BasicExpression`s merge compatible `Term`s."""
-    predictions = tf.constant([1.0, -1.0, 0.5], dtype=tf.float32)
-    weights1 = 1.0
-    weights2 = tf.constant([0.7, 0.3, 1.0], dtype=tf.float32)
+    predictions = deferred_tensor.DeferredTensor(
+        tf.constant([1.0, -1.0, 0.5], dtype=tf.float32))
+    weights1 = deferred_tensor.DeferredTensor(1.0)
+    weights2 = deferred_tensor.DeferredTensor(
+        tf.constant([0.7, 0.3, 1.0], dtype=tf.float32))
     numerator_predicate1 = predicate.Predicate(True)
     numerator_predicate2 = predicate.Predicate(
         tf.constant([True, False, False]))
@@ -77,9 +82,11 @@ class BasicExpressionTest(tf.test.TestCase):
 
   def test_not_merging(self):
     """Checks that `BasicExpression`s don't merge incompatible `Term`s."""
-    predictions = tf.constant([1.0, -1.0, 0.5], dtype=tf.float32)
-    weights1 = 1.0
-    weights2 = tf.constant([0.7, 0.3, 1.0], dtype=tf.float32)
+    predictions = deferred_tensor.DeferredTensor(
+        tf.constant([1.0, -1.0, 0.5], dtype=tf.float32))
+    weights1 = deferred_tensor.DeferredTensor(1.0)
+    weights2 = deferred_tensor.DeferredTensor(
+        tf.constant([0.7, 0.3, 1.0], dtype=tf.float32))
     numerator_predicate1 = predicate.Predicate(True)
     numerator_predicate2 = predicate.Predicate(
         tf.constant([True, False, False]))
@@ -131,8 +138,9 @@ class BasicExpressionTest(tf.test.TestCase):
     # The first and third terms will have the same losses (and everything else
     # except the coefficients, and will therefore be compatible. The second has
     # a different loss, and will be incompatible with the other two.
-    dummy_predictions = tf.constant(0, dtype=tf.float32, shape=(1,))
-    dummy_weights = 1.0
+    dummy_predictions = deferred_tensor.DeferredTensor(
+        tf.constant(0, dtype=tf.float32, shape=(1,)))
+    dummy_weights = deferred_tensor.DeferredTensor(1.0)
     true_predicate = predicate.Predicate(True)
     expression_objects = []
     for ii in xrange(3):
@@ -169,44 +177,46 @@ class BasicExpressionTest(tf.test.TestCase):
     self.assertEqual(zero_one_term.loss, loss.ZeroOneLoss())
     self.assertEqual(hinge_term.loss, loss.HingeLoss())
 
-    # The "tensor" stored in the expression is actually just a scalar, since
-    # we used scalar constants when constructing it.
     actual_constant = expression_object.tensor
-    self.assertAllClose(expected_constant, actual_constant, rtol=0, atol=1e-6)
-
-    # Ignore the pre_train_ops--we'll just check the values of the weights.
-    actual_zero_one_positive_weights, _, _ = (
+    actual_zero_one_positive_weights, zero_one_positive_variables = (
         zero_one_term.positive_ratio_weights.evaluate(memoizer))
-    actual_zero_one_negative_weights, _, _ = (
+    actual_zero_one_negative_weights, zero_one_negative_variables = (
         zero_one_term.negative_ratio_weights.evaluate(memoizer))
-    actual_hinge_positive_weights, _, _ = (
+    actual_hinge_positive_weights, hinge_positive_variables = (
         hinge_term.positive_ratio_weights.evaluate(memoizer))
-    actual_hinge_negative_weights, _, _ = (
+    actual_hinge_negative_weights, hinge_negative_variables = (
         hinge_term.negative_ratio_weights.evaluate(memoizer))
 
-    with self.session() as session:
-      session.run(
-          [tf.global_variables_initializer(),
-           tf.local_variables_initializer()])
+    # We need to explicitly create the variables before the call to
+    # global_variables_initializer().
+    variables = (
+        zero_one_positive_variables | zero_one_negative_variables
+        | hinge_positive_variables | hinge_negative_variables)
+    for variable in variables:
+      variable.create(memoizer)
+
+    with self.wrapped_session() as session:
+      self.assertAllClose(
+          expected_constant, actual_constant(memoizer), rtol=0, atol=1e-6)
 
       self.assertAllClose(
           np.array([expected_zero_one_positive_weights]),
-          session.run(actual_zero_one_positive_weights),
+          session.run(actual_zero_one_positive_weights(memoizer)),
           rtol=0,
           atol=1e-6)
       self.assertAllClose(
           np.array([expected_zero_one_negative_weights]),
-          session.run(actual_zero_one_negative_weights),
+          session.run(actual_zero_one_negative_weights(memoizer)),
           rtol=0,
           atol=1e-6)
       self.assertAllClose(
           np.array([expected_hinge_positive_weights]),
-          session.run(actual_hinge_positive_weights),
+          session.run(actual_hinge_positive_weights(memoizer)),
           rtol=0,
           atol=1e-6)
       self.assertAllClose(
           np.array([expected_hinge_negative_weights]),
-          session.run(actual_hinge_negative_weights),
+          session.run(actual_hinge_negative_weights(memoizer)),
           rtol=0,
           atol=1e-6)
 

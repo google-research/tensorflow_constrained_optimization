@@ -22,7 +22,11 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import subsettable_context
+
+_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
+_GLOBAL_STEP_KEY = "global_step"
 
 
 def create_contexts():
@@ -43,7 +47,10 @@ def create_contexts():
     The pair (context1, context2).
   """
   predictions = tf.constant(0.0, dtype=tf.float32, shape=(1,))
-  context = subsettable_context.rate_context(predictions)
+  # The predictions are passed as a lambda to support eager mode (in graph mode,
+  # either a Tensor or a function are fine, but in eager mode, the predictions
+  # *must* be a function).
+  context = subsettable_context.rate_context(lambda: predictions)
 
   penalty_predicate = tf.constant(
       [True, False, True, False, True, False, True, False, True, False],
@@ -73,73 +80,88 @@ def create_contexts():
   return context1, context2
 
 
-class SubsettableContextTest(tf.test.TestCase):
+# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `SubsettableContext` class."""
 
   def test_subset_of_subset(self):
     """Tests that taking the subset-of-a-subset works correctly."""
     context1, context2 = create_contexts()
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
-
+    with self.wrapped_session() as session:
       # Make sure that the subset of a subset ANDs the conditions together in
       # condition1.
       expected_penalty_predicate = np.array([0, 0, 1, 0, 1, 0, 0, 0, 0, 0],
                                             dtype=np.float32)
       expected_constraint_predicate = np.array([0, 1, 0, 0, 0, 0, 0, 1, 0, 1],
                                                dtype=np.float32)
-      self.assertAllEqual(expected_penalty_predicate,
-                          session.run(context1.penalty_predicate.tensor))
-      self.assertAllEqual(expected_constraint_predicate,
-                          session.run(context1.constraint_predicate.tensor))
+      self.assertAllEqual(
+          expected_penalty_predicate,
+          session.run(context1.penalty_predicate.tensor(memoizer)))
+      self.assertAllEqual(
+          expected_constraint_predicate,
+          session.run(context1.constraint_predicate.tensor(memoizer)))
       # Likewise in condition2.
       expected_penalty_predicate = np.array([0, 0, 0, 0, 1, 0, 1, 0, 0, 0],
                                             dtype=np.float32)
       expected_constraint_predicate = np.array([0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
                                                dtype=np.float32)
-      self.assertAllEqual(expected_penalty_predicate,
-                          session.run(context2.penalty_predicate.tensor))
-      self.assertAllEqual(expected_constraint_predicate,
-                          session.run(context2.constraint_predicate.tensor))
+      self.assertAllEqual(
+          expected_penalty_predicate,
+          session.run(context2.penalty_predicate.tensor(memoizer)))
+      self.assertAllEqual(
+          expected_constraint_predicate,
+          session.run(context2.constraint_predicate.tensor(memoizer)))
 
   def test_and(self):
     """Tests `SubsettableContext`'s logical AND operator."""
     context1, context2 = create_contexts()
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     and_context = context1 & context2
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
-
+    with self.wrapped_session() as session:
       # Make sure that AND applies only to the top-level subset.
       expected_penalty_predicate = np.array([0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
                                             dtype=np.float32)
       expected_constraint_predicate = np.array([0, 1, 0, 0, 0, 0, 0, 0, 0, 1],
                                                dtype=np.float32)
-      self.assertAllEqual(expected_penalty_predicate,
-                          session.run(and_context.penalty_predicate.tensor))
-      self.assertAllEqual(expected_constraint_predicate,
-                          session.run(and_context.constraint_predicate.tensor))
+      self.assertAllEqual(
+          expected_penalty_predicate,
+          session.run(and_context.penalty_predicate.tensor(memoizer)))
+      self.assertAllEqual(
+          expected_constraint_predicate,
+          session.run(and_context.constraint_predicate.tensor(memoizer)))
 
   def test_or(self):
     """Tests `SubsettableContext`'s logical OR operator."""
     context1, context2 = create_contexts()
+    memoizer = {
+        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
 
     or_context = context1 | context2
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
-
+    with self.wrapped_session() as session:
       # Make sure that OR applies only to the top-level subset.
       expected_penalty_predicate = np.array([0, 0, 1, 0, 1, 0, 1, 0, 0, 0],
                                             dtype=np.float32)
       expected_constraint_predicate = np.array([0, 1, 0, 1, 0, 0, 0, 1, 0, 1],
                                                dtype=np.float32)
-      self.assertAllEqual(expected_penalty_predicate,
-                          session.run(or_context.penalty_predicate.tensor))
-      self.assertAllEqual(expected_constraint_predicate,
-                          session.run(or_context.constraint_predicate.tensor))
+      self.assertAllEqual(
+          expected_penalty_predicate,
+          session.run(or_context.penalty_predicate.tensor(memoizer)))
+      self.assertAllEqual(
+          expected_constraint_predicate,
+          session.run(or_context.constraint_predicate.tensor(memoizer)))
 
 
 if __name__ == "__main__":

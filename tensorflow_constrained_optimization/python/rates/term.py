@@ -55,7 +55,9 @@ import copy
 import six
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers
+from tensorflow_constrained_optimization.python.rates import predicate
 
 _DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
 _GLOBAL_STEP_KEY = "global_step"
@@ -92,7 +94,7 @@ class _RatioWeights(helpers.RateObject):
   where c_k is the coefficient of the kth element of the linear combination.
   """
 
-  def __init__(self, dtype, ratios):
+  def __init__(self, ratios):
     """Creates a new `_RatioWeights` object.
 
     A `RatioWeights` object is a sum of ratios, represented internally as a dict
@@ -102,30 +104,24 @@ class _RatioWeights(helpers.RateObject):
     by simply adding their numerators.
 
     Args:
-      dtype: tf.DType, the dtype of the ratio weights.
-      ratios: A dict mapping denominators to numerators. Each denominator is a
-        (`Tensor`, `Predicate`) pair, the first element being the example
-        weights, and the second the predicate indicating which examples are
-        included in the denominator. Each numerator is a `Tensor` of example
-        weights.
+      ratios: A dict mapping denominator keys to numerators. Each denominator
+        key is a (`DeferredTensor`, `Predicate`) pair, the first element being
+        the example weights, and the second the predicate indicating which
+        examples are included in the denominator. Each numerator is a
+        `DeferredTensor` of example weights.
     """
-    self._dtype = dtype
     self._ratios = ratios
-
-  @property
-  def dtype(self):
-    """Returns the `tf.DType` of the result of evaluate()."""
-    return self._dtype
 
   @property
   def ratios(self):
     """Returns the sum of ratios represented by this object in a list.
 
     Returns:
-      A list of (denominator, numerator) pairs. Each denominator is a (`Tensor`,
-      `Predicate`) pair, the first element being the example weights, and the
-      second the predicate indicating which examples are included in the
-      denominator. Each numerator is a `Tensor` of example weights.
+      A list of (denominator_key, numerator) pairs. Each denominator key is a
+      (`DeferredTensor`, `Predicate`) pair, the first element being the example
+      weights, and the second the predicate indicating which examples are
+      included in the denominator. Each numerator is a `DeferredTensor` of
+      example weights.
     """
     return self._ratios.items()
 
@@ -143,7 +139,7 @@ class _RatioWeights(helpers.RateObject):
     rate is calculated.
 
     Args:
-      weights: `Tensor` of example weights.
+      weights: `DeferredTensor` of example weights.
       numerator_predicate: `Predicate` object representing whether each example
         should be included in the ratio's numerator.
       denominator_predicate: `Predicate` object representing whether each
@@ -153,22 +149,48 @@ class _RatioWeights(helpers.RateObject):
       A new `_RatioWeights` representing the ratio.
 
     Raises:
-      TypeError: if "weights" is not floating-point.
-      ValueError: if "weights" cannot be converted to a rank-1 `Tensor`.
+      TypeError: if any of weights, numerator_predicate or denominator_predicate
+        has the wrong type.
     """
+    if not isinstance(weights, deferred_tensor.DeferredTensor):
+      raise TypeError("weights must be a DeferredTensor object")
+    if not (isinstance(numerator_predicate, predicate.Predicate) and
+            isinstance(denominator_predicate, predicate.Predicate)):
+      raise TypeError("numerator_predicate and denominator_predictate must "
+                      "be Predicate objects")
     key = (weights, denominator_predicate)
 
-    value = helpers.convert_to_1d_tensor(weights, name="weights")
-    dtype = value.dtype.base_dtype
-    if not dtype.is_floating:
-      raise TypeError("weights must be floating-point")
-    # Notice that we force the set of examples included in the numerator to be a
-    # subset of those in the denominator. It'll actually work fine either way,
-    # but this should be closer to what users expect.
-    value *= tf.cast(
-        (numerator_predicate & denominator_predicate).tensor, dtype=dtype)
+    def value_fn(weights_value, predicate_value):
+      """Returns the numerator `Tensor`.
 
-    return _RatioWeights(dtype, {key: value})
+      Args:
+        weights_value: `Tensor` of example weights.
+        predicate_value: indicator `Tensor` representing whether each example
+          should be included in the ratio's numerator.
+
+      Returns:
+        A `Tensor` containing the element-wise product of the two arguments.
+
+      Raises:
+        TypeError: if "weights" is not floating-point.
+        ValueError: if "weights" cannot be converted to a rank-1 `Tensor`.
+      """
+      value = helpers.convert_to_1d_tensor(weights_value, name="weights")
+      dtype = value.dtype.base_dtype
+      if not dtype.is_floating:
+        raise TypeError("weights must be floating-point")
+      value *= tf.cast(predicate_value, dtype=dtype)
+      return value
+
+    # Notice that we force the set of examples included in the numerator to be
+    # a subset of those in the denominator. It'll actually work fine either
+    # way, but this should be closer to what users expect.
+    return _RatioWeights({
+        key:
+            deferred_tensor.DeferredTensor.apply(
+                value_fn, weights,
+                (numerator_predicate & denominator_predicate).tensor)
+    })
 
   def __mul__(self, scalar):
     """Returns the result of multiplying the ratio weights by a scalar."""
@@ -185,12 +207,11 @@ class _RatioWeights(helpers.RateObject):
                       "multiplication")
 
     if scalar == 0:
-      return _RatioWeights(self._dtype, {})
-    return _RatioWeights(
-        self._dtype, {
-            denominator: numerator * scalar
-            for denominator, numerator in six.iteritems(self._ratios)
-        })
+      return _RatioWeights({})
+    return _RatioWeights({
+        denominator_key: numerator * scalar
+        for denominator_key, numerator in six.iteritems(self._ratios)
+    })
 
   def __rmul__(self, scalar):
     """Returns the result of multiplying the ratio weights by a scalar."""
@@ -204,56 +225,50 @@ class _RatioWeights(helpers.RateObject):
 
     if scalar == 0:
       raise ValueError("cannot divide by zero")
-    return _RatioWeights(
-        self._dtype, {
-            denominator: numerator / scalar
-            for denominator, numerator in six.iteritems(self._ratios)
-        })
+    return _RatioWeights({
+        denominator_key: numerator / scalar
+        for denominator_key, numerator in six.iteritems(self._ratios)
+    })
 
   # __rtruediv__ is not implemented since we only allow *scalar* division, i.e.
   # (_RatioWeights / scalar) is allowed, but (scalar / _RatioWeights) is not.
 
   def __neg__(self):
     """Returns the result of negating the ratio weights."""
-    return _RatioWeights(
-        self._dtype, {
-            denominator: -numerator
-            for denominator, numerator in six.iteritems(self._ratios)
-        })
+    return _RatioWeights({
+        denominator_key: -numerator
+        for denominator_key, numerator in six.iteritems(self._ratios)
+    })
 
   def __add__(self, other):
     """Returns the result of adding two sets of ratio weights."""
     if not isinstance(other, _RatioWeights):
       raise TypeError("_RatioWeights objects can only be added to other "
                       "_RatioWeights objects")
-    if self._dtype != other.dtype:
-      raise TypeError("can only add weights with the same dtypes")
 
     ratios = copy.copy(self._ratios)
-    for denominator, numerator in other.ratios:
-      if denominator in ratios:
-        ratios[denominator] += numerator
+    for denominator_key, numerator in other.ratios:
+      if denominator_key in ratios:
+        ratios[denominator_key] += numerator
       else:
-        ratios[denominator] = numerator
+        ratios[denominator_key] = numerator
 
-    return _RatioWeights(self._dtype, ratios)
+    return _RatioWeights(ratios)
 
   def __sub__(self, other):
     """Returns the result of subtracting two sets of ratio weights."""
     if not isinstance(other, _RatioWeights):
       raise TypeError("_RatioWeights objects can only be subtracted from "
                       "other _RatioWeights objects")
-    if self._dtype != other.dtype:
-      raise TypeError("can only subtract weights with the same dtypes")
 
     ratios = copy.copy(self._ratios)
-    for denominator, numerator in other.ratios:
-      if denominator in ratios:
-        ratios[denominator] -= numerator
+    for denominator_key, numerator in other.ratios:
+      if denominator_key in ratios:
+        ratios[denominator_key] -= numerator
       else:
-        ratios[denominator] = -numerator
+        ratios[denominator_key] = -numerator
 
-    return _RatioWeights(self._dtype, ratios)
+    return _RatioWeights(ratios)
 
   def _evaluate_denominator(self, denominator, memoizer):
     """Evaluates the denominator portion of a ratio.
@@ -275,9 +290,9 @@ class _RatioWeights(helpers.RateObject):
     this method).
 
     Args:
-      denominator: (`Tensor`, `Predicate`) pair, the first being the example
-        weights, and the second the predicate indicating which examples are
-        included in the denominator.
+      denominator: (`DeferredTensor`, `Predicate`) pair, the first being the
+        example weights, and the second the predicate indicating which examples
+        are included in the denominator.
       memoizer: dict, which memoizes portions of the calculation to simplify the
         resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
@@ -285,95 +300,93 @@ class _RatioWeights(helpers.RateObject):
         float), and the current iterate (starting at zero), respectively.
 
     Returns:
-      A (`Tensor`, set, set) tuple containing the (approximate) denominator, a
-      set of `Operation`s that should be executed before each training step
-      (to update the internal state upon which the denominator depends), and a
-      set of `Operation`s that can be executed to re-initialize this state.
-
-    Raises:
-      TypeError: if "weights" is not floating-point.
-      ValueError: if "weights" cannot be converted to a rank-1 `Tensor`.
+      A (`DeferredTensor`, set) pair containing (i) the (approximate)
+      denominator, and (ii) a set of `DeferredVariable`s containing the
+      internal state upon which the denominator depends.
     """
     key = (_RatioWeights, denominator)
     if key not in memoizer:
-      weights, denominator_predicate = denominator
-      weights = helpers.convert_to_1d_tensor(weights, name="weights")
-      dtype = weights.dtype.base_dtype
-      if not dtype.is_floating:
-        raise TypeError("weights must be floating-point")
-
-      pre_train_ops = set()
-      pre_train_ops.add(
-          tf.assert_non_negative(
-              weights, message="weights must be non-negative"))
-
-      denominator_weights = weights * tf.cast(
-          denominator_predicate.tensor, dtype=dtype)
-
-      # The running_average_sum variable will contain the sum of the weights
-      # included in the denominator that we've seen so far, divided by the
-      # number of minibatches that we've seen so far. Similarly,
-      # running_average_count will contain the average size of the minibatches
-      # we've seen so far. Their ratio will therefore be the sum of the
-      # weights included in the denominator, divided by the number of examples
-      # we've seen so far. The reason for dividing both quantities by the
-      # number of minibatches is to prevent them from growing without bound
-      # during training.
-      #
       # We use double precision arithmetic for the running sums because we
       # don't want numerical errors to ruin our estimates if we perform a very
       # large number of iterations.
       running_dtype = tf.float64
-      running_average_sum = tf.Variable(
-          1.0, trainable=False, dtype=running_dtype, name="running_average_sum")
-      running_average_count = tf.Variable(
-          1.0,
+
+      def pre_train_ops_fn(running_averages_variable, memoizer):
+        """Updates the running sums before each call to the train_op."""
+        weights, denominator_predicate = denominator
+        weights = helpers.convert_to_1d_tensor(
+            weights(memoizer), name="weights")
+        dtype = weights.dtype.base_dtype
+        if not dtype.is_floating:
+          raise TypeError("weights must be floating-point")
+
+        pre_train_ops = []
+        pre_train_ops.append(
+            tf.debugging.assert_non_negative(
+                weights, message="weights must be non-negative"))
+
+        denominator_weights = weights * tf.cast(
+            denominator_predicate.tensor(memoizer), dtype=dtype)
+
+        # We take convex combinations (with parameter running_proportion) to
+        # make sure that both running_average_sum and running_average_count
+        # are divided by the number of minibatches, as explained below.
+        running_proportion = 1.0 / (
+            tf.maximum(
+                tf.cast(memoizer[_GLOBAL_STEP_KEY], dtype=running_dtype), 0.0) +
+            1.0)
+        running_average_sum = (
+            running_averages_variable[0] * (1.0 - running_proportion) +
+            tf.cast(tf.reduce_sum(denominator_weights), dtype=running_dtype) *
+            running_proportion)
+        running_average_count = (
+            running_averages_variable[1] * (1.0 - running_proportion) +
+            tf.cast(tf.size(denominator_weights), dtype=running_dtype) *
+            running_proportion)
+
+        pre_train_ops.append(
+            running_averages_variable.assign(
+                [running_average_sum, running_average_count]))
+
+        return pre_train_ops
+
+      # The first element of the running_averages variable will contain the sum
+      # of the weights included in the denominator that we've seen so far,
+      # divided by the number of minibatches that we've seen so far. Similarly,
+      # the second element will contain the average size of the minibatches
+      # we've seen so far. Their ratio will therefore be the sum of the weights
+      # included in the denominator, divided by the number of examples we've
+      # seen so far. The reason for dividing both quantities by the number of
+      # minibatches is to prevent them from growing without bound during
+      # training.
+      running_averages = deferred_tensor.DeferredVariable(
+          [1.0, 1.0],
           trainable=False,
+          name="running_average_sum_and_count",
           dtype=running_dtype,
-          name="running_average_count")
+          pre_train_ops_fn=pre_train_ops_fn)
 
-      # To restart the denominator calculations, we set the two running
-      # averages to their initial values.
-      restart_ops = set([
-          tf.assign(running_average_sum, 1.0),
-          tf.assign(running_average_count, 1.0)
-      ])
+      def average_denominator_weight_fn(running_averages_variable):
+        """Returns the average denominator weight `Tensor`."""
+        # This code calculates max(denominator_lower_bound, running_average_sum
+        # / running_average_count) safely, even when running_average_count is
+        # zero (including when running_average_sum is also zero, in which case
+        # the result will be denominator_lower_bound). We use a tf.cond to make
+        # sure that we only perform the division if we know that it will result
+        # in a quantity larger than denominator_lower_bound.
+        running_denominator_lower_bound = tf.cast(
+            memoizer[_DENOMINATOR_LOWER_BOUND_KEY], dtype=running_dtype)
+        running_average_sum = running_averages_variable[0]
+        running_average_count = running_averages_variable[1]
+        return tf.cond(
+            running_average_count * running_denominator_lower_bound <
+            running_average_sum,
+            true_fn=lambda: running_average_sum / running_average_count,
+            false_fn=lambda: running_denominator_lower_bound)
 
-      # We take convex combinations (with parameter running_proportion) to
-      # make sure that both running_average_sum and running_average_count are
-      # divided by the number of minibatches, as explained above.
-      running_proportion = 1.0 / (
-          tf.maximum(
-              tf.cast(memoizer[_GLOBAL_STEP_KEY], dtype=running_dtype), 0.0) +
-          1.0)
-      pre_train_ops.add(
-          tf.assign(
-              running_average_sum,
-              running_average_sum * (1.0 - running_proportion) +
-              tf.cast(tf.reduce_sum(denominator_weights), dtype=running_dtype) *
-              running_proportion))
-      pre_train_ops.add(
-          tf.assign(
-              running_average_count,
-              running_average_count * (1.0 - running_proportion) +
-              tf.cast(tf.size(denominator_weights), dtype=running_dtype) *
-              running_proportion))
-
-      # This code calculates max(denominator_lower_bound, running_average_sum
-      # / running_average_count) safely, even when running_average_count is
-      # zero (including when running_average_sum is also zero, in which case
-      # the result will be denominator_lower_bound). We use a tf.cond to make
-      # sure that we only perform the division if we know that it will result
-      # in a quantity larger than denominator_lower_bound.
-      running_denominator_lower_bound = tf.cast(
-          memoizer[_DENOMINATOR_LOWER_BOUND_KEY], dtype=running_dtype)
-      average_denominator_weight = tf.cond(
-          running_average_count * running_denominator_lower_bound <
-          running_average_sum,
-          true_fn=lambda: running_average_sum / running_average_count,
-          false_fn=lambda: running_denominator_lower_bound)
-
-      memoizer[key] = (average_denominator_weight, pre_train_ops, restart_ops)
+      memoizer[key] = (deferred_tensor.DeferredTensor.apply(
+          average_denominator_weight_fn,
+          running_averages), set([running_averages]))
 
     return memoizer[key]
 
@@ -388,32 +401,34 @@ class _RatioWeights(helpers.RateObject):
         float), and the current iterate (starting at zero), respectively.
 
     Returns:
-      A (`Tensor`, set) tuple containing the weights associated with each
-      example, a set of `Operation`s that should be executed before each
-      training step (to update the internal state upon which the weight
-      denominators depend), and a set of `Operation`s that can be executed to
-      re-initialize this state.
+      A (`DeferredTensor`, set) pair containing (i) the weights associated with
+      each example, and (ii) a set of `DeferredVariable`s containing the
+      internal state upon which the `_RatioWeights` evaluation depends.
     """
-    value = tf.zeros(1, dtype=self._dtype)
-    pre_train_ops = set()
-    restart_ops = set()
+    ratios = []
+    variables = set()
 
-    for denominator, numerator in six.iteritems(self._ratios):
-      (denominator_value, denominator_pre_train_ops,
-       denominator_restart_ops) = self._evaluate_denominator(
-           denominator, memoizer)
-      # The numerator should already be the correct dtype--this cast just makes
-      # extra sure.
-      value += tf.cast(
-          numerator, dtype=self._dtype) / tf.cast(
-              denominator_value, dtype=self._dtype)
-      pre_train_ops.update(denominator_pre_train_ops)
-      restart_ops.update(denominator_restart_ops)
+    for denominator_key, numerator in six.iteritems(self._ratios):
+      denominator, denominator_variables = self._evaluate_denominator(
+          denominator_key, memoizer)
 
-    # It's probably paranoid to call stop_gradient on the ratio weights, but it
-    # shouldn't do any harm, and might prevent failure if someone's doing
+      def ratio_fn(numerator_value, denominator_value):
+        """Returns the value of the current ratio as a `Tensor`."""
+        dtype = numerator_value.dtype.base_dtype
+        return numerator_value / tf.cast(denominator_value, dtype=dtype)
+
+      ratios.append(
+          deferred_tensor.DeferredTensor.apply(ratio_fn, numerator,
+                                               denominator))
+      variables.update(denominator_variables)
+
+    # It's probably paranoid to call stop_gradient on the ratio weights, but
+    # it shouldn't do any harm, and might prevent failure if someone's doing
     # something weird.
-    return tf.stop_gradient(value), pre_train_ops, restart_ops
+    value = deferred_tensor.DeferredTensor.apply(
+        lambda *args: tf.stop_gradient(sum(args, (0.0,))), *ratios)
+
+    return value, variables
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -432,10 +447,6 @@ class Term(helpers.RateObject):
   `BasicExpression` class stores its terms in a dictionary with its keys being
   the results of the `Term`.key method.
   """
-
-  @abc.abstractproperty
-  def dtype(self):
-    """Returns the `tf.DType` of the result of evaluate()."""
 
   @abc.abstractproperty
   def is_differentiable(self):
@@ -518,10 +529,9 @@ class Term(helpers.RateObject):
         float), and the current iterate (starting at zero), respectively.
 
     Returns:
-      A (`Tensor`, set, set) tuple containing the value of this `Term`, a set of
-      `Operation`s that should be executed before each training step (to update
-      the internal state upon which the `Term` evaluation depends), and a set of
-      `Operation`s that can be executed to re-initialize this state.
+      A (`DeferredTensor`, set) pair containing (i) the value of this `Term`,
+      and (ii) a set of `DeferredVariable`s containing the internal state upon
+      which the `Term` evaluation depends.
     """
 
 
@@ -603,14 +613,25 @@ class BinaryClassificationTerm(Term):
     the indicators "1{predictions[i] > 0}" and "1{predictions[i] < 0}".
 
     Args:
-      predictions: `Tensor` of shape (n,), where n is the number of examples.
+      predictions: `DeferredTensor` of shape (n,), where n is the number of
+        examples.
       positive_ratio_weights: `_RatioWeights` object representing the
         per-example weights associated with positive predictions.
       negative_ratio_weights: `_RatioWeights` object representing the
         per-example weights associated with negative predictions.
       loss: `BinaryClassificionLoss`, the loss function to use.
+
+    Raises:
+      TypeError: if any of predictions, positive_ratio_weights or
+        negative_ratio_weights has the wrong type.
     """
-    self._dtype = predictions.dtype.base_dtype
+    if not isinstance(predictions, deferred_tensor.DeferredTensor):
+      raise TypeError("predictions must be a DeferredTensor object")
+    if not (isinstance(positive_ratio_weights, _RatioWeights) and
+            isinstance(negative_ratio_weights, _RatioWeights)):
+      raise TypeError("positive_ratio_weights and negative_ratio_weights "
+                      "must be _RatioWeights objects")
+
     self._predictions = predictions
     self._positive_ratio_weights = positive_ratio_weights
     self._negative_ratio_weights = negative_ratio_weights
@@ -637,17 +658,18 @@ class BinaryClassificationTerm(Term):
     "1{predictions[i] < 0}, respectively. The particular approximation used
     depends on the "loss" parameter to this method.
 
-    The numerator and denominator predicates can be arbitrary indicator
-    `Tensor`s, but the numerator subset will be intersected with the
-    denominator's before the rate is calculated.
+    The numerator and denominator predicates can be arbitrary indicators, but
+    the numerator subset will be intersected with the denominator's before the
+    rate is calculated.
 
     Args:
       positive_coefficient: float, the amount of weight to place on the positive
         predictions.
       negative_coefficient: float, the amount of weight to place on the negative
         predictions.
-      predictions: `Tensor` of shape (n,), where n is the number of examples.
-      weights: `Tensor` of example weights, with shape (m,), where m is
+      predictions: `DeferredTensor` of shape (n,), where n is the number of
+        examples.
+      weights: `DeferredTensor` of example weights, with shape (m,), where m is
         broadcastable to n.
       numerator_predicate: `Predicate` object representing whether each example
         should be included in the ratio's numerator.
@@ -657,7 +679,19 @@ class BinaryClassificationTerm(Term):
 
     Returns:
       A new `BinaryClassificationTerm` representing the rate.
+
+    Raises:
+      TypeError: if any of predictions, weights, numerator_predicate, or
+        denominator_predicate has the wrong type.
     """
+    if not (isinstance(predictions, deferred_tensor.DeferredTensor) and
+            isinstance(weights, deferred_tensor.DeferredTensor)):
+      raise TypeError("predictions and weights must be DeferredTensor objects")
+    if not (isinstance(numerator_predicate, predicate.Predicate) and
+            isinstance(denominator_predicate, predicate.Predicate)):
+      raise TypeError("numerator_predicate and denominator_predictate must "
+                      "be Predicate objects")
+
     ratio_weights = _RatioWeights.ratio(weights, numerator_predicate,
                                         denominator_predicate)
     return BinaryClassificationTerm(predictions,
@@ -665,13 +699,8 @@ class BinaryClassificationTerm(Term):
                                     ratio_weights * negative_coefficient, loss)
 
   @property
-  def dtype(self):
-    """Returns the `tf.DType` of the result of evaluate()."""
-    return self._dtype
-
-  @property
   def predictions(self):
-    """Returns the predictions `Tensor`.
+    """Returns the predictions `DeferredTensor`.
 
     Every `BinaryClassificationTerm` consists of three main parts: the
     predictions (i.e. the model outputs) on which the term is calculated, the
@@ -680,7 +709,7 @@ class BinaryClassificationTerm(Term):
     the rate(s). This method returns the predictions.
 
     Returns:
-      rank-1 `Tensor` of per-example predictions.
+      rank-1 `DeferredTensor` of per-example predictions.
     """
     return self._predictions
 
@@ -762,9 +791,9 @@ class BinaryClassificationTerm(Term):
 
     Returns:
       A 3-tuple, containing the `BinaryClassificationTerm` type, predictions
-      `Tensor`, and the loss `BinaryClassificationLoss`.
+      `DeferredTensor`, and the loss `BinaryClassificationLoss`.
     """
-    return (BinaryClassificationTerm, self._predictions, self._loss)
+    return BinaryClassificationTerm, self._predictions, self._loss
 
   # The Term base class overloads __rmul__, which will fall-back to this
   # function.
@@ -862,46 +891,39 @@ class BinaryClassificationTerm(Term):
         float), and the current iterate (starting at zero), respectively.
 
     Returns:
-      A (`Tensor`, set, set) tuple containing the value of this
-      `BinaryClassificationTerm`, a set of `Operation`s that should be executed
-      before each training step (to update the internal state upon which the
-      `BinaryClassificationTerm` evaluation depends), and a set of `Operation`s
-      that can be executed to re-initialize this state.
+      A (`DeferredTensor`, set) pair containing (i) the value of this
+      `BinaryClassificationTerm`, and (ii) a set of `DeferredVariable`s
+      containing the internal state upon which the `BinaryClassificationTerm`
+      evaluation depends.
     """
-    pre_train_ops = set()
-    restart_ops = set()
+    variables = set()
 
     # Evalaute the weights on the positive and negative approximate indicators.
-    positive_weights, positive_pre_train_ops, positive_restart_ops = (
+    positive_weights, positive_variables = (
         self._positive_ratio_weights.evaluate(memoizer))
-    negative_weights, negative_pre_train_ops, negative_restart_ops = (
+    negative_weights, negative_variables = (
         self._negative_ratio_weights.evaluate(memoizer))
-    pre_train_ops.update(positive_pre_train_ops)
-    pre_train_ops.update(negative_pre_train_ops)
-    restart_ops.update(positive_restart_ops)
-    restart_ops.update(negative_restart_ops)
+    variables.update(positive_variables)
+    variables.update(negative_variables)
 
-    # Use broadcasting to make the positive_weights and negative_weights Tensors
-    # have the same shape (yes, this is inelegant). The _RatioWeights object has
-    # already checked that they're both rank-1, so this code just makes sure
-    # that they're the same size before attempting to stack them.
-    positive_weights += tf.zeros_like(negative_weights)
-    negative_weights += tf.zeros_like(positive_weights)
+    def average_loss_fn(positive_weights_value, negative_weights_value,
+                        predictions_value):
+      """Returns the average loss."""
+      # Use broadcasting to make the positive and negative weights Tensors have
+      # the same shape (yes, this is inelegant). The _RatioWeights object has
+      # already checked that they're both rank-1, so this code just makes sure
+      # that they're the same size before attempting to stack them.
+      positive_weights_value += tf.zeros_like(negative_weights_value)
+      negative_weights_value += tf.zeros_like(positive_weights_value)
 
-    weights = tf.stack([positive_weights, negative_weights], axis=1)
-    losses = self._loss.evaluate_binary_classification(self._predictions,
-                                                       weights)
-    # If losses isn't one-dimensional, then something has gone badly wrong--we
-    # should have checked all of the dimensions before reaching this point.
-    # Likewise, loss functions are required to return a Tensor of the same dtype
-    # as the predictions.
-    pre_train_ops.add(
-        tf.assert_rank(losses, 1, message="losses must be one-dimensional"))
-    pre_train_ops.add(
-        tf.assert_type(
-            losses,
-            self._dtype,
-            message="losses must be the same dtype as predictions"))
-    average_loss = tf.reduce_mean(losses)
+      weights = tf.stack([positive_weights_value, negative_weights_value],
+                         axis=1)
+      losses = self._loss.evaluate_binary_classification(
+          predictions_value, weights)
 
-    return average_loss, pre_train_ops, restart_ops
+      return tf.reduce_mean(losses)
+
+    return deferred_tensor.DeferredTensor.apply(average_loss_fn,
+                                                positive_weights,
+                                                negative_weights,
+                                                self._predictions), variables

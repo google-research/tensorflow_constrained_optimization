@@ -23,6 +23,8 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python import graph_and_eager_test_case
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import loss
 from tensorflow_constrained_optimization.python.rates import predicate
 from tensorflow_constrained_optimization.python.rates import term
@@ -31,7 +33,8 @@ _DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
 _GLOBAL_STEP_KEY = "global_step"
 
 
-class TermTest(tf.test.TestCase):
+# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `_RatioWeights` and `Term` classes."""
 
   def __init__(self, *args, **kwargs):
@@ -157,23 +160,21 @@ class TermTest(tf.test.TestCase):
         _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
-    ratio_weights = term._RatioWeights(tf.float32, {})
-    actual_weights_tensor, pre_train_ops, restart_ops = ratio_weights.evaluate(
-        memoizer)
-    self.assertEqual(0, len(pre_train_ops))
-    self.assertEqual(0, len(restart_ops))
+    ratio_weights = term._RatioWeights({})
+    actual_weights, variables = ratio_weights.evaluate(memoizer)
+    self.assertEqual(0, len(variables))
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
-
-      actual_weights = session.run(actual_weights_tensor)
-      self.assertAllEqual([0], actual_weights)
+    # We don't need to run this in a session, since the expected weights are a
+    # constant (zero).
+    self.assertAllEqual([0], actual_weights(memoizer))
 
   def test_ratio_weights_ratio(self):
     """Tests `_RatioWeights`'s ratio() class method."""
-    weights_placeholder = tf.placeholder(tf.float32, shape=(None,))
-    numerator_predicate_placeholder = tf.placeholder(tf.bool, shape=(None,))
-    denominator_predicate_placeholder = tf.placeholder(tf.bool, shape=(None,))
+    weights_placeholder = self.wrapped_placeholder(tf.float32, shape=(None,))
+    numerator_predicate_placeholder = self.wrapped_placeholder(
+        tf.bool, shape=(None,))
+    denominator_predicate_placeholder = self.wrapped_placeholder(
+        tf.bool, shape=(None,))
     memoizer = {
         _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
@@ -182,14 +183,23 @@ class TermTest(tf.test.TestCase):
     numerator_predicate = predicate.Predicate(numerator_predicate_placeholder)
     denominator_predicate = predicate.Predicate(
         denominator_predicate_placeholder)
-    ratio_weights = term._RatioWeights.ratio(weights_placeholder,
-                                             numerator_predicate,
-                                             denominator_predicate)
-    actual_weights_tensor, pre_train_ops, _ = ratio_weights.evaluate(memoizer)
+    ratio_weights = term._RatioWeights.ratio(
+        deferred_tensor.DeferredTensor(weights_placeholder),
+        numerator_predicate, denominator_predicate)
+    actual_weights, variables = ratio_weights.evaluate(memoizer)
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
+    # We need to explicitly create the variables before the call to
+    # global_variables_initializer().
+    for variable in variables:
+      variable.create(memoizer)
 
+    def pre_train_ops_fn():
+      pre_train_ops = []
+      for variable in variables:
+        pre_train_ops += variable.pre_train_ops(memoizer)
+      return pre_train_ops
+
+    with self.wrapped_session() as session:
       running_count = 0.0
       running_sum = 0.0
       for ii in xrange(len(self._splits) - 1):
@@ -210,10 +220,10 @@ class TermTest(tf.test.TestCase):
         expected_weights = (weights_subarray * numerator_predicate_subarray)
         expected_weights /= average_denominator
 
-        # Running these side ops will update the running denominator count/sum
-        # calculated by the _RatioWeights object.
-        session.run(
-            list(pre_train_ops),
+        # Running the pre_train_ops will update the running denominator
+        # count/sum calculated by the _RatioWeights object.
+        session.run_ops(
+            pre_train_ops_fn,
             feed_dict={
                 weights_placeholder:
                     weights_subarray,
@@ -223,8 +233,8 @@ class TermTest(tf.test.TestCase):
                     denominator_predicate_subarray
             })
         # Now we can calculate the weights.
-        actual_weights = session.run(
-            actual_weights_tensor,
+        actual_weights_value = session.run(
+            lambda: actual_weights(memoizer),
             feed_dict={
                 weights_placeholder:
                     weights_subarray,
@@ -234,9 +244,10 @@ class TermTest(tf.test.TestCase):
                     denominator_predicate_subarray
             })
 
-        self.assertAllClose(expected_weights, actual_weights, rtol=0, atol=1e-6)
+        self.assertAllClose(
+            expected_weights, actual_weights_value, rtol=0, atol=1e-6)
 
-        session.run(memoizer[_GLOBAL_STEP_KEY].assign_add(1))
+        session.run_ops(lambda: memoizer[_GLOBAL_STEP_KEY].assign_add(1))
 
   def test_ratio_weights_arithmetic(self):
     """Tests `_RatioWeights`'s arithmetic operators."""
@@ -246,8 +257,9 @@ class TermTest(tf.test.TestCase):
     }
 
     def create_ratio_weights(weights_tensor):
-      return term._RatioWeights.ratio(weights_tensor, predicate.Predicate(True),
-                                      predicate.Predicate(True))
+      return term._RatioWeights.ratio(
+          deferred_tensor.DeferredTensor(weights_tensor),
+          predicate.Predicate(True), predicate.Predicate(True))
 
     weights_tensors = [
         tf.constant(self._weights[:, ii], dtype=tf.float32) for ii in xrange(3)
@@ -263,13 +275,17 @@ class TermTest(tf.test.TestCase):
     expected_weights = (-self._weights[:, 0] + 0.3 * self._weights[:, 1] -
                         self._weights[:, 2] / 3.1 + self._weights[:, 0] * 0.5)
 
-    actual_weights_tensor, _, _ = ratio_weights.evaluate(memoizer)
+    actual_weights, variables = ratio_weights.evaluate(memoizer)
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
+    # We need to explicitly create the variables before the call to
+    # global_variables_initializer().
+    for variable in variables:
+      variable.create(memoizer)
 
-      actual_weights = session.run(actual_weights_tensor)
-      self.assertAllClose(expected_weights, actual_weights, rtol=0, atol=1e-6)
+    with self.wrapped_session() as session:
+      actual_weights_value = session.run(actual_weights(memoizer))
+      self.assertAllClose(
+          expected_weights, actual_weights_value, rtol=0, atol=1e-6)
 
   def test_ratio_weights_memoizer(self):
     """Tests memoization."""
@@ -278,9 +294,12 @@ class TermTest(tf.test.TestCase):
         _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
-    weights_tensor = tf.constant([0.5, 0.1, 1.0], dtype=tf.float32)
-    numerator1_tensor = tf.constant([True, False, True], dtype=tf.bool)
-    numerator2_tensor = tf.constant([True, True, False], dtype=tf.bool)
+    weights_tensor = deferred_tensor.DeferredTensor(
+        tf.constant([0.5, 0.1, 1.0], dtype=tf.float32))
+    numerator1_tensor = deferred_tensor.DeferredTensor(
+        tf.constant([True, False, True], dtype=tf.bool))
+    numerator2_tensor = deferred_tensor.DeferredTensor(
+        tf.constant([True, True, False], dtype=tf.bool))
     numerator1_predicate = predicate.Predicate(numerator1_tensor)
     numerator2_predicate = predicate.Predicate(numerator2_tensor)
     denominator_predicate = predicate.Predicate(True)
@@ -291,14 +310,13 @@ class TermTest(tf.test.TestCase):
     ratio_weights2 = term._RatioWeights.ratio(weights_tensor,
                                               numerator2_predicate,
                                               denominator_predicate)
-    result1, pre_train_ops1, restart_ops1 = ratio_weights1.evaluate(memoizer)
-    result2, pre_train_ops2, restart_ops2 = ratio_weights2.evaluate(memoizer)
+    result1, variables1 = ratio_weights1.evaluate(memoizer)
+    result2, variables2 = ratio_weights2.evaluate(memoizer)
 
     # The numerators differ, so the results should be different, but the
-    # weights and denominators match, so the ops should be the same.
+    # weights and denominators match, so the variables should be the same.
     self.assertIsNot(result1, result2)
-    self.assertEqual(pre_train_ops1, pre_train_ops2)
-    self.assertEqual(restart_ops1, restart_ops2)
+    self.assertEqual(variables1, variables2)
 
   def test_binary_classification_term(self):
     """Tests `BinaryClassificationTerm`."""
@@ -323,15 +341,14 @@ class TermTest(tf.test.TestCase):
                                           positive_weights_tensor,
                                           negative_weights_tensor):
       positive_ratio_weights = term._RatioWeights.ratio(
-          positive_weights_tensor, predicate.Predicate(True),
-          predicate.Predicate(True))
+          deferred_tensor.DeferredTensor(positive_weights_tensor),
+          predicate.Predicate(True), predicate.Predicate(True))
       negative_ratio_weights = term._RatioWeights.ratio(
-          negative_weights_tensor, predicate.Predicate(True),
-          predicate.Predicate(True))
-      return term.BinaryClassificationTerm(predictions_tensor,
-                                           positive_ratio_weights,
-                                           negative_ratio_weights,
-                                           loss.HingeLoss())
+          deferred_tensor.DeferredTensor(negative_weights_tensor),
+          predicate.Predicate(True), predicate.Predicate(True))
+      return term.BinaryClassificationTerm(
+          deferred_tensor.DeferredTensor(predictions_tensor),
+          positive_ratio_weights, negative_ratio_weights, loss.HingeLoss())
 
     # Randomly construct arrays of predictions and weights.
     predictions_tensor = tf.constant(self._predictions, dtype=tf.float32)
@@ -363,16 +380,20 @@ class TermTest(tf.test.TestCase):
                                  0.3 * self._negative_weights[:, 1] -
                                  self._negative_weights[:, 2] / 3.1 +
                                  self._negative_weights[:, 0] * 0.5)
-    expected_value = numpy_binary_classification_loss(
-        expected_positive_weights, expected_negative_weights, self._predictions)
+    expected_term = numpy_binary_classification_loss(expected_positive_weights,
+                                                     expected_negative_weights,
+                                                     self._predictions)
 
-    actual_value_tensor, _, _ = term_object.evaluate(memoizer)
+    actual_term, variables = term_object.evaluate(memoizer)
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
+    # We need to explicitly create the variables before the call to
+    # global_variables_initializer().
+    for variable in variables:
+      variable.create(memoizer)
 
-      actual_value = session.run(actual_value_tensor)
-      self.assertAllClose(expected_value, actual_value, rtol=0, atol=1e-6)
+    with self.wrapped_session() as session:
+      actual_term_value = session.run(actual_term(memoizer))
+      self.assertAllClose(expected_term, actual_term_value, rtol=0, atol=1e-6)
 
 
 if __name__ == "__main__":

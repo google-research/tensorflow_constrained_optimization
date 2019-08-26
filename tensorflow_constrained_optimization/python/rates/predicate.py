@@ -21,6 +21,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers
 
 
@@ -31,31 +32,45 @@ class Predicate(helpers.RateObject):
   on values between zero and one, not just the two extremes.
   """
 
-  def __init__(self, tensor):
+  def __init__(  # pylint: disable=invalid-name
+      self, tensor, _convert_and_clip=True):
     """Creates a new `Predicate`.
 
     Args:
       tensor: an object convertible to a rank-1 `Tensor` (e.g. a scalar, list,
-        numpy array, or a `Tensor` itself). All elements will be clipped to the
-        range [0,1].
+        numpy array, or a `Tensor` itself), or a nullary function returning such
+        an object, or a DeferredTensor. This object will be converted to a
+        float32 `DeferredTensor` and clipped to [0,1].
+      _convert_and_clip: private Boolean. If False, "tensor" will not be
+        converted to a float32 `DeferredTensor` and clipped. This is for
+        internal use *only*.
     """
-    self._tensor = tf.cast(
-        helpers.convert_to_1d_tensor(tensor, name="predicate"),
-        dtype=tf.float32)
+    if isinstance(tensor, Predicate):
+      raise ValueError("cannot create a Predicate from a Predicate")
+
+    def convert_and_clip_fn(arg):
+      """Converts the given object to a rank-one float32 `Tensor` in [0,1]."""
+      return tf.clip_by_value(
+          tf.cast(
+              helpers.convert_to_1d_tensor(arg, "predicate"), dtype=tf.float32),
+          0.0, 1.0)
+
+    self._tensor = tensor
+    if not isinstance(self._tensor, deferred_tensor.DeferredTensor):
+      self._tensor = deferred_tensor.DeferredTensor(self._tensor)
+    if _convert_and_clip:
+      self._tensor = deferred_tensor.DeferredTensor.apply(
+          convert_and_clip_fn, self._tensor)
 
   @property
   def tensor(self):
-    """Returns the predicate as a `Tensor`.
+    """Returns the predicate as a `DeferredTensor`.
 
     Returns:
-      A rank one `Tensor` with dtype tf.float32. All of its values will be in
-      the range [0,1].
+      A rank one `DeferredTensor` with dtype tf.float32. All of its values will
+      be in the range [0,1].
     """
-    # We perform the clipping here, instead of in __init__, so that we don't
-    # clip Tensors that have already been clipped. This doesn't affect the
-    # result, regardless of what operations have been performed on the
-    # Predicate.
-    return tf.clip_by_value(self._tensor, 0.0, 1.0)
+    return self._tensor
 
   def __invert__(self):
     """Returns the logical NOT of this `Predicate`.
@@ -67,7 +82,12 @@ class Predicate(helpers.RateObject):
     Returns:
       A `Predicate` representing the logical NOT of this `Predicate`.
     """
-    return Predicate(1.0 - self._tensor)
+    # We pass "_convert_and_clip=False" since the argument we pass to the
+    # Predicate constructor is already a 1d float32 DeferredTensor in [0,1].
+    return Predicate(
+        deferred_tensor.DeferredTensor.apply(
+            lambda self_tensor: 1.0 - self_tensor, self._tensor),
+        _convert_and_clip=False)
 
   def __and__(self, other):
     """Returns the logical AND of two `Predicate`s.
@@ -88,13 +108,13 @@ class Predicate(helpers.RateObject):
     if not isinstance(other, Predicate):
       raise TypeError("Predicates can only be ANDed with other Predicates")
     # We use min(a,b) instead of e.g. a*b because we want to preserve the usual
-    # logical identities. We pass the private _tensors to tf.minimum, instead
-    # of using the public predicate property, so that we don't clip quantities
-    # that have already been clipped.
-    #
-    # pylint: disable=protected-access
-    return Predicate(tf.minimum(self._tensor, other._tensor))
-    # pylint: enable=protected-access
+    # logical identities. We pass "_convert_and_clip=False" since the argument
+    # we pass to the Predicate constructor is already a 1d float32
+    # DeferredTensor in [0,1].
+    return Predicate(
+        deferred_tensor.DeferredTensor.apply(tf.minimum, self._tensor,
+                                             other.tensor),
+        _convert_and_clip=False)
 
   def __or__(self, other):
     """Returns the logical OR of two `Predicate`s.
@@ -115,13 +135,13 @@ class Predicate(helpers.RateObject):
     if not isinstance(other, Predicate):
       raise TypeError("Predicates can only be ORed with other Predicates")
     # We use max(a,b) instead of e.g. 1-(1-a)*(1-b) because we want to preserve
-    # the usual logical identities. We pass the private _tensors to tf.minimum,
-    # instead of using the public predicate property, so that we don't clip
-    # quantities that have already been clipped.
-    #
-    # pylint: disable=protected-access
-    return Predicate(tf.maximum(self._tensor, other._tensor))
-    # pylint: enable=protected-access
+    # the usual logical identities. We pass "_convert_and_clip=False" since the
+    # argument we pass to the Predicate constructor is already a 1d float32
+    # DeferredTensor in [0,1].
+    return Predicate(
+        deferred_tensor.DeferredTensor.apply(tf.maximum, self._tensor,
+                                             other.tensor),
+        _convert_and_clip=False)
 
   def __xor__(self, other):
     """Returns the logical XOR of two `Predicate`s.

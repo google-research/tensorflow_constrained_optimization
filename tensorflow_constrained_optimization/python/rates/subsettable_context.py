@@ -80,6 +80,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import tensorflow as tf
+
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers
 from tensorflow_constrained_optimization.python.rates import predicate
 
@@ -104,23 +107,23 @@ class _RawContext(helpers.RateObject):
     """Creates a new `_RawContext`.
 
     Args:
-      penalty_predictions: rank-1 floating-point `Tensor`, for which the ith
-        element is the output of the model on the ith training example, for the
-        training dataset associated with the penalties.
-      penalty_labels: optional rank-1 `Tensor`, for which the ith element is the
-        label of the ith training example, for the training dataset associated
-        with the penalties.
-      penalty_weights: rank-1 floating-point `Tensor`, for which the ith element
-        is the weight of the ith training example, for the training dataset
-        associated with the penalties.
-      constraint_predictions: rank-1 floating-point `Tensor`, for which the ith
-        element is the output of the model on the ith training example, for the
-        training dataset associated with the constraints.
-      constraint_labels: optional rank-1 `Tensor`, for which the ith element is
-        the label of the ith training example, for the training dataset
-        associated with the constraints.
-      constraint_weights: rank-1 floating-point `Tensor`, for which the ith
+      penalty_predictions: rank-1 floating-point `DeferredTensor`, for which the
+        ith element is the output of the model on the ith training example, for
+        the training dataset associated with the penalties.
+      penalty_labels: optional rank-1 `DeferredTensor`, for which the ith
+        element is the label of the ith training example, for the training
+        dataset associated with the penalties.
+      penalty_weights: rank-1 floating-point `DeferredTensor`, for which the ith
         element is the weight of the ith training example, for the training
+        dataset associated with the penalties.
+      constraint_predictions: rank-1 floating-point `DeferredTensor`, for which
+        the ith element is the output of the model on the ith training example,
+        for the training dataset associated with the constraints.
+      constraint_labels: optional rank-1 `DeferredTensor`, for which the ith
+        element is the label of the ith training example, for the training
+        dataset associated with the constraints.
+      constraint_weights: rank-1 floating-point `DeferredTensor`, for which the
+        ith element is the weight of the ith training example, for the training
         dataset associated with the constraints.
     """
     self._penalty_predictions = penalty_predictions
@@ -139,8 +142,7 @@ class _RawContext(helpers.RateObject):
         "constraint_predictions", "constraint_labels", "constraint_weights"
     ]
     return all(
-        helpers.tensors_equal(
-            getattr(self, attr_name), getattr(other, attr_name))
+        getattr(self, attr_name) == getattr(other, attr_name)
         for attr_name in attr_names)
 
   def __ne__(self, other):
@@ -148,48 +150,48 @@ class _RawContext(helpers.RateObject):
 
   @property
   def penalty_predictions(self):
-    """Returns the predictions `Tensor` for the penalties."""
+    """Returns the predictions `DeferredTensor` for the penalties."""
     return self._penalty_predictions
 
   @property
   def penalty_labels(self):
-    """Returns the labels `Tensor` for the penalties.
+    """Returns the labels `DeferredTensor` for the penalties.
 
     The labels are permitted to be absent, in which case this method will return
     None.
 
     Returns:
-      `Tensor` of labels associated with the penalties, or None if there are no
-      such labels.
+      `DeferredTensor` of labels associated with the penalties, or None if there
+      are no such labels.
     """
     return self._penalty_labels
 
   @property
   def penalty_weights(self):
-    """Returns the weights `Tensor` for the penalties."""
+    """Returns the weights `DeferredTensor` for the penalties."""
     return self._penalty_weights
 
   @property
   def constraint_predictions(self):
-    """Returns the predictions `Tensor` for the constraints."""
+    """Returns the predictions `DeferredTensor` for the constraints."""
     return self._constraint_predictions
 
   @property
   def constraint_labels(self):
-    """Returns the labels `Tensor` for the constraints.
+    """Returns the labels `DeferredTensor` for the constraints.
 
     The labels are permitted to be absent, in which case this method will return
     None.
 
     Returns:
-      `Tensor` of labels associated with the constraints, or None if there are
-      no such labels.
+      `DeferredTensor` of labels associated with the constraints, or None if
+      there are no such labels.
     """
     return self._constraint_labels
 
   @property
   def constraint_weights(self):
-    """Returns the weights `Tensor` for the constraints."""
+    """Returns the weights `DeferredTensor` for the constraints."""
     return self._constraint_weights
 
 
@@ -329,21 +331,33 @@ class SubsettableContext(helpers.RateObject):
                          "subsetting a split context")
       constraint_predicate = penalty_predicate
 
+    # First convert the predicate Tensors into DeferredTensors, so that we can
+    # use the __eq__ operator.
+    if not isinstance(penalty_predicate, deferred_tensor.DeferredTensor):
+      penalty_predicate = deferred_tensor.DeferredTensor(penalty_predicate)
+    if not isinstance(constraint_predicate, deferred_tensor.DeferredTensor):
+      constraint_predicate = deferred_tensor.DeferredTensor(
+          constraint_predicate)
+
     # Convert the boolean predicates to Predicate objects. Make sure that we
     # don't change from a non-split context (both predicates are the same
     # object) to a split context (the predicates are different objects) unless
     # it's necessary.
-    if helpers.tensors_equal(penalty_predicate, constraint_predicate):
-      penalty_predicate = predicate.Predicate(penalty_predicate)
+    if (self._penalty_predicate == self._constraint_predicate and
+        penalty_predicate == constraint_predicate):
+      penalty_predicate = self._penalty_predicate & predicate.Predicate(
+          penalty_predicate)
       constraint_predicate = penalty_predicate
     else:
-      penalty_predicate = predicate.Predicate(penalty_predicate)
-      constraint_predicate = predicate.Predicate(constraint_predicate)
+      penalty_predicate = self._penalty_predicate & predicate.Predicate(
+          penalty_predicate)
+      constraint_predicate = self._constraint_predicate & predicate.Predicate(
+          constraint_predicate)
 
     return SubsettableContext(
         raw_context=self._raw_context,
-        penalty_predicate=self._penalty_predicate & penalty_predicate,
-        constraint_predicate=self._constraint_predicate & constraint_predicate)
+        penalty_predicate=penalty_predicate,
+        constraint_predicate=constraint_predicate)
 
   def __and__(self, other):
     """Returns a context representing the result of ANDing the arguments.
@@ -420,6 +434,7 @@ def rate_context(predictions, labels=None, weights=1.0):
     `SubsettableContext` representing the given predictions, labels and weights.
 
   Raises:
+    ValueError: if we're in eager mode, but predictions is not callable.
     TypeError: if any arguments are internal rate library objects, instead of
       `Tensor`s or scalars.
   """
@@ -430,11 +445,25 @@ def rate_context(predictions, labels=None, weights=1.0):
   # would add a dummy element to the Tensorflow graph, and wouldn't work for a
   # Tensor with an unknown size. Hence, we only check that they are not types
   # that we know for certain are disallowed: objects internal to this library.
-  if (isinstance(predictions, helpers.RateObject) or
-      isinstance(labels, helpers.RateObject) or
-      isinstance(weights, helpers.RateObject)):
-    raise TypeError("parameters to rate_context() should all be Tensors or "
-                    "scalars")
+  if isinstance(predictions, helpers.RateObject):
+    raise TypeError("predictions parameter to rate_context() should be a "
+                    "Tensor-like object, or a nullary function returning such")
+  if isinstance(labels, helpers.RateObject):
+    raise TypeError("labels parameter to rate_context() should be a "
+                    "Tensor-like object, or a nullary function returning such")
+  if isinstance(weights, helpers.RateObject):
+    raise TypeError("weights parameter to rate_context() should be a "
+                    "Tensor-like object, or a nullary function returning such")
+
+  if tf.executing_eagerly() and not callable(predictions):
+    raise ValueError("in eager mode, the predictions provided to a context "
+                     "must be a nullary function returning a Tensor (the "
+                     "labels and weights possibly should be, also)")
+
+  predictions = deferred_tensor.DeferredTensor(predictions)
+  if labels is not None:
+    labels = deferred_tensor.DeferredTensor(labels)
+  weights = deferred_tensor.DeferredTensor(weights)
 
   raw_context = _RawContext(
       penalty_predictions=predictions,
@@ -485,18 +514,55 @@ def split_rate_context(penalty_predictions,
     `SubsettableContext` representing the given predictions, labels and weights.
 
   Raises:
+    ValueError: if we're in eager mode, but either penalty_predictions or
+      constraint_predictions is not callable.
     TypeError: if any arguments are internal rate library objects, instead of
       `Tensor`s or scalars.
   """
   # See comment in rate_context.
-  if (isinstance(penalty_predictions, helpers.RateObject) or
-      isinstance(constraint_predictions, helpers.RateObject) or
-      isinstance(penalty_labels, helpers.RateObject) or
-      isinstance(constraint_labels, helpers.RateObject) or
-      isinstance(penalty_weights, helpers.RateObject) or
-      isinstance(constraint_weights, helpers.RateObject)):
-    raise TypeError("parameters to split_rate_context() should all be Tensors "
-                    "or scalars")
+  if isinstance(penalty_predictions, helpers.RateObject):
+    raise TypeError(
+        "penalty_predictions parameter to split_rate_context() "
+        "should be a Tensor-like object, or a nullary function returning such")
+  if isinstance(constraint_predictions, helpers.RateObject):
+    raise TypeError(
+        "constraint_predictions parameter to "
+        "split_rate_context() should be a Tensor-like object, or a nullary "
+        "function returning such")
+  if isinstance(penalty_labels, helpers.RateObject):
+    raise TypeError(
+        "penalty_labels parameter to split_rate_context() should "
+        "be a Tensor-like object, or a nullary function returning such")
+  if isinstance(constraint_labels, helpers.RateObject):
+    raise TypeError(
+        "constraint_labels parameter to split_rate_context() "
+        "should be a Tensor-like object, or a nullary function returning such")
+  if isinstance(penalty_weights, helpers.RateObject):
+    raise TypeError(
+        "penalty_weights parameter to split_rate_context() "
+        "should be a Tensor-like object, or a nullary function returning such")
+  if isinstance(constraint_weights, helpers.RateObject):
+    raise TypeError(
+        "constraint_weights parameter to split_rate_context() "
+        "should be a Tensor-like object, or a nullary function returning such")
+
+  if tf.executing_eagerly() and not (callable(penalty_predictions) and
+                                     callable(constraint_predictions)):
+    raise ValueError("in eager mode, the penalty_predictions and "
+                     "constraint_predictions provided to a context must each "
+                     "be a nullary function returning a Tensor (the labels "
+                     "and weights possibly should be, also)")
+
+  penalty_predictions = deferred_tensor.DeferredTensor(penalty_predictions)
+  if penalty_labels is not None:
+    penalty_labels = deferred_tensor.DeferredTensor(penalty_labels)
+  penalty_weights = deferred_tensor.DeferredTensor(penalty_weights)
+
+  constraint_predictions = deferred_tensor.DeferredTensor(
+      constraint_predictions)
+  if constraint_labels is not None:
+    constraint_labels = deferred_tensor.DeferredTensor(constraint_labels)
+  constraint_weights = deferred_tensor.DeferredTensor(constraint_weights)
 
   raw_context = _RawContext(
       penalty_predictions=penalty_predictions,

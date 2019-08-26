@@ -29,6 +29,8 @@ class HelpersTest(tf.test.TestCase):
 
   def test_convert_to_1d_tensor(self):
     """Tests the "convert_to_1d_tensor" function."""
+    self.assertFalse(tf.executing_eagerly())
+
     # Trying to make a rank-1 Tensor from a 0d Tensor should succeed.
     expected = [2.7]
     actual = helpers.convert_to_1d_tensor(2.7)
@@ -72,6 +74,8 @@ class HelpersTest(tf.test.TestCase):
 
   def test_get_num_columns_of_2d_tensor(self):
     """Tests the "get_num_columns_of_2d_tensor" function."""
+    self.assertFalse(tf.executing_eagerly())
+
     # Trying to get the number of columns from a non-tensor should fail.
     with self.assertRaises(TypeError):
       _ = helpers.get_num_columns_of_2d_tensor([[1, 2], [3, 4]])

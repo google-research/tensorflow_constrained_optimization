@@ -20,15 +20,19 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import binary_rates
 from tensorflow_constrained_optimization.python.rates import rate_minimization_problem
 from tensorflow_constrained_optimization.python.rates import subsettable_context
 
 
-class RateMinimizationProblemTest(tf.test.TestCase):
+# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+class RateMinimizationProblemTest(
+    graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `RateMinimizationProblem` class."""
 
   def __init__(self, *args, **kwargs):
@@ -79,11 +83,23 @@ class RateMinimizationProblemTest(tf.test.TestCase):
     # the wrong TensorFlow graph.
     result = []
     for index in xrange(self._num_datasets):
-      predictions = tf.constant(self._predictions[index], dtype=tf.float32)
-      weights = tf.constant(self._weights[index], dtype=tf.float32)
+
+      # To support eager mode, the predictions should be a nullary function
+      # returning a Tensor, but we need to make sure that it has its own copy of
+      # "index".
+      def predictions(index=index):
+        return tf.constant(self._predictions[index], dtype=tf.float32)
+
+      # In support eager mode, the weights should be a nullary function
+      # returning a Tensor, but we need to make sure that it has its own copy of
+      # "index".
+      def weights(index=index):
+        return tf.constant(self._weights[index], dtype=tf.float32)
+
       result.append(
           subsettable_context.rate_context(
               predictions=predictions, weights=weights))
+
     return result
 
   def test_minimization_problem_construction(self):
@@ -131,40 +147,39 @@ class RateMinimizationProblemTest(tf.test.TestCase):
         objective, [constraint1],
         denominator_lower_bound=denominator_lower_bound)
 
-    with self.session() as session:
-      session.run(
-          [tf.global_variables_initializer(),
-           tf.local_variables_initializer()])
+    with self.wrapped_session() as session:
+      # In eager mode, tf.Variable.initial_value doesn't work, so we need to
+      # cache the initial values for later.
+      if tf.executing_eagerly():
+        variables_and_initial_values = {
+            variable: variable.numpy() for variable in problem.variables
+        }
 
-      (initial_objective, initial_constraints,
-       initial_proxy_constraints) = session.run([
-           problem.objective(),
-           problem.constraints(),
-           problem.proxy_constraints()
-       ])
+      initial_objective = session.run(problem.objective())
+      initial_constraints = session.run(problem.constraints())
+      initial_proxy_constraints = session.run(problem.proxy_constraints())
 
       # We only need to run the pre-train ops once, since the entire dataset is
       # contained within the Tensors, so the denominators will be correct.
-      session.run(problem.pre_train_ops())
+      session.run_ops(problem.pre_train_ops)
 
-      (actual_objective, actual_constraints,
-       actual_proxy_constraints) = session.run([
-           problem.objective(),
-           problem.constraints(),
-           problem.proxy_constraints()
-       ])
+      actual_objective = session.run(problem.objective())
+      actual_constraints = session.run(problem.constraints())
+      actual_proxy_constraints = session.run(problem.proxy_constraints())
 
       # If we update the internal state, and then re-initialize, then the
       # resulting objective, constraints and proxy constraints should be the
       # same as they were before running the pre_train_ops.
-      session.run(problem.restart_ops())
+      if tf.executing_eagerly():
+        for variable, initial_value in six.iteritems(
+            variables_and_initial_values):
+          variable.assign(initial_value)
+      else:
+        session.run_ops(lambda: tf.variables_initializer(problem.variables))
 
-      (reinitialized_objective, reinitialized_constraints,
-       reinitialized_proxy_constraints) = session.run([
-           problem.objective(),
-           problem.constraints(),
-           problem.proxy_constraints()
-       ])
+      reinitialized_objective = session.run(problem.objective())
+      reinitialized_constraints = session.run(problem.constraints())
+      reinitialized_proxy_constraints = session.run(problem.proxy_constraints())
 
     self.assertEqual(3, initial_constraints.size)
     self.assertEqual(3, initial_proxy_constraints.size)

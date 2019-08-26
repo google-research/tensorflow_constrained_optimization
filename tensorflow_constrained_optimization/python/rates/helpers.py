@@ -19,7 +19,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
 import tensorflow as tf
 
 
@@ -34,39 +33,6 @@ class RateObject(object):
   `BasicExpression`, `Expression`), and thereby ensuring that each class of
   types is encountered only where it is expected.
   """
-
-
-def tensors_equal(left, right):
-  """Returns true if (but not only if) two objects are equal.
-
-  The purpose of this function is to check whether two `Tensor`s are equal. For
-  actual `Tensor` objects, we can't check for value-equality without running a
-  TensorFlow op, so all that we can do is check if they're the same object.
-
-  However, many of our functions expect `Tensor`s as arguments, but also accept
-  other types, such as python scalars, collections, or numpy arrays, that will
-  be converted to `Tensor`s. These types *can* be checked for value equality,
-  and this function will do so.
-
-  Args:
-    left: an object convertible to a `Tensor` (e.g. a scalar, list, numpy array,
-      or a `Tensor` itself).
-    right: an object convertible to a `Tensor` (e.g. a scalar, list, numpy
-      array, or a `Tensor` itself).
-
-  Returns:
-    True if the two arguments are equal. If this function returns False, then it
-    was unable to establish that the two objects are equal (but they may be
-    equal, anyway).
-  """
-  if (tf.contrib.framework.is_tensor(left) or
-      tf.contrib.framework.is_tensor(right)):
-    # We can't compare the values of Tensors, so the best we can do is checking
-    # if they're the same object.
-    return left is right
-  else:
-    # Every other allowed type can be handled by numpy.
-    return np.array_equal(left, right)
 
 
 def convert_to_1d_tensor(tensor, name=None):
@@ -122,7 +88,7 @@ def get_num_columns_of_2d_tensor(tensor, name="tensor"):
     ValueError: if "tensor" is not a rank-2 `Tensor` with a known number of
       columns.
   """
-  if not tf.contrib.framework.is_tensor(tensor):
+  if not tf.is_tensor(tensor):
     raise TypeError("%s must be a tensor" % name)
 
   dims = tensor.shape.dims
