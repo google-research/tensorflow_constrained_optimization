@@ -187,6 +187,8 @@ class _EagerWrappedSession(object):
       # placeholders from here.
       for key, value in six.iteritems(feed_dict):
         key.set(None)
+    elif callable(tensor):
+      tensor = tensor()
 
     if not tf.is_tensor(tensor):
       raise TypeError("_EagerWrappedSession.run expects a Tensor argument, "

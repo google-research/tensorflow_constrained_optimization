@@ -22,10 +22,8 @@ from __future__ import print_function
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
+from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import operations
-
-_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
-_GLOBAL_STEP_KEY = "global_step"
 
 
 # @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
@@ -45,8 +43,8 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       constraint portions of the `Expression`.
     """
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     penalty_value, penalty_variables = (

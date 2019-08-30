@@ -22,10 +22,8 @@ from __future__ import print_function
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
+from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
-
-_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
-_GLOBAL_STEP_KEY = "global_step"
 
 
 # @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
@@ -35,8 +33,8 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   def test_type_promotion(self):
     """Tests that automatic type promotion works as expected."""
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     tensor1 = deferred_tensor.DeferredTensor(
@@ -81,8 +79,8 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests that callbacks are not called until needed."""
     # Keeps track of whether the callbacks have been called.
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     callback_list = []
@@ -113,8 +111,8 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   def test_deferred_variable(self):
     """Tests that `DeferredVariable`s are created correctly."""
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     variable = deferred_tensor.DeferredVariable(42, dtype=tf.int32)

@@ -65,9 +65,7 @@ from __future__ import print_function
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import constrained_minimization_problem
-
-_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
-_GLOBAL_STEP_KEY = "global_step"
+from tensorflow_constrained_optimization.python.rates import defaults
 
 
 class RateMinimizationProblem(
@@ -149,8 +147,8 @@ class RateMinimizationProblem(
     # or denominator variables that need to be created for the optimization
     # problem.
     self._memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: denominator_lower_bound,
-        _GLOBAL_STEP_KEY: self._global_step
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: denominator_lower_bound,
+        defaults.GLOBAL_STEP_KEY: self._global_step
     }
 
     # We ignore the "constraint_expression" field here, since we're not inside a

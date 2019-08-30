@@ -112,8 +112,8 @@ class Expression(helpers.RateObject):
     are the first two parameters of this function.
 
     The third parameter--"extra_variables"--should contain any
-    `DeferredVariable`s that are owned by this `Expression`. This is most
-    commonly used for slack variables.
+    `DeferredVariable`s that are used (perhaps even indirectly) by this
+    `Expression`. This is most commonly used for slack variables.
 
     The fourth parameter--"extra_constraints"--is used to specify additional
     constraints that should be added to any optimization problem involving this
@@ -136,9 +136,9 @@ class Expression(helpers.RateObject):
       constraint_expression: `BasicExpression` that will be used for the
         "constraint" portion of the optimization (i.e. when optimizing the
         constraints). It does not need to be {sub,semi}differentiable.
-      extra_variables: collection of `DeferredVariable`s owned by this
-        `Expression`.
-      extra_constraints: collection of `Constraint`s required by this
+      extra_variables: optional collection of `DeferredVariable`s upon which
+        this `Expression` depends.
+      extra_constraints: optional collection of `Constraint`s required by this
         `Expression`.
     """
     self._penalty_expression = penalty_expression
@@ -197,6 +197,47 @@ class Expression(helpers.RateObject):
   def extra_constraints(self):
     """Returns the set of extra `Constraint`s."""
     return self._extra_constraints
+
+  def add_dependencies(self, extra_variables=None, extra_constraints=None):
+    """Returns a new `Expression` with extra dependencies.
+
+    The resulting `Expression` will depend on the same variables and constraints
+    as this `Expression`, but will *also* depend on those included in the
+    extra_variables and extra_constraints parameters to this method. Notice that
+    this method does *not* change `self`: instead, it returns a *new*
+    `Expression` that includes the extra dependencies.
+
+    Args:
+      extra_variables: optional collection of `DeferredVariable`s to add to the
+        list of variables upon which the resulting `Expression` depends.
+      extra_constraints: optional collection of `Constraint`s to add to the list
+        of constraints required by the resulting `Expression`.
+    """
+    if extra_variables is None:
+      extra_variables = set()
+    else:
+      extra_variables = set(extra_variables)
+    if not all(
+        isinstance(extra_variable, deferred_tensor.DeferredVariable)
+        for extra_variable in extra_variables):
+      raise TypeError("all elements of extra_variables must be "
+                      "DeferredVariable objects")
+
+    if extra_constraints is None:
+      extra_constraints = set()
+    else:
+      extra_constraints = set(extra_constraints)
+    if not all(
+        isinstance(extra_constraint, Constraint)
+        for extra_constraint in extra_constraints):
+      raise TypeError("all elements of extra_constraints must be Constraint "
+                      "objects")
+
+    return Expression(
+        self._penalty_expression,
+        self._constraint_expression,
+        extra_variables=self._extra_variables | extra_variables,
+        extra_constraints=self._extra_constraints | extra_constraints)
 
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""

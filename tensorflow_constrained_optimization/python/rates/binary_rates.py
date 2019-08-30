@@ -65,22 +65,21 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import basic_expression
+from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import expression
 from tensorflow_constrained_optimization.python.rates import loss
 from tensorflow_constrained_optimization.python.rates import subsettable_context
 from tensorflow_constrained_optimization.python.rates import term
 
-_DEFAULT_PENALTY_LOSS = loss.HingeLoss()
-_DEFAULT_CONSTRAINT_LOSS = loss.ZeroOneLoss()
 
-
-def _binary_classification_rate(positive_coefficient=0.0,
-                                negative_coefficient=0.0,
-                                numerator_context=None,
-                                denominator_context=None,
-                                penalty_loss=_DEFAULT_PENALTY_LOSS,
-                                constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+def _binary_classification_rate(
+    positive_coefficient=0.0,
+    negative_coefficient=0.0,
+    numerator_context=None,
+    denominator_context=None,
+    penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+    constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing positive and negative rates.
 
   The result of this function represents:
@@ -163,8 +162,8 @@ def _binary_classification_rate(positive_coefficient=0.0,
 
 
 def positive_prediction_rate(context,
-                             penalty_loss=_DEFAULT_PENALTY_LOSS,
-                             constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+                             penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                             constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing a positive prediction rate.
 
   The result of this function represents:
@@ -201,8 +200,8 @@ def positive_prediction_rate(context,
 
 
 def negative_prediction_rate(context,
-                             penalty_loss=_DEFAULT_PENALTY_LOSS,
-                             constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+                             penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                             constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing a negative prediction rate.
 
   The result of this function represents:
@@ -239,8 +238,8 @@ def negative_prediction_rate(context,
 
 
 def error_rate(context,
-               penalty_loss=_DEFAULT_PENALTY_LOSS,
-               constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+               penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+               constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing an error rate.
 
   The result of this function represents:
@@ -299,8 +298,8 @@ def error_rate(context,
 
 
 def accuracy_rate(context,
-                  penalty_loss=_DEFAULT_PENALTY_LOSS,
-                  constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+                  penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                  constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing an accuracy rate.
 
   The result of this function represents:
@@ -359,8 +358,8 @@ def accuracy_rate(context,
 
 
 def true_positive_rate(context,
-                       penalty_loss=_DEFAULT_PENALTY_LOSS,
-                       constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+                       penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                       constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing a true positive rate.
 
   The result of this function represents:
@@ -413,8 +412,8 @@ recall = true_positive_rate
 
 
 def false_negative_rate(context,
-                        penalty_loss=_DEFAULT_PENALTY_LOSS,
-                        constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing a false negative rate.
 
   The result of this function represents:
@@ -462,8 +461,8 @@ def false_negative_rate(context,
 
 
 def false_positive_rate(context,
-                        penalty_loss=_DEFAULT_PENALTY_LOSS,
-                        constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing a false positive rate.
 
   The result of this function represents:
@@ -511,8 +510,8 @@ def false_positive_rate(context,
 
 
 def true_negative_rate(context,
-                       penalty_loss=_DEFAULT_PENALTY_LOSS,
-                       constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+                       penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                       constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing a true negative rate.
 
   The result of this function represents:
@@ -560,8 +559,8 @@ def true_negative_rate(context,
 
 
 def precision_ratio(context,
-                    penalty_loss=_DEFAULT_PENALTY_LOSS,
-                    constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+                    penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                    constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates two `Expression`s representing a precision as a ratio.
 
   The result of this function represents:
@@ -626,8 +625,8 @@ def precision_ratio(context,
 
 def f_score_ratio(context,
                   beta=1.0,
-                  penalty_loss=_DEFAULT_PENALTY_LOSS,
-                  constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+                  penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                  constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates two `Expression`s representing an F-score as a ratio.
 
   The result of this function represents:
@@ -714,12 +713,100 @@ def f_score_ratio(context,
   return numerator_expression, denominator_expression
 
 
+def _tpr_at_fpr(context,
+                fpr_target,
+                threshold_tensor,
+                extra_variables,
+                lower_bound=False,
+                upper_bound=False,
+                penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` representing TPR@FPR.
+
+  This is a helper function for _roc_auc(). It returns an `Expression`
+  representing the true positive rate (TPR) at an implicitly-defined threshold
+  which is chosen in such a way that the false positive rate (FPR) is either <=
+  (if lower_bound is True) or >= (if upper_bound is true) the fpr_target
+  parameter.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    fpr_target: float in (0,1), the desired FPR target at which we will fix the
+      threshold.
+    threshold_tensor: `DeferredTensor`, the parameter to use for the threshold.
+    extra_variables: collection of `DeferredVariable`s, the variables upon which
+      the resulting `Expression` should depend (this should include the variable
+      containing the threshold).
+    lower_bound: bool, `True` if you want the result of this function to
+      lower-bound the TPR@FPR.
+    upper_bound: bool, `True` if you want the result of this function to
+      upper-bound the TPR@FPR.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate. This loss must be "normalized" (see
+      `BinaryClassificationLoss.is_normalized`).
+
+  Returns:
+    An `Expression` representing TPR@FPR.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if fpr_target isn't in (0,1), both lower_bound and upper_bound
+      are `False`, the context doesn't contain labels, or the constraint_loss is
+      not normalized.
+  """
+  if fpr_target <= 0 or fpr_target >= 1:
+    raise ValueError("fpr_target must be in (0,1)")
+
+  # One could set both lower_bound and upper_bound to True, in which case the
+  # result of this function could be treated as the TPR@FPR itself (instead of a
+  # {lower,upper} bound of it). However, this would come with some drawbacks: it
+  # would of course make optimization more difficult, but more importantly, it
+  # would potentially cause post-processing for feasibility (e.g. using
+  # "shrinking") to fail to find a feasible solution.
+  if not (lower_bound or upper_bound):
+    raise ValueError("at least one of lower_bound or upper_bound must be True")
+
+  # For the constraint on the false positive rates to make sense, it would be
+  # best to be using a normalized loss. The reason for this is that, if both
+  # lower_bound and upper_bound are True (or if one imposes constraints
+  # including separate lower and upper bounds), our constraints on the false
+  # positive rates will be equality constraints, which could be infeasible for
+  # an unnormalized loss. This could be changed to a warning, however.
+  if not constraint_loss.is_normalized:
+    raise ValueError("recall_at_precision can only be used with a normalized "
+                     "constraint_loss (e.g. zero/one, sigmoid or ramp)")
+
+  context = context.transform_predictions(
+      lambda predictions: predictions - threshold_tensor)
+
+  fpr_expression = false_positive_rate(
+      context, penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss).add_dependencies(
+          extra_variables=extra_variables)
+
+  extra_constraints = []
+  if lower_bound:
+    extra_constraints.append(fpr_expression <= fpr_target)
+  if upper_bound:
+    extra_constraints.append(fpr_expression >= fpr_target)
+
+  return true_positive_rate(
+      context, penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss).add_dependencies(
+          extra_variables=extra_variables, extra_constraints=extra_constraints)
+
+
 def _roc_auc(context,
              bins,
              lower_bound=False,
              upper_bound=False,
-             penalty_loss=_DEFAULT_PENALTY_LOSS,
-             constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+             penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+             constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing an approximate ROC AUC.
 
   The result of this function represents a Riemann approximation to the area
@@ -764,45 +851,13 @@ def _roc_auc(context,
       nonpositive, both lower_bound and upper_bound are `False`, or the
       constraint_loss is not normalized.
   """
-  if not isinstance(context, subsettable_context.SubsettableContext):
-    raise TypeError("context must be a SubsettableContext object")
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("roc_auc requires a context with labels")
-
   if not isinstance(bins, numbers.Integral):
     raise TypeError("number of roc_auc bins must be an integer")
   if bins <= 0:
     raise ValueError("number of roc_auc bins must be strictly positive")
 
-  # One could set both lower_bound and upper_bound to True, in which case the
-  # result of this function could be treated as the Riemann approximation to ROC
-  # AUC itself (instead of a {lower,upper} bound of it). However, this would
-  # come with some drawbacks: it would of course make optimization more
-  # difficult, but more importantly, it would potentially cause post-processing
-  # for feasibility (e.g. using "shrinking") to fail to find a feasible
-  # solution.
-  if not (lower_bound or upper_bound):
-    raise ValueError("at least one of lower_bound or upper_bound must be True")
-
-  if not (isinstance(penalty_loss, loss.BinaryClassificationLoss) and
-          isinstance(constraint_loss, loss.BinaryClassificationLoss)):
-    raise TypeError("penalty and constraint losses must be "
-                    "BinaryClassificationLoss objects")
-
-  # For the constraints on the false positive rates to make sense, it would be
-  # best to be using a normalized loss. The reason for this is that, if both
-  # lower_bound and upper_bound are True (or if one imposes constraints
-  # including separate lower and upper bounds), our constraints on the false
-  # positive rates will be equality constraints, which could be infeasible for
-  # an unnormalized loss. This could be changed to a warning, however.
-  if not constraint_loss.is_normalized:
-    raise ValueError("roc_auc can only be used with a normalized "
-                     "constraint_loss (e.g. zero/one, sigmoid or ramp)")
-
-  # Ideally the slack variable would have the same dtype as the predictions, but
-  # we might not know their dtype (e.g. in eager mode), so instead we always use
+  # Ideally the thresholds would have the same dtype as the predictions, but we
+  # might not know their dtype (e.g. in eager mode), so instead we always use
   # float32 with auto_cast=True.
   thresholds = deferred_tensor.DeferredVariable(
       np.zeros((bins,)),
@@ -811,81 +866,30 @@ def _roc_auc(context,
       dtype=tf.float32,
       auto_cast=True)
 
-  positive_context = context.subset(raw_context.penalty_labels > 0,
-                                    raw_context.constraint_labels > 0)
-  negative_context = context.subset(raw_context.penalty_labels <= 0,
-                                    raw_context.constraint_labels <= 0)
-
-  penalty_average_tpr_terms = []
-  constraint_average_tpr_terms = []
-  extra_constraints = set()
+  average_tpr_expression = None
   for bin_index in xrange(bins):
-    threshold = thresholds[bin_index]
+    fpr_target = (bin_index + 0.5) / bins
+    tpr_expression = _tpr_at_fpr(
+        context,
+        fpr_target=fpr_target,
+        threshold_tensor=thresholds[bin_index],
+        extra_variables=[thresholds],
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+        penalty_loss=penalty_loss,
+        constraint_loss=constraint_loss)
+    if average_tpr_expression is None:
+      average_tpr_expression = tpr_expression
+    else:
+      average_tpr_expression += tpr_expression
 
-    # It's tempting to wrap tf.stop_gradient() around the threshold, so that
-    # only the model parameters (and not the thresholds) will be adjusted to
-    # increase the average true positive rate. However, this would prevent the
-    # one-sided constraint, as described below, from working, since we need
-    # something to be "pushing against" the constraint.
-    penalty_tpr_term = term.BinaryClassificationTerm.ratio(
-        1.0, 0.0, raw_context.penalty_predictions - threshold,
-        raw_context.penalty_weights, positive_context.penalty_predicate,
-        positive_context.penalty_predicate, penalty_loss)
-    constraint_tpr_term = term.BinaryClassificationTerm.ratio(
-        1.0, 0.0, raw_context.constraint_predictions - threshold,
-        raw_context.constraint_weights, positive_context.constraint_predicate,
-        positive_context.constraint_predicate, constraint_loss)
-
-    penalty_average_tpr_terms.append(penalty_tpr_term / bins)
-    constraint_average_tpr_terms.append(constraint_tpr_term / bins)
-
-    # The original version of this code wrapped tf.stop_gradient() around the
-    # predictions, because we wanted to adjust the thresholds, and only the
-    # thresholds, to satisfy the false positive rate constraints. However, we
-    # found that this hurt performance, so it was removed.
-    penalty_fpr_term = term.BinaryClassificationTerm.ratio(
-        1.0, 0.0, raw_context.penalty_predictions - threshold,
-        raw_context.penalty_weights, negative_context.penalty_predicate,
-        negative_context.penalty_predicate, penalty_loss)
-    constraint_fpr_term = term.BinaryClassificationTerm.ratio(
-        1.0, 0.0, raw_context.constraint_predictions - threshold,
-        raw_context.constraint_weights, negative_context.constraint_predicate,
-        negative_context.constraint_predicate, constraint_loss)
-
-    fpr_expression = expression.Expression(
-        basic_expression.BasicExpression([penalty_fpr_term]),
-        basic_expression.BasicExpression([constraint_fpr_term]),
-        extra_variables=[thresholds])
-    target_fpr = (bin_index + 0.5) / bins
-    # Ideally fpr_expression would equal target_fpr, but we prefer to only
-    # impose a one-sided constraint (when exactly one of lower_bound or
-    # upper_bound is True) since using an equality constraint would come with
-    # drawbacks: it would of course make optimization more difficult, but more
-    # importantly, it would potentially cause post-processing for feasibility
-    # (e.g. using "shrinking") to fail to find a feasible solution.
-    #
-    # The reason why a <= constraint results in a lower bound, and a >=
-    # constraint results in an upper bound, is that, in the lower-bound case
-    # (the upper-bound case is similar), adjusting the threshold to increase the
-    # FPR will increase the corresponding TPR, and therefore the ROC AUC
-    # estimate. In other words, the objective (increasing ROC AUC, and therefore
-    # the FPR of each bin) will be "pushing against" the constraint.
-    if lower_bound:
-      extra_constraints.add(fpr_expression <= target_fpr)
-    if upper_bound:
-      extra_constraints.add(fpr_expression >= target_fpr)
-
-  return expression.Expression(
-      basic_expression.BasicExpression(penalty_average_tpr_terms),
-      basic_expression.BasicExpression(constraint_average_tpr_terms),
-      extra_variables=[thresholds],
-      extra_constraints=extra_constraints)
+  return average_tpr_expression / bins
 
 
 def roc_auc_lower_bound(context,
                         bins,
-                        penalty_loss=_DEFAULT_PENALTY_LOSS,
-                        constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing an approximate lower bound on ROC AUC.
 
   The result of this function represents a lower bound on a Riemann
@@ -941,8 +945,8 @@ def roc_auc_lower_bound(context,
 
 def roc_auc_upper_bound(context,
                         bins,
-                        penalty_loss=_DEFAULT_PENALTY_LOSS,
-                        constraint_loss=_DEFAULT_CONSTRAINT_LOSS):
+                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
   """Creates an `Expression` representing an approximate upper bound on ROC AUC.
 
   The result of this function represents an upper bound on a Riemann

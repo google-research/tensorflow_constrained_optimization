@@ -23,11 +23,9 @@ import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import basic_expression
+from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import expression
-
-_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
-_GLOBAL_STEP_KEY = "global_step"
 
 
 # @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
@@ -37,8 +35,8 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   def test_arithmetic(self):
     """Tests `Expression`'s arithmetic operators."""
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     penalty_values = [-3.6, 1.5, 0.4]

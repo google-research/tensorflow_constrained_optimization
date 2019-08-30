@@ -294,7 +294,6 @@ class HingeLoss(BinaryClassificationLoss):
     if columns != 2:
       raise ValueError("weights must have two columns")
     zero = tf.zeros(1, dtype=dtype)
-    margin = tf.constant(self._margin, dtype=dtype)
 
     positive_weights = tf.cast(weights[:, 0], dtype=dtype)
     negative_weights = tf.cast(weights[:, 1], dtype=dtype)
@@ -302,8 +301,8 @@ class HingeLoss(BinaryClassificationLoss):
     positive_weights -= constant_weights
     negative_weights -= constant_weights
 
-    is_positive = tf.maximum(zero, margin + predictions)
-    is_negative = tf.maximum(zero, margin - predictions)
+    is_positive = tf.maximum(zero, self._margin + predictions)
+    is_negative = tf.maximum(zero, self._margin - predictions)
 
     return constant_weights + (
         positive_weights * is_positive + negative_weights * is_negative)

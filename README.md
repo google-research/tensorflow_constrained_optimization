@@ -41,7 +41,7 @@ document, and:
 > [ICML'19](http://proceedings.mlr.press/v97/cotter19b/cotter19b.pdf),
 > [arXiv](https://arxiv.org/abs/1807.00028)
 
-which will be referred to as [CotterEtAl18].
+which will be referred to as [CotterEtAl19].
 
 ### Proxy constraints
 
@@ -166,7 +166,7 @@ performance out of your model, consider using the "shrinking" procedure of
         predictions, labels and weights, the first for the "penalty" portion of
         the objective, and the second for the "constraint" portion. The purpose
         of splitting the context is to improve generalization performance: see
-        [CotterEtAl18] for full details.
+        [CotterEtAl19] for full details.
 
         The most important property of these objects is that they are
         subsettable: if you want to calculate a rate on e.g. only the
@@ -531,7 +531,7 @@ illustrating how to use this library:
 *   [Generalization_communities.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Generalization_communities.ipynb):
     This notebook shows how to improve fairness generalization performance on
     the UCI Communities and Crime dataset with the split dataset approach of
-    [CotterEtAl18], using the `split_rate_context` helper.
+    [CotterEtAl19], using the `split_rate_context` helper.
 
 *   [Churn.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Churn.ipynb):
     This notebook describes how to use rate constraints for low-churn

@@ -55,12 +55,10 @@ import copy
 import six
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers
 from tensorflow_constrained_optimization.python.rates import predicate
-
-_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
-_GLOBAL_STEP_KEY = "global_step"
 
 
 class _RatioWeights(helpers.RateObject):
@@ -97,11 +95,11 @@ class _RatioWeights(helpers.RateObject):
   def __init__(self, ratios):
     """Creates a new `_RatioWeights` object.
 
-    A `RatioWeights` object is a sum of ratios, represented internally as a dict
-    mapping denominators to numerators. Each element of this dict represents a
-    ratio, and the weights Tensor represented by this object is the sum of these
-    ratios. This representation allows us to add ratios with common denominators
-    by simply adding their numerators.
+    A `_RatioWeights` object is a sum of ratios, represented internally as a
+    dict mapping denominators to numerators. Each element of this dict
+    represents a ratio, and the weights Tensor represented by this object is the
+    sum of these ratios. This representation allows us to add ratios with common
+    denominators by simply adding their numerators.
 
     Args:
       ratios: A dict mapping denominator keys to numerators. Each denominator
@@ -258,8 +256,8 @@ class _RatioWeights(helpers.RateObject):
   def __sub__(self, other):
     """Returns the result of subtracting two sets of ratio weights."""
     if not isinstance(other, _RatioWeights):
-      raise TypeError("_RatioWeights objects can only be subtracted from "
-                      "other _RatioWeights objects")
+      raise TypeError("_RatioWeights objects can only be subtracted from other "
+                      "_RatioWeights objects")
 
     ratios = copy.copy(self._ratios)
     for denominator_key, numerator in other.ratios:
@@ -333,8 +331,9 @@ class _RatioWeights(helpers.RateObject):
         # are divided by the number of minibatches, as explained below.
         running_proportion = 1.0 / (
             tf.maximum(
-                tf.cast(memoizer[_GLOBAL_STEP_KEY], dtype=running_dtype), 0.0) +
-            1.0)
+                tf.cast(
+                    memoizer[defaults.GLOBAL_STEP_KEY], dtype=running_dtype),
+                0.0) + 1.0)
         running_average_sum = (
             running_averages_variable[0] * (1.0 - running_proportion) +
             tf.cast(tf.reduce_sum(denominator_weights), dtype=running_dtype) *
@@ -375,7 +374,7 @@ class _RatioWeights(helpers.RateObject):
         # sure that we only perform the division if we know that it will result
         # in a quantity larger than denominator_lower_bound.
         running_denominator_lower_bound = tf.cast(
-            memoizer[_DENOMINATOR_LOWER_BOUND_KEY], dtype=running_dtype)
+            memoizer[defaults.DENOMINATOR_LOWER_BOUND_KEY], dtype=running_dtype)
         running_average_sum = running_averages_variable[0]
         running_average_count = running_averages_variable[1]
         return tf.cond(
@@ -629,8 +628,8 @@ class BinaryClassificationTerm(Term):
       raise TypeError("predictions must be a DeferredTensor object")
     if not (isinstance(positive_ratio_weights, _RatioWeights) and
             isinstance(negative_ratio_weights, _RatioWeights)):
-      raise TypeError("positive_ratio_weights and negative_ratio_weights "
-                      "must be _RatioWeights objects")
+      raise TypeError("positive_ratio_weights and negative_ratio_weights must "
+                      "be _RatioWeights objects")
 
     self._predictions = predictions
     self._positive_ratio_weights = positive_ratio_weights

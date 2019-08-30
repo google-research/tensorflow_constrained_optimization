@@ -23,10 +23,8 @@ import numpy as np
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
+from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import subsettable_context
-
-_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
-_GLOBAL_STEP_KEY = "global_step"
 
 
 def create_contexts():
@@ -88,8 +86,8 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests that taking the subset-of-a-subset works correctly."""
     context1, context2 = create_contexts()
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     with self.wrapped_session() as session:
@@ -121,8 +119,8 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests `SubsettableContext`'s logical AND operator."""
     context1, context2 = create_contexts()
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     and_context = context1 & context2
@@ -144,8 +142,8 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests `SubsettableContext`'s logical OR operator."""
     context1, context2 = create_contexts()
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     or_context = context1 | context2

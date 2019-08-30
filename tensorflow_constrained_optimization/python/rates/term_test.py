@@ -24,13 +24,11 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
+from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import loss
 from tensorflow_constrained_optimization.python.rates import predicate
 from tensorflow_constrained_optimization.python.rates import term
-
-_DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
-_GLOBAL_STEP_KEY = "global_step"
 
 
 # @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
@@ -156,8 +154,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   def test_ratio_weights_zero(self):
     """Tests `_RatioWeights` with all-zero weights class method."""
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     ratio_weights = term._RatioWeights({})
@@ -176,8 +174,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     denominator_predicate_placeholder = self.wrapped_placeholder(
         tf.bool, shape=(None,))
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     numerator_predicate = predicate.Predicate(numerator_predicate_placeholder)
@@ -247,13 +245,14 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         self.assertAllClose(
             expected_weights, actual_weights_value, rtol=0, atol=1e-6)
 
-        session.run_ops(lambda: memoizer[_GLOBAL_STEP_KEY].assign_add(1))
+        session.run_ops(
+            lambda: memoizer[defaults.GLOBAL_STEP_KEY].assign_add(1))
 
   def test_ratio_weights_arithmetic(self):
     """Tests `_RatioWeights`'s arithmetic operators."""
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     def create_ratio_weights(weights_tensor):
@@ -290,8 +289,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   def test_ratio_weights_memoizer(self):
     """Tests memoization."""
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     weights_tensor = deferred_tensor.DeferredTensor(
@@ -321,8 +320,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   def test_binary_classification_term(self):
     """Tests `BinaryClassificationTerm`."""
     memoizer = {
-        _DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        _GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     def numpy_binary_classification_loss(positive_weights_array,

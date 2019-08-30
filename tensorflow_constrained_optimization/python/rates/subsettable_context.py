@@ -194,6 +194,28 @@ class _RawContext(helpers.RateObject):
     """Returns the weights `DeferredTensor` for the constraints."""
     return self._constraint_weights
 
+  def transform_predictions(self, transformation):
+    """Returns a new `_RawContext` with transformed predictions.
+
+    Notice that this method does *not* change `self`: instead, it applies the
+    transformation, and returns a *new* `_RawContext`.
+
+    Args:
+      transformation: a unary function taking a `DeferredTensor` of predictions,
+        and returning a new `DeferredTensor` of transformed predictions.
+    """
+    # FUTURE WORK: this is meant for internal use, but it could be used
+    # externally if the transformation acted on normal Tensors, and we used
+    # DeferredTensor.apply().
+    penalty_predictions = transformation(self._penalty_predictions)
+    if self._penalty_predictions == self._constraint_predictions:
+      constraint_predictions = penalty_predictions
+    else:
+      constraint_predictions = transformation(self._constraint_predictions)
+    return _RawContext(penalty_predictions, self._penalty_labels,
+                       self._penalty_weights, constraint_predictions,
+                       self._constraint_labels, self._constraint_weights)
+
 
 class SubsettableContext(helpers.RateObject):
   """Represents a subset of model predictions, example labels and weights.
@@ -270,6 +292,20 @@ class SubsettableContext(helpers.RateObject):
   def constraint_predicate(self):
     """Returns the constraint `Predicate`."""
     return self._constraint_predicate
+
+  def transform_predictions(self, transformation):
+    """Returns a new `SubsettableContext` with transformed predictions.
+
+    Notice that this method does *not* change `self`: instead, it applies the
+    transformation, and returns a *new* `SubsettableContext`.
+
+    Args:
+      transformation: a unary function taking a `DeferredTensor` of predictions,
+        and returning a new `DeferredTensor` of transformed predictions.
+    """
+    return SubsettableContext(
+        self._raw_context.transform_predictions(transformation),
+        self._penalty_predicate, self._constraint_predicate)
 
   def subset(self, penalty_predicate, constraint_predicate=None):
     """Returns a subset of this context.
