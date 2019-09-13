@@ -36,6 +36,11 @@ def binary_hinge_loss(margin):
   return lambda predictions: np.maximum(0.0, margin + predictions)
 
 
+def binary_cross_entropy_loss(predictions):
+  """Expected binary classification cross_entropy loss."""
+  return np.log(1 + np.exp(predictions))
+
+
 # @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
 class LossTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `Loss` classes."""
@@ -133,6 +138,9 @@ class LossTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     for margin in [0.5, 1.0, 1.3]:
       self._binary_loss_helper(
           binary_hinge_loss(margin), loss.HingeLoss(margin))
+
+  def test_binary_cross_entropy_loss(self):
+    self._binary_loss_helper(binary_cross_entropy_loss, loss.CrossEntropyLoss())
 
 
 if __name__ == "__main__":

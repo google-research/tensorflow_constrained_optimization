@@ -306,3 +306,92 @@ class HingeLoss(BinaryClassificationLoss):
 
     return constant_weights + (
         positive_weights * is_positive + negative_weights * is_negative)
+
+
+class CrossEntropyLoss(BinaryClassificationLoss):
+  """Cross entropy loss.
+
+  The cross entropy loss is subdifferentiable and non-normalized.
+  """
+
+  @property
+  def is_differentiable(self):
+    """Returns True, since the cross entropy loss is differentiable."""
+    return True
+
+  @property
+  def is_normalized(self):
+    """Returns False, since the cross entropy loss is unbounded."""
+    return False
+
+  def __hash__(self):
+    return hash(type(self))
+
+  def __eq__(self, other):
+    return type(other) is type(self)
+
+  def evaluate_binary_classification(self, predictions, weights):
+    """Evaluates the zero-one loss on the given predictions.
+
+    Given a rank-1 `Tensor` of predictions with shape (n,), where n is the
+    number of examples, and a rank-2 `Tensor` of weights with shape (m, 2),
+    where m is broadcastable to n, this method will return a `Tensor` of shape
+    (n,) where the ith element is:
+      cross_entropy_loss[i] = constant_weights[i] +
+          (weights[i, 0] - constant_weights[i])
+              * log(1 + exp(predictions[i]) +
+          (weights[i, 1] - constant_weights[i])
+              * log(1 + exp(-predictions[i])
+    where constant_weights[i] = min{weights[i, 0], weights[i, 1]} contains the
+    minimum weights.
+
+    Args:
+      predictions: a `Tensor` of shape (n,), where n is the number of examples.
+      weights: a `Tensor` of shape (m,2), where m is broadcastable to n. This
+        `Tensor` is *not* necessarily nonnegative.
+
+    Returns:
+      A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
+      cross entropy losses for each example.
+
+    Raises:
+      TypeError: if "predictions" is not a floating-point `Tensor`, or "weights"
+        is not a `Tensor`.
+      ValueError: if "predictions" is not rank-1, or "weights" is not a rank-2
+        `Tensor` with exactly two columns.
+    """
+    predictions = _convert_to_binary_classification_predictions(predictions)
+    dtype = predictions.dtype.base_dtype
+    columns = helpers.get_num_columns_of_2d_tensor(weights, name="weights")
+    if columns != 2:
+      raise ValueError("weights must have two columns")
+    zeros = tf.zeros_like(predictions)
+
+    positive_weights = tf.cast(weights[:, 0], dtype=dtype)
+    negative_weights = tf.cast(weights[:, 1], dtype=dtype)
+    constant_weights = tf.minimum(positive_weights, negative_weights)
+    positive_weights -= constant_weights
+    negative_weights -= constant_weights
+
+    # We use tf.where() instead of tf.abs() and tf.maximum() since, if we
+    # didn't, then we would have zero gradients whenever predictions=0, with the
+    # consequence that optimization could get "stuck".
+    condition = (predictions <= zeros)
+    absolute_predictions = tf.where(condition, -predictions, predictions)
+    intermediate = tf.log(1 + tf.exp(-absolute_predictions))
+
+    # Notice that:
+    #   is_positive = log(1 + exp(-|predictions|)) + max{0, predictions}
+    #   is_positive =
+    #     log(1 + exp(predictions))                   if (predictions <= 0)
+    #     log(1 + exp(-predictions)) + predictions    if (predictions >= 0)
+    #   is_positive = log(1 + exp(predictions))
+    # Likewise:
+    #   is_negative = log(1 + exp(-predictions))
+    # The reason for representing these in terms of "intermediate" is to improve
+    # numerical accuracy.
+    is_positive = intermediate + tf.where(condition, zeros, predictions)
+    is_negative = intermediate + tf.where(condition, -predictions, zeros)
+
+    return constant_weights + (
+        positive_weights * is_positive + negative_weights * is_negative)
