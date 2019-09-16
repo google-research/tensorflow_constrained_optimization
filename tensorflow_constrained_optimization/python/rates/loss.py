@@ -108,7 +108,9 @@ class BinaryClassificationLoss(Loss):
 
     We call a classification loss "normalized" if there exists a random variable
     Z such that, for any values of the predictions and weights:
-      loss(predictions, weights) = E[zero-one-loss(predictions + Z, weights)]
+
+    > loss(predictions, weights) = E[zero-one-loss(predictions + Z, weights)]
+
     where the expectation is taken over Z.
 
     Intuitively, a normalized loss can be interpreted as a smoothed zero-one
@@ -126,10 +128,14 @@ class BinaryClassificationLoss(Loss):
     Given a rank-1 `Tensor` of predictions with shape (n,), where n is the
     number of examples, and a rank-2 `Tensor` of weights with shape (m, 2),
     where m is broadcastable to n, this method will return a `Tensor` of shape
-    (n,) where the ith element approximates:
-      zero_one_loss[i] = weights[i, 0] * 1{predictions[i] > 0} +
-          0.5 * (weights[i, 0] + weights[i, 1]) * 1{predictions[i] == 0} +
-          weights[i, 1] * 1{predictions[i] < 0}
+    (n,) where the ith element *approximates*:
+
+    ```python
+    zero_one_loss[i] = weights[i, 0] * 1{predictions[i] > 0} +
+      0.5 * (weights[i, 0] + weights[i, 1]) * 1{predictions[i] == 0} +
+      weights[i, 1] * 1{predictions[i] < 0}
+    ```
+
     where 1{} is an indicator function. For the zero-one loss, the result will
     equal the above quantity, while for other losses, it'll instead be an
     approximation. For convex losses, it will typically be a convex (in
@@ -179,9 +185,13 @@ class ZeroOneLoss(BinaryClassificationLoss):
     number of examples, and a rank-2 `Tensor` of weights with shape (m, 2),
     where m is broadcastable to n, this method will return a `Tensor` of shape
     (n,) where the ith element is:
-      zero_one_loss[i] = weights[i, 0] * 1{predictions[i] > 0} +
-          0.5 * (weights[i, 0] + weights[i, 1]) * 1{predictions[i] == 0} +
-          weights[i, 1] * 1{predictions[i] < 0}
+
+    ```python
+    zero_one_loss[i] = weights[i, 0] * 1{predictions[i] > 0} +
+      0.5 * (weights[i, 0] + weights[i, 1]) * 1{predictions[i] == 0} +
+      weights[i, 1] * 1{predictions[i] < 0}
+    ```
+
     where 1{} is an indicator function.
 
     Args:
@@ -265,11 +275,13 @@ class HingeLoss(BinaryClassificationLoss):
     number of examples, and a rank-2 `Tensor` of weights with shape (m, 2),
     where m is broadcastable to n, this method will return a `Tensor` of shape
     (n,) where the ith element is:
-      hinge_loss[i] = constant_weights[i] +
-          (weights[i, 0] - constant_weights[i])
-              * max{0, margin + predictions[i]} +
-          (weights[i, 1] - constant_weights[i])
-              * max{0, margin - predictions[i]}
+
+    ```python
+    hinge_loss[i] = constant_weights[i] +
+      (weights[i, 0] - constant_weights[i]) * max{0, margin + predictions[i]} +
+      (weights[i, 1] - constant_weights[i]) * max{0, margin - predictions[i]}
+    ```
+
     where constant_weights[i] = min{weights[i, 0], weights[i, 1]} contains the
     minimum weights.
 
@@ -337,11 +349,13 @@ class CrossEntropyLoss(BinaryClassificationLoss):
     number of examples, and a rank-2 `Tensor` of weights with shape (m, 2),
     where m is broadcastable to n, this method will return a `Tensor` of shape
     (n,) where the ith element is:
-      cross_entropy_loss[i] = constant_weights[i] +
-          (weights[i, 0] - constant_weights[i])
-              * log(1 + exp(predictions[i]) +
-          (weights[i, 1] - constant_weights[i])
-              * log(1 + exp(-predictions[i])
+
+    ```python
+    cross_entropy_loss[i] = constant_weights[i] +
+      (weights[i, 0] - constant_weights[i]) * log(1 + exp(predictions[i]) +
+      (weights[i, 1] - constant_weights[i]) * log(1 + exp(-predictions[i])
+    ```
+
     where constant_weights[i] = min{weights[i, 0], weights[i, 1]} contains the
     minimum weights.
 

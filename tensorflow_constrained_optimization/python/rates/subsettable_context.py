@@ -63,13 +63,15 @@ model evaluations. Then the following code will create a list of constraints
 forcing the error rate on "blue" examples to be between 90% and 110% of the
 error rate on non-"blue" examples:
 
->>> ctx = rate_context(model(examples_tensor), labels_tensor)
->>> blue_ctx = ctx.subset(examples_tensor[:, is_blue_idx] > 0)
->>> non_blue_ctx = ctx.subset(examples_tensor[:, is_blue_idx] <= 0)
->>> constraints = [
->>>     error_rate(blue_ctx) >= 0.9 * error_rate(non_blue_ctx),
->>>     error_rate(blue_ctx) <= 1.1 * error_rate(non_blue_ctx)
->>> ]
+```python
+ctx = rate_context(model(examples_tensor), labels_tensor)
+blue_ctx = ctx.subset(examples_tensor[:, is_blue_idx] > 0)
+non_blue_ctx = ctx.subset(examples_tensor[:, is_blue_idx] <= 0)
+constraints = [
+    error_rate(blue_ctx) >= 0.9 * error_rate(non_blue_ctx),
+    error_rate(blue_ctx) <= 1.1 * error_rate(non_blue_ctx)
+]
+```
 
 Here, "error_rate" is as defined in rates.py. The list of constraints can be
 passed on to the "RateMinimizationProblem" class in

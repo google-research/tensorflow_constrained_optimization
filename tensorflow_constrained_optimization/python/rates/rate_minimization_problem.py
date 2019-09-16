@@ -35,25 +35,31 @@ constraint on a protected class (the "blue" examples). The following code will
 create two contexts (see subsettable_context.py) representing all of the
 examples, and only the "blue" examples, respectively.
 
->>> ctx = rate_context(model(examples_tensor), labels_tensor)
->>> blue_ctx = ctx.subset(examples_tensor[:, is_blue_idx])
+```python
+ctx = rate_context(model(examples_tensor), labels_tensor)
+blue_ctx = ctx.subset(examples_tensor[:, is_blue_idx])
+```
 
 Now that we have the contexts, we can create the rates. We'll try to minimize
 the overall error rate, while constraining the true positive rate on the "blue"
 class to be between 90% and 110% of the overall true positive rate:
 
->>> objective = error_rate(ctx)
->>> constraints = [
->>>     true_positive_rate(blue_ctx) >= 0.9 * true_positive_rate(ctx),
->>>     true_positive_rate(blue_ctx) <= 1.1 * true_positive_rate(ctx)
->>> ]
+```python
+objective = error_rate(ctx)
+constraints = [
+    true_positive_rate(blue_ctx) >= 0.9 * true_positive_rate(ctx),
+    true_positive_rate(blue_ctx) <= 1.1 * true_positive_rate(ctx)
+]
+```
 
 The error_rate() and true_positive_rate() functions are two of the
 rate-constructing functions that are defined rates.py. This objective and
 list of constraints can then be passed on to the `RateMinimizationProblem`
 constructor as follows:
 
->>> problem = RateMinimizationProblem(objective, constraints)
+```python
+problem = RateMinimizationProblem(objective, constraints)
+```
 
 This problem can then be solved using a `ConstrainedOptimizer`.
 """

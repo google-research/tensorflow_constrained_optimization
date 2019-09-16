@@ -25,6 +25,18 @@ functions in this file are responsible for constructing the objects that
 represent such rates, which then are minimized or constrained to form an
 optimization problem.
 
+All rate-constructing functions return `Expression`s, each of which contains
+*two* different approximations to the desired rate. The "penalty"
+`BasicExpression` is an approximation to using penalty_loss, while the
+"constraint" `BasicExpression` is based on constraint_loss (if constraint_loss
+is the zero-one loss, which is the default, then the "constraint" expression
+will be exactly total_rate as defined above, with no approximation).
+
+The reason an `Expression` contains two `BasicExpression`s is that the
+"penalty" `BasicExpression` will be differentiable, while the "constraint"
+`BasicExpression` need not be. During optimization, the former will be used
+whenever we need to take gradients, and the latter otherwise.
+
 Example
 =======
 
@@ -36,18 +48,22 @@ constraint on a protected class (the "blue" examples). The following code will
 create three contexts (see subsettable_context.py) representing all of the
 examples, and only the "blue" examples, respectively.
 
->>> ctx = rate_context(model(examples_tensor), labels_tensor)
->>> blue_ctx = ctx.subset(examples_tensor[:, is_blue_idx])
+```python
+ctx = rate_context(model(examples_tensor), labels_tensor)
+blue_ctx = ctx.subset(examples_tensor[:, is_blue_idx])
+```
 
 Now that we have the contexts, we can create the rates. We'll try to minimize
 the overall error rate, while constraining the true positive rate on the "blue"
 class to be between 90% and 110% of the overall true positive rate:
 
->>> objective = error_rate(ctx)
->>> constraints = [
->>>     true_positive_rate(blue_ctx) >= 0.9 * true_positive_rate(ctx),
->>>     true_positive_rate(blue_ctx) <= 1.1 * true_positive_rate(ctx)
->>> ]
+```python
+objective = error_rate(ctx)
+constraints = [
+    true_positive_rate(blue_ctx) >= 0.9 * true_positive_rate(ctx),
+    true_positive_rate(blue_ctx) <= 1.1 * true_positive_rate(ctx)
+]
+```
 
 The error_rate() and true_positive_rate() functions are two of the
 rate-constructing functions that are defined in this file. This objective and
@@ -91,18 +107,6 @@ def _binary_classification_rate(
   where z_i and w_i are the given predictions and weights, and c_i and d_i are
   indicators for which examples to include the numerator and denominator (all
   four of z, w, c and d are in the contexts).
-
-  The resulting `Expression` contains *two* different approximations to
-  "total_rate". The "penalty" `BasicExpression` is an approximation to using
-  penalty_loss, while the "constraint" `BasicExpression` is based on
-  constraint_loss (if constraint_loss is the zero-one loss, which is the
-  default, then the "constraint" expression will be exactly total_rate as
-  defined above, with no approximation).
-
-  The reason an `Expression` contains two `BasicExpression`s is that the
-  "penalty" `BasicExpression` will be differentiable, while the "constraint"
-  `BasicExpression` need not be. During optimization, the former will be used
-  whenever we need to take gradients, and the latter otherwise.
 
   Args:
     positive_coefficient: float, scalar coefficient on the positive prediction
@@ -172,9 +176,6 @@ def positive_prediction_rate(context,
   indicator for which examples to include in the rate (all three of z, w and c
   are in the context).
 
-  Please see the documentation of _binary_classification_rate() for further
-  details.
-
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
       rate.
@@ -210,9 +211,6 @@ def negative_prediction_rate(context,
   indicator for which examples to include in the rate (all three of z, w and c
   are in the context).
 
-  Please see the documentation of _binary_classification_rate() for further
-  details.
-
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
       rate.
@@ -240,19 +238,18 @@ def negative_prediction_rate(context,
 def error_rate(context,
                penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates an `Expression` representing an error rate.
+  r"""Creates an `Expression` representing an error rate.
 
   The result of this function represents:
-    error_rate := (
-        sum_i{w_i * c_i * 1{y_i <= 0} * 1{z_i > 0}} +
-        sum_i{w_i * c_i * 1{y_i > 0} * 1{z_i <= 0}}
-    ) / sum_i{w_i * c_i}
-  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
-  is an indicator for which examples to include in the rate (all four of z, y, w
-  and c are in the context).
 
-  Please see the documentation of _binary_classification_rate() for further
-  details.
+  $$\\mathrm{error\_rate} = \\frac{
+    \sum_i w_i c_i ( \\mathbf{1}\{y_i \\le 0 \\wedge z_i > 0\} +
+    \\mathbf{1}\{y_i > 0 \\wedge z_i \\le 0\} )
+  }{ \sum_i w_i c_i }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
 
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
@@ -300,19 +297,18 @@ def error_rate(context,
 def accuracy_rate(context,
                   penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                   constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates an `Expression` representing an accuracy rate.
+  r"""Creates an `Expression` representing an accuracy rate.
 
   The result of this function represents:
-    accuracy_rate := (
-        sum_i{w_i * c_i * 1{y_i > 0} * 1{z_i > 0}} +
-        sum_i{w_i * c_i * 1{y_i <= 0} * 1{z_i <= 0}}
-    ) / sum_i{w_i * c_i}
-  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
-  is an indicator for which examples to include in the rate (all four of z, y, w
-  and c are in the context).
 
-  Please see the documentation of _binary_classification_rate() for further
-  details.
+  $$\\mathrm{accuracy\_rate} = \\frac{
+    \sum_i w_i c_i ( \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\} +
+    \\mathbf{1}\{y_i \\le 0 \\wedge z_i \\le 0\} )
+  }{ \sum_i w_i c_i }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
 
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
@@ -360,18 +356,17 @@ def accuracy_rate(context,
 def true_positive_rate(context,
                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates an `Expression` representing a true positive rate.
+  r"""Creates an `Expression` representing a true positive rate.
 
   The result of this function represents:
-    true_positive_rate :=
-        sum_i{w_i * c_i * 1{y_i > 0} * 1{z_i > 0}}
-            / sum_i{w_i * c_i * 1{y_i > 0}}
-  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
-  is an indicator for which examples to include in the rate (all four of z, y, w
-  and c are in the context).
 
-  Please see the documentation of _binary_classification_rate() for further
-  details.
+  $$\\mathrm{true\_positive\_rate} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i > 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
 
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
@@ -414,18 +409,17 @@ recall = true_positive_rate
 def false_negative_rate(context,
                         penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                         constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates an `Expression` representing a false negative rate.
+  r"""Creates an `Expression` representing a false negative rate.
 
   The result of this function represents:
-    false_negative_rate :=
-        sum_i{w_i * c_i * 1{y_i > 0} * 1{z_i <= 0}}
-            / sum_i{w_i * c_i * 1{y_i > 0}}
-  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
-  is an indicator for which examples to include in the rate (all four of z, y, w
-  and c are in the context).
 
-  Please see the documentation of _binary_classification_rate() for further
-  details.
+  $$\\mathrm{false\_negative\_rate} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i \le 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i > 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
 
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
@@ -463,18 +457,17 @@ def false_negative_rate(context,
 def false_positive_rate(context,
                         penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                         constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates an `Expression` representing a false positive rate.
+  r"""Creates an `Expression` representing a false positive rate.
 
   The result of this function represents:
-    false_positive_rate :=
-        sum_i{w_i * c_i * 1{y_i <= 0} * 1{z_i > 0}}
-            / sum_i{w_i * c_i * 1{y_i <= 0}}
-  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
-  is an indicator for which examples to include in the rate (all four of z, y, w
-  and c are in the context).
 
-  Please see the documentation of _binary_classification_rate() for further
-  details.
+  $$\\mathrm{false\_positive\_rate} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i \le 0 \\wedge z_i > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i \le 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
 
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
@@ -512,18 +505,17 @@ def false_positive_rate(context,
 def true_negative_rate(context,
                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates an `Expression` representing a true negative rate.
+  r"""Creates an `Expression` representing a true negative rate.
 
   The result of this function represents:
-    true_negative_rate :=
-        sum_i{w_i * c_i * 1{y_i <= 0} * 1{z_i <= 0}}
-            / sum_i{w_i * c_i * 1{y_i <= 0}}
-  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
-  is an indicator for which examples to include in the rate (all four of z, y, w
-  and c are in the context).
 
-  Please see the documentation of _binary_classification_rate() for further
-  details.
+  $$\\mathrm{true\_negative\_rate} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i \le 0 \\wedge z_i \le 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i \le 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
 
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
@@ -561,25 +553,33 @@ def true_negative_rate(context,
 def precision_ratio(context,
                     penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                     constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates two `Expression`s representing a precision as a ratio.
+  r"""Creates two `Expression`s representing a precision as a ratio.
 
   The result of this function represents:
-    numerator := sum_i{w_i * c_i * 1{y_i > 0} * 1{z_i > 0}} / sum_i{w_i * c_i}
-    denominator := sum_i{w_i * c_i * 1{z_i > 0}} / sum_i{w_i * c_i}
-  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
-  is an indicator for which examples to include in the rate (all four of z, y, w
-  and c are in the context).
+
+  $$\\mathrm{numerator} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
+  }{ \sum_i w_i c_i }$$
+
+  $$\\mathrm{denominator} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{z_i > 0\}
+  }{ \sum_i w_i c_i }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
 
   The reason for decomposing a precision as a separate numerator and denominator
-  is to make it easy to set up constraints of the form:
-    precision := numerator / denominator >= 0.9
+  is to make it easy to set up constraints of the form (for example):
+
+  > precision := numerator / denominator >= 0.9
+
   for which you can multiply through by the denominator to yield the equivalent
   constraint:
-    numerator >= 0.9 * denominator
-  This latter form is something that we can straightforwardly handle.
 
-  Please see the documentation for _binary_classification_rate for further
-  details.
+  > numerator >= 0.9 * denominator
+
+  This latter form is something that we can straightforwardly handle.
 
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
@@ -627,30 +627,35 @@ def f_score_ratio(context,
                   beta=1.0,
                   penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                   constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates two `Expression`s representing an F-score as a ratio.
+  r"""Creates two `Expression`s representing an F-score as a ratio.
 
   The result of this function represents:
-    numerator := sum_i{w_i * c_i * (1 + beta^2) * 1{y_i > 0} * 1{z_i > 0}}
-                     / sum_i{w_i * c_i}
-    denominator := sum_i{w_i * c_i * (
-                       (1 + beta^2) * 1{y_i > 0} * 1{z_i > 0} +
-                       beta^2 * 1{y_i > 0} * 1{z_i <= 0} +
-                       1{y_i <= 0} * 1{z_i > 0}
-                   )} / sum_i{w_i * c_i}
-  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
-  is an indicator for which examples to include in the rate (all four of z, y, w
-  and c are in the context).
+
+  $$\\mathrm{numerator} = \\frac{
+    \sum_i w_i c_i (1 + \\beta^2) \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
+  }{ \sum_i w_i c_i }$$
+
+  $$\\mathrm{denominator} = \\frac{
+    \sum_i w_i c_i ( (1 + \\beta^2) \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
+    + \\beta^2 \\mathbf{1}\{y_i > 0 \\wedge z_i \\le 0\}
+    + \\mathbf{1}\{y_i \\le 0 \\wedge z_i > 0\} )
+  }{ \sum_i w_i c_i }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
 
   The reason for decomposing an F-score as a separate numerator and denominator
-  is to make it easy to set up constraints of the form:
-    f_score := numerator / denominator >= 0.9
+  is to make it easy to set up constraints of the form (for example):
+
+  > f_score := numerator / denominator >= 0.9
+
   for which you can multiply through by the denominator to yield the equivalent
   constraint:
-    numerator >= 0.9 * denominator
-  This latter form is something that we can straightforwardly handle.
 
-  Please see the documentation for _binary_classification_rate for further
-  details.
+  > numerator >= 0.9 * denominator
+
+  This latter form is something that we can straightforwardly handle.
 
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
