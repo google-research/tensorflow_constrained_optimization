@@ -55,7 +55,7 @@ class ProxyLagrangianOptimizerTest(
     with self.wrapped_session() as session:
       while len(states) < len(expected_states):
         states.append(session.run(optimizer._state))
-        session.run(optimizer.minimize(minimization_problem))
+        session.run_ops(lambda: optimizer.minimize(minimization_problem))
 
     for expected, actual in zip(expected_states, states):
       self.assertAllClose(expected, actual, rtol=0, atol=1e-6)

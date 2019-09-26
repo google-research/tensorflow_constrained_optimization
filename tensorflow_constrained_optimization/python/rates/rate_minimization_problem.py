@@ -87,7 +87,7 @@ class RateMinimizationProblem(
   It's important to understand that this object is *stateful*. In addition to
   slack variables (which are automatically inserted for certain rates), the
   denominators of the rates are estimated from running sums over all of the data
-  that have been seen by pre_train_ops (which will be executed at the start of
+  that has been seen by pre_train_ops (which will be executed at the start of
   every train_op). Hence, these estimated denominators--upon which the
   objective, constraints and proxy_constraints `Tensor`s depend--will change
   from iteration-to-iteration as they converge to their true values.
@@ -145,7 +145,8 @@ class RateMinimizationProblem(
         trainable=False,
         name="global_step",
         dtype=tf.int64,
-        use_resource=True)
+        use_resource=True,
+        aggregation=tf.VariableAggregation.ONLY_FIRST_REPLICA)
 
     # This memoizer will remember and re-use certain intermediate values,
     # causing the TensorFlow graph we construct to contain fewer redundancies

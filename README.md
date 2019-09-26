@@ -464,8 +464,7 @@ constraint:
 with tf.Session() as session:
   optimizer = tf.train.AdagradOptimizer(learning_rate=1.0)
   # For optimizing the unconstrained problem, we just minimize the "objective"
-  # portion of the minimization problem. We could instead have used the
-  # "minimize_unconstrained" method of a ConstrainedOptimizer.
+  # portion of the minimization problem.
   train_op = optimizer.minimize(problem.objective())
 
   session.run(tf.global_variables_initializer())

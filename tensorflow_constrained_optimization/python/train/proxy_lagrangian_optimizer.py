@@ -234,7 +234,7 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
 
   This `ConstrainedOptimizer` uses the given `Optimizer`s to jointly minimize
   over the model parameters, and maximize over constraint/objective weights (the
-  analogue of Lagrange multipliers).
+  analogues of Lagrange multipliers).
 
   For more specifics, please refer to:
 
@@ -265,30 +265,27 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
                regret_type=_SWAP_REGRET_TYPE,
                update_type=_MULTPILICATIVE_UPDATE_TYPE,
                minimum_multiplier_radius=None,
-               initial_multiplier_radius=None):
+               initial_multiplier_radius=None,
+               name="ProxyLagrangianOptimizer"):
     """Constructs a new `ProxyLagrangianOptimizer`.
 
     The difference between "optimizer" and "constraint_optimizer" (if the latter
     is provided) is that the former is used for learning the model parameters,
     while the latter us used for the update to the constraint/objective weights
-    (the analogue of Lagrange multipliers). If no "constraint_optimizer" is
+    (the analogues of Lagrange multipliers). If no "constraint_optimizer" is
     provided, then "optimizer" is used for both.
 
     Args:
-      optimizer: `Optimizer`, used to optimize the objective and
-        proxy_constraints portion of `ConstrainedMinimizationProblem`. If
-        constraint_optimizer is not provided, this will also be used to optimize
-        the Lagrange multiplier analogues.
-      constraint_optimizer: optional `Optimizer`, used to optimize the Lagrange
-        multiplier analogues.
+      optimizer: as in `ConstrainedOptimizer`.
+      constraint_optimizer: as in `ConstrainedOptimizer`.
       regret_type: string, either "external" or "swap", determines what type of
         regret minimization to perform when updating the constraint/objective
-        weights (the analogue of the Lagrange multipliers). This parameter has
+        weights (the analogues of the Lagrange multipliers). This parameter has
         *no effect* on the optimization of the model parameters. Defaults to
         "swap".
       update_type: string, either "additive" or "multiplicative", determines
         what type of updates to use for maximizing over the constraint/objective
-        weights (the analogue of the Lagrange multipliers). This parameter has
+        weights (the analogues of the Lagrange multipliers). This parameter has
         *no effect* on the optimization of the model parameters. Defaults to
         "multiplicative".
       minimum_multiplier_radius: optional float in the range (0,1), only allowed
@@ -302,14 +299,17 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
         defaults to the value of minimum_multiplier_radius (and must be no
         smaller than minimum_multiplier_radius if it's explicitly specified),
         and defaults to zero if update_type="additive".
+      name: as in `ConstrainedOptimizer`.
 
     Raises:
       ValueError: if the "regret_type" or "update_type" parameters are invalid,
         or if "minimum_multiplier_radius" or "initial_multiplier_radius" violate
         the conditions described above.
     """
-    super(ProxyLagrangianOptimizer, self).__init__(optimizer=optimizer)
-    self._constraint_optimizer = constraint_optimizer
+    super(ProxyLagrangianOptimizer, self).__init__(
+        optimizer=optimizer,
+        constraint_optimizer=constraint_optimizer,
+        name=name)
 
     self._regret_type = regret_type.lower()
     if self._regret_type not in (_EXTERNAL_REGRET_TYPE, _SWAP_REGRET_TYPE):
@@ -351,10 +351,40 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
     # Instead, we do so lazily, in _maybe_create_state().
     self._state = None
 
-  @property
-  def constraint_optimizer(self):
-    """Returns the `Optimizer` used for the multipliers."""
-    return self._constraint_optimizer
+  def _project_state(self, state):
+    """Projects the internal state onto the feasible region."""
+    with tf.colocate_with(state):
+      if self._update_type == _ADDITIVE_UPDATE_TYPE:
+        # If we're performing additive updates, then the feasible region is
+        # either the space of multinoulli distributions (if minimizing external
+        # regret) or the space of left-stochastic matrices (if minimizing swap
+        # regret).
+        return _project_distribution_wrt_euclidean_norm(state)
+      else:
+        # This assertion should always succeed, since we check update_type in
+        # the constructor.
+        assert self._update_type == _MULTPILICATIVE_UPDATE_TYPE
+
+        # Gets the dimension of the state (num_constraints + 1)--the assertions
+        # are of things that cannot possibly fail.
+        state_shape = state.shape.dims
+        assert state_shape is not None
+        dimension = state_shape[0].value
+        assert dimension is not None
+
+        minimum_log_multiplier = math.log(self._minimum_multiplier_radius /
+                                          float(dimension))
+
+        # If we're performing multiplicative updates, then the feasible region
+        # is either the space element-wise logarithms of multinoulli
+        # distributions (if minimizing external regret) or the space of
+        # element-wise logarithms of left-stochastic matrices (if minimizing
+        # swap regret). In either case, the log of the minimal element is also
+        # constrained to be at least log(minimum_multiplier_radius / (m + 1)),
+        # where m is the number of constraints.
+        return tf.maximum(
+            _project_log_distribution_wrt_kl_divergence(state),
+            tf.constant(minimum_log_multiplier, dtype=state.dtype))
 
   def _maybe_create_state(self, num_constraints):
     """Fetches/creates the internal state."""
@@ -434,6 +464,7 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
           trainable=False,
           name="proxy_lagrangian_state",
           dtype=tf.float32,
+          constraint=self._project_state,
           use_resource=True)
 
     return self._state
@@ -498,76 +529,25 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
           tf.expand_dims(tf.cast(zero_and_constraints, distribution.dtype), 1),
           tf.expand_dims(distribution, 0))
 
-  def _projection_op(self, state, name):
-    """Projects the internal state onto the feasible region."""
-    with tf.colocate_with(state):
-      if self._update_type == _ADDITIVE_UPDATE_TYPE:
-        # If we're performing additive updates, then the feasible region is
-        # either the space of multinoulli distributions (if minimizing external
-        # regret) or the space of left-stochastic matrices (if minimizing swap
-        # regret).
-        return state.assign(
-            _project_distribution_wrt_euclidean_norm(state), name=name)
-      else:
-        # This assertion should always succeed, since we check update_type in
-        # the constructor.
-        assert self._update_type == _MULTPILICATIVE_UPDATE_TYPE
+  def _is_state(self, variable_or_handle):
+    # This assertion should always succeed, since the internal state will be
+    # created inside compute_gradients(), whereas this function will only be
+    # called from within apply_gradients().
+    assert self._state is not None
 
-        # Gets the dimension of the state (num_constraints + 1)--the assertions
-        # are of things that cannot possibly fail.
-        state_shape = state.shape.dims
-        assert state_shape is not None
-        dimension = state_shape[0].value
-        assert dimension is not None
+    # This comparison seems to work even if self._state is a resource variable,
+    # and variable_or_handle is a handle coming from _resource_apply_dense() or
+    # _resource_apply_sparse(). This might not be strictly correct, though.
+    return variable_or_handle == self._state
 
-        minimum_log_multiplier = math.log(self._minimum_multiplier_radius /
-                                          float(dimension))
-
-        # If we're performing multiplicative updates, then the feasible region
-        # is either the space element-wise logarithms of multinoulli
-        # distributions (if minimizing external regret) or the space of
-        # element-wise logarithms of left-stochastic matrices (if minimizing
-        # swap regret). In either case, the log of the minimal element is also
-        # constrained to be at least log(minimum_multiplier_radius / (m + 1)),
-        # where m is the number of constraints.
-        return state.assign(
-            tf.maximum(
-                _project_log_distribution_wrt_kl_divergence(state),
-                tf.constant(minimum_log_multiplier, dtype=state.dtype)),
-            name=name)
-
-  def _minimize_constrained(self,
-                            minimization_problem,
-                            global_step=None,
-                            var_list=None,
-                            name=None):
-    """Returns an `Operation` for minimizing the constrained problem.
-
-    The "optimizer" constructor parameter will be used to update the model
-    parameters, while the constraint/objective weights (the analogues of
-    Lagrange multipliers) will be updated using "constraint_optimizer" (if
-    provided) or "optimizer" (if not).
-
-    Args:
-      minimization_problem: `ConstrainedMinimizationProblem`, the problem to
-        optimize.
-      global_step: as in `Optimizer`'s minimize() method.
-      var_list: as in `Optimizer`'s minimize() method.
-      name: as in `Optimizer`'s minimize() method.
-
-    Returns:
-      `Operation`, the train_op.
-
-    Raises:
-      RuntimeError: if you attempt to use this LagrangianOptimizer on two
-        problems with different numbers of constraints.
-      TypeError: if the "minimization_problem" `Tensor`s have different dtypes.
-    """
+  def _compute_constrained_minimization_gradients(self, compute_gradients_fn,
+                                                  minimization_problem):
     # Create the internal state over which we will minimize swap regret.
     num_constraints = minimization_problem.num_constraints
     state = self._maybe_create_state(num_constraints)
     distribution = self._distribution(state)
 
+    # The "primal" portion of the proxy-Lagrangian game.
     def loss_fn():
       """Evaluates the loss for the current internal state."""
       objective = minimization_problem.objective()
@@ -590,62 +570,24 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
           tf.cast(distribution, objective_and_proxy_constraints.dtype),
           objective_and_proxy_constraints, 1)
 
-    # Create a list of (gradient,variable) pairs for the model parameters. In
-    # graph mode, Optimizer.compute_gradients() expects a Tensor, while in eager
-    # mode, it expects a function returning a Tensor.
-    if not tf.executing_eagerly():
-      loss_fn = loss_fn()
-    grads_and_vars = self.optimizer.compute_gradients(loss_fn, var_list)
+    with tf.control_dependencies(minimization_problem.pre_train_ops()):
+      # Create a list of (gradient,variable) pairs for the model parameters. In
+      # graph mode, compute_gradients() expects a Tensor, while in eager mode,
+      # it expects a function returning a Tensor.
+      if not tf.executing_eagerly():
+        loss_fn = loss_fn()
+      grads_and_vars = compute_gradients_fn(loss_fn)
 
-    # Compute the gradient w.r.t. the internal state.
-    constraints = minimization_problem.constraints()
-    constraints = tf.reshape(constraints, shape=(num_constraints,))
-    zero_and_constraints = tf.concat((tf.zeros(
-        (1,), dtype=constraints.dtype), constraints),
-                                     axis=0)
-    state_gradient = self._state_gradient(zero_and_constraints, distribution)
+      # Compute the gradient w.r.t. the internal state (the "dual" portion of
+      # the proxy-Lagrangian game).
+      constraints = minimization_problem.constraints()
+      constraints = tf.reshape(constraints, shape=(num_constraints,))
+      zero_and_constraints = tf.pad(constraints, [[1, 0]])
+      state_gradient = self._state_gradient(zero_and_constraints, distribution)
 
-    # Create a one-element list of (gradient,variable) pairs for the internal
-    # state. We negate state_gradient since we want to maximize We negate
-    # state_gradient since we want to maximize over the objective/constraint
-    # weights.
-    state_grads_and_vars = [(-state_gradient, state)]
+      # Create a (gradient,variable) pair for the internal state. We negate
+      # state_gradient since we want to maximize We negate state_gradient since
+      # we want to maximize over the objective/constraint weights.
+      grads_and_vars.append((-state_gradient, state))
 
-    update_ops = []
-    if self._constraint_optimizer is None:
-      # If we don't have a separate constraint_optimizer, then we use
-      # self._optimizer for both the update of the model parameters, and that of
-      # the internal state.
-      update_ops.append(
-          self.optimizer.apply_gradients(
-              grads_and_vars + state_grads_and_vars, name="update"))
-    else:
-      # If we have a separate constraint_optimizer, then we use self._optimizer
-      # for the update of the model parameters, and self._constraint_optimizer
-      # for that of the internal state.
-      gradients = [
-          gradient for gradient, _ in grads_and_vars + state_grads_and_vars
-          if gradient is not None
-      ]
-      # We need this tf.control_dependencies() block so that the internal state
-      # doesn't get updated before the model parameter gradients are computed.
-      with tf.control_dependencies(gradients):
-        update_ops.append(
-            self.optimizer.apply_gradients(grads_and_vars, name="update"))
-        update_ops.append(
-            self._constraint_optimizer.apply_gradients(
-                state_grads_and_vars, name="proxy_lagrangian_state_update"))
-
-    with tf.control_dependencies(update_ops):
-      if global_step is None:
-        # If we don't have a global step, just project, and we're done.
-        return self._projection_op(state, name=name)
-      else:
-        # If we have a global step, then we need to increment it in addition to
-        # projecting.
-        projection_op = self._projection_op(
-            state, name="proxy_lagrangian_state_projection")
-        with tf.colocate_with(global_step):
-          global_step_op = global_step.assign_add(
-              1, name="global_step_increment")
-        return tf.group(projection_op, global_step_op, name=name)
+      return grads_and_vars

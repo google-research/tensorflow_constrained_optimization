@@ -94,7 +94,7 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     with self.wrapped_session() as session:
       while len(multipliers) < len(expected_multipliers):
         multipliers.append(session.run(optimizer._multipliers))
-        session.run(optimizer.minimize(minimization_problem))
+        session.run_ops(lambda: optimizer.minimize(minimization_problem))
 
     for expected, actual in zip(expected_multipliers, multipliers):
       self.assertAllClose(expected, actual, rtol=0, atol=1e-6)

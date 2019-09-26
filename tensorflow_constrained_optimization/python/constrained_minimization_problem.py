@@ -121,10 +121,8 @@ class ConstrainedMinimizationProblem(object):
   def pre_train_ops(self):
     """Returns a list of `Operation`s to run before the train_op.
 
-    When a `ConstrainedOptimizer` calculates gradients (in compute_gradients()
-    or compute_gradients_unconstrained()) or creates a train_op (in minimize()
-    or minimize_unconstrained()), it will include these ops before the main
-    training step.
+    When a `ConstrainedOptimizer` calculates gradients or creates a train_op, it
+    will include these ops before the main training step.
 
     In eager mode, this method should actually perform the required operations.
     In graph mode, it needs only to return the ops.

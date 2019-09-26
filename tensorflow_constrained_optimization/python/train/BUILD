@@ -27,6 +27,7 @@ py_library(
     deps = [
         # six dep,
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:constrained_minimization_problem",
     ],
 )
 

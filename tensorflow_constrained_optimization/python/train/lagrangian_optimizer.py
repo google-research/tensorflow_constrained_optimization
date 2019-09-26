@@ -154,7 +154,8 @@ class LagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
   def __init__(self,
                optimizer,
                constraint_optimizer=None,
-               maximum_multiplier_radius=None):
+               maximum_multiplier_radius=None,
+               name="LagrangianOptimizer"):
     """Constructs a new `LagrangianOptimizer`.
 
     The difference between "optimizer" and "constraint_optimizer" (if the latter
@@ -163,20 +164,19 @@ class LagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
     "constraint_optimizer" is provided, then "optimizer" is used for both.
 
     Args:
-      optimizer: `Optimizer`, used to optimize the objective and
-        proxy_constraints portion of `ConstrainedMinimizationProblem`. If
-        constraint_optimizer is not provided, this will also be used to optimize
-        the Lagrange multipliers.
-      constraint_optimizer: optional `Optimizer`, used to optimize the Lagrange
-        multipliers.
+      optimizer: as in `ConstrainedOptimizer`.
+      constraint_optimizer: as in `ConstrainedOptimizer`.
       maximum_multiplier_radius: float, an optional upper bound to impose on the
         sum of the Lagrange multipliers.
+      name: as in `ConstrainedOptimizer`.
 
     Raises:
       ValueError: if the maximum_multiplier_radius parameter is nonpositive.
     """
-    super(LagrangianOptimizer, self).__init__(optimizer=optimizer)
-    self._constraint_optimizer = constraint_optimizer
+    super(LagrangianOptimizer, self).__init__(
+        optimizer=optimizer,
+        constraint_optimizer=constraint_optimizer,
+        name=name)
 
     if maximum_multiplier_radius and (maximum_multiplier_radius <= 0.0):
       raise ValueError("maximum_multiplier_radius must be strictly positive")
@@ -189,10 +189,15 @@ class LagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
     # _maybe_create_multipliers().
     self._multipliers = None
 
-  @property
-  def constraint_optimizer(self):
-    """Returns the `Optimizer` used for the Lagrange multipliers."""
-    return self._constraint_optimizer
+  def _project_multipliers(self, multipliers):
+    """Projects the Lagrange multipliers onto the feasible region."""
+    with tf.colocate_with(multipliers):
+      if self._maximum_multiplier_radius:
+        projected_multipliers = _project_multipliers_wrt_euclidean_norm(
+            multipliers, self._maximum_multiplier_radius)
+      else:
+        projected_multipliers = tf.maximum(0.0, multipliers)
+      return projected_multipliers
 
   def _maybe_create_multipliers(self, num_constraints):
     """Fetches/creates the internal state."""
@@ -226,50 +231,29 @@ class LagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
           trainable=False,
           name="lagrange_multipliers",
           dtype=tf.float32,
+          constraint=self._project_multipliers,
           use_resource=True)
 
     return self._multipliers
 
-  def _projection_op(self, multipliers, name=None):
-    """Projects the Lagrange multipliers onto the feasible region."""
-    with tf.colocate_with(multipliers):
-      if self._maximum_multiplier_radius:
-        projected_multipliers = _project_multipliers_wrt_euclidean_norm(
-            multipliers, self._maximum_multiplier_radius)
-      else:
-        projected_multipliers = tf.maximum(multipliers, 0.0)
-      return multipliers.assign(projected_multipliers, name=name)
+  def _is_state(self, variable_or_handle):
+    # This assertion should always succeed, since the Lagrange multipliers will
+    # be created inside compute_gradients(), whereas this function will only be
+    # called from within apply_gradients().
+    assert self._multipliers is not None
 
-  def _minimize_constrained(self,
-                            minimization_problem,
-                            global_step=None,
-                            var_list=None,
-                            name=None):
-    """Returns an `Operation` for minimizing the constrained problem.
+    # This comparison seems to work even if self._state is a resource variable,
+    # and variable_or_handle is a handle coming from _resource_apply_dense() or
+    # _resource_apply_sparse(). This might not be strictly correct, though.
+    return variable_or_handle == self._multipliers
 
-    The "optimizer" constructor parameter will be used to update the model
-    parameters, while the Lagrange multipliers will be updated using
-    "constraint_optimizer" (if provided) or "optimizer" (if not).
-
-    Args:
-      minimization_problem: `ConstrainedMinimizationProblem`, the problem to
-        optimize.
-      global_step: as in `Optimizer`'s minimize() method.
-      var_list: as in `Optimizer`'s minimize() method.
-      name: as in `Optimizer`'s minimize() method.
-
-    Returns:
-      `Operation`, the train_op.
-
-    Raises:
-      RuntimeError: if you attempt to use this LagrangianOptimizer on two
-        problems with different numbers of constraints.
-      TypeError: if the "minimization_problem" `Tensor`s have different dtypes.
-    """
+  def _compute_constrained_minimization_gradients(self, compute_gradients_fn,
+                                                  minimization_problem):
     # Create the Lagrange multipliers.
     num_constraints = minimization_problem.num_constraints
     multipliers = self._maybe_create_multipliers(num_constraints)
 
+    # The "primal" portion of the Lagrangian game.
     def loss_fn():
       """Evaluates the loss for the current Lagrange multipliers."""
       objective = minimization_problem.objective()
@@ -277,7 +261,8 @@ class LagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
       if proxy_constraints is None:
         proxy_constraints = minimization_problem.constraints()
 
-      # Make sure that the objective and proxy constraints have the same dtype.
+      # Make sure that the objective and proxy constraints have the same
+      # dtype.
       if objective.dtype.base_dtype != proxy_constraints.dtype.base_dtype:
         raise TypeError("objective and proxy_constraints must have the same "
                         "dtypes")
@@ -289,63 +274,27 @@ class LagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
       return (objective + tf.tensordot(
           tf.cast(multipliers, proxy_constraints.dtype), proxy_constraints, 1))
 
-    # Create a list of (gradient,variable) pairs for the model parameters. In
-    # graph mode, Optimizer.compute_gradients() expects a Tensor, while in eager
-    # mode, it expects a function returning a Tensor.
-    if not tf.executing_eagerly():
-      loss_fn = loss_fn()
-    grads_and_vars = self.optimizer.compute_gradients(loss_fn, var_list)
+    with tf.control_dependencies(minimization_problem.pre_train_ops()):
+      # Create a list of (gradient,variable) pairs for the model parameters. In
+      # graph mode, compute_gradients() expects a Tensor, while in eager mode,
+      # it expects a function returning a Tensor.
+      if not tf.executing_eagerly():
+        loss_fn = loss_fn()
+      grads_and_vars = compute_gradients_fn(loss_fn)
 
-    # Compute the gradient w.r.t. the Lagrange multipliers (which is simply the
-    # value of the constraint functions).
-    constraints = minimization_problem.constraints()
-    constraints = tf.reshape(constraints, shape=(num_constraints,))
-    multipliers_gradient = tf.cast(constraints, multipliers.dtype)
+      # Compute the gradient w.r.t. the Lagrange multipliers (the "dual" portion
+      # of the Lagrangian game. This gradient is simply the value of the
+      # constraint functions).
+      constraints = minimization_problem.constraints()
+      constraints = tf.reshape(constraints, shape=(num_constraints,))
+      multipliers_gradient = tf.cast(constraints, multipliers.dtype)
 
-    # Create a one-element list of (gradient,variable) pairs for the Lagrange
-    # multipliers. We negate multipliers_gradient since we want to maximize
-    # over the Lagrange multipliers.
-    multiplier_grads_and_vars = [(-multipliers_gradient, multipliers)]
+      # Create a (gradient,variable) pair for the Lagrange multipliers. We
+      # negate multipliers_gradient since we want to maximize over the Lagrange
+      # multipliers.
+      grads_and_vars.append((-multipliers_gradient, multipliers))
 
-    update_ops = []
-    if self._constraint_optimizer is None:
-      # If we don't have a separate constraint_optimizer, then we use
-      # self._optimizer for both the update of the model parameters, and that of
-      # the Lagrange multipliers.
-      update_ops.append(
-          self.optimizer.apply_gradients(
-              grads_and_vars + multiplier_grads_and_vars, name="update"))
-    else:
-      # If we have a separate constraint_optimizer, then we use self._optimizer
-      # for the update of the model parameters, and self._constraint_optimizer
-      # for that of the Lagrange multipliers.
-      gradients = [
-          gradient for gradient, _ in grads_and_vars + multiplier_grads_and_vars
-          if gradient is not None
-      ]
-      # We need this tf.control_dependencies() block so that the Lagrange
-      # multipliers don't get updated before the model parameter gradients are
-      # computed.
-      with tf.control_dependencies(gradients):
-        update_ops.append(
-            self.optimizer.apply_gradients(grads_and_vars, name="update"))
-        update_ops.append(
-            self._constraint_optimizer.apply_gradients(
-                multiplier_grads_and_vars, name="lagrange_multipliers_update"))
-
-    with tf.control_dependencies(update_ops):
-      if global_step is None:
-        # If we don't have a global step, just project, and we're done.
-        return self._projection_op(multipliers, name=name)
-      else:
-        # If we have a global step, then we need to increment it in addition to
-        # projecting.
-        projection_op = self._projection_op(
-            multipliers, name="lagrange_multipliers_projection")
-        with tf.colocate_with(global_step):
-          global_step_op = global_step.assign_add(
-              1, name="global_step_increment")
-        return tf.group(projection_op, global_step_op, name=name)
+      return grads_and_vars
 
 
 def create_lagrangian_loss(minimization_problem,
@@ -373,6 +322,17 @@ def create_lagrangian_loss(minimization_problem,
     of operations that should be executed before each training iteration, and
     lagrange_multipliers is a tf.Variable of Lagrange multipliers.
   """
+
+  def constraint_fn(multipliers):
+    """Projects the Lagrange multipliers onto the feasible region."""
+    with tf.colocate_with(multipliers):
+      if maximum_multiplier_radius:
+        projected_multipliers = _project_multipliers_wrt_euclidean_norm(
+            multipliers, maximum_multiplier_radius)
+      else:
+        projected_multipliers = tf.maximum(0.0, multipliers)
+      return projected_multipliers
+
   initial_multipliers = np.zeros((minimization_problem.num_constraints,),
                                  dtype=np.float32)
   multipliers = tf.Variable(
@@ -380,6 +340,7 @@ def create_lagrangian_loss(minimization_problem,
       trainable=True,
       name="lagrange_multipliers",
       dtype=tf.float32,
+      constraint=constraint_fn,
       use_resource=True)
 
   def loss_fn():
@@ -402,20 +363,4 @@ def create_lagrangian_loss(minimization_problem,
         tf.stop_gradient(constraints), 1)
     return primal - dual
 
-  def pre_train_ops_fn():
-    """Returns a list of `Operation`s to run before the train_op."""
-    pre_train_ops = minimization_problem.pre_train_ops()
-
-    with tf.colocate_with(multipliers):
-      if maximum_multiplier_radius:
-        projected_multipliers = _project_multipliers_wrt_euclidean_norm(
-            multipliers, maximum_multiplier_radius)
-      else:
-        projected_multipliers = tf.maximum(multipliers, 0.0)
-      pre_train_ops.append(
-          multipliers.assign(
-              projected_multipliers, name="lagrange_multipliers_projection"))
-
-    return pre_train_ops
-
-  return loss_fn, pre_train_ops_fn, multipliers
+  return loss_fn, minimization_problem.pre_train_ops, multipliers
