@@ -165,6 +165,131 @@ def _binary_classification_rate(
       basic_expression.BasicExpression([constraint_term]))
 
 
+def _ratio(numerator_expression, denominator_expression, lower_bound,
+           upper_bound):
+  """Creates an `Expression` representing a ratio.
+
+  The result of this function is an `Expression` representing:
+    numerator_bound / denominator_bound
+  where numerator_bound and denominator_bound are two newly-created slack
+  variables projected to satisfy the following in a pre-train op:
+    0 <= numerator_bound <= denominator_bound <= 1
+    denominator_lower_bound <= denominator_bound
+  Additionally, the following two constraints will be added if lower_bound is
+  True:
+    numerator_bound <= numerator_expression
+    denominator_bound >= denominator_expression
+  and/or the following two if upper_bound is true:
+    numerator_bound >= numerator_expression
+    denominator_bound <= denominator_expression
+  These constraints are placed in the "extra_constraints" field of the resulting
+  `Expression`.
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then need to set the lower_bound parameter to `True`. Likewise, if
+  you're going to be upper-bounding or minimizing the result of this function,
+  then the upper_bound parameter must be `True`. At least one of these
+  parameters *must* be `True`, and it's permitted for both of them to be `True`
+  (but we recommend against this, since it would result in equality constraints,
+  which might cause problems during optimization and/or post-processing).
+
+  Args:
+    numerator_expression: `Expression`, the numerator of the ratio.
+    denominator_expression: `Expression`, the denominator of the ratio.
+    lower_bound: bool, `True` if you want the result of this function to
+      lower-bound the ratio.
+    upper_bound: bool, `True` if you want the result of this function to
+      upper-bound the ratio.
+
+  Returns:
+    An `Expression` representing the ratio.
+
+  Raises:
+    TypeError: if either numerator_expression or denominator_expression is not
+      an `Expression`.
+    ValueError: if both lower_bound and upper_bound are `False`.
+  """
+  if not (isinstance(numerator_expression, expression.Expression) and
+          isinstance(denominator_expression, expression.Expression)):
+    raise TypeError(
+        "both numerator_expression and denominator_expression must be "
+        "Expressions (perhaps you need to call wrap_rate() to create an "
+        "Expression from a Tensor?)")
+
+  # One could set both lower_bound and upper_bound to True, in which case the
+  # result of this function could be treated as the ratio itself (instead of a
+  # {lower,upper} bound of it). However, this would come with some drawbacks: it
+  # would of course make optimization more difficult, but more importantly, it
+  # would potentially cause post-processing for feasibility (e.g. using
+  # "shrinking") to fail to find a feasible solution.
+  if not (lower_bound or upper_bound):
+    raise ValueError("at least one of lower_bound or upper_bound must be True")
+
+  # We use a "pre_train_ops_fn" instead of a "constraint" (which we would
+  # usually prefer) to perform the projection because we want to grab the
+  # denominator lower bound out of the memoizer.
+  def pre_train_ops_fn(ratio_bounds_variable, memoizer):
+    """Projects ratio_bounds onto the feasible region."""
+    numerator = ratio_bounds_variable[0]
+    denominator = ratio_bounds_variable[1]
+
+    # First make sure that numerator <= denominator.
+    average = 0.5 * (numerator + denominator)
+    numerator = tf.minimum(average, numerator)
+    denominator = tf.maximum(average, denominator)
+
+    # Next make sure that the numerator is in [0, 1] and the denominator is in
+    # [denominator_lower_bound, 1].
+    numerator = tf.maximum(0.0, tf.minimum(1.0, numerator))
+    denominator = tf.maximum(memoizer[defaults.DENOMINATOR_LOWER_BOUND_KEY],
+                             tf.minimum(1.0, denominator))
+
+    return [ratio_bounds_variable.assign([numerator, denominator])]
+
+  # Ideally the slack variables would have the same dtype as the predictions,
+  # but we might not know their dtype (e.g. in eager mode), so instead we always
+  # use float32 with auto_cast=True.
+  ratio_bounds = deferred_tensor.DeferredVariable(
+      [0.0, 1.0],
+      trainable=True,
+      name="ratio_bounds",
+      dtype=tf.float32,
+      pre_train_ops_fn=pre_train_ops_fn,
+      auto_cast=True)
+
+  numerator_bound_basic_expression = basic_expression.BasicExpression(
+      terms=[], tensor=ratio_bounds[0])
+  numerator_bound_expression = expression.Expression(
+      penalty_expression=numerator_bound_basic_expression,
+      constraint_expression=numerator_bound_basic_expression,
+      extra_variables=[ratio_bounds])
+
+  denominator_bound_basic_expression = basic_expression.BasicExpression(
+      terms=[], tensor=ratio_bounds[1])
+  denominator_bound_expression = expression.Expression(
+      penalty_expression=denominator_bound_basic_expression,
+      constraint_expression=denominator_bound_basic_expression,
+      extra_variables=[ratio_bounds])
+
+  extra_constraints = set()
+  if lower_bound:
+    extra_constraints.add(numerator_bound_expression <= numerator_expression)
+    extra_constraints.add(
+        denominator_expression <= denominator_bound_expression)
+  if upper_bound:
+    extra_constraints.add(numerator_expression <= numerator_bound_expression)
+    extra_constraints.add(
+        denominator_bound_expression <= denominator_expression)
+
+  ratio_basic_expression = basic_expression.BasicExpression(
+      terms=[], tensor=ratio_bounds[0] / ratio_bounds[1])
+  return expression.Expression(
+      penalty_expression=ratio_basic_expression,
+      constraint_expression=ratio_basic_expression,
+      extra_variables=[ratio_bounds],
+      extra_constraints=extra_constraints)
+
+
 def positive_prediction_rate(context,
                              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
@@ -623,6 +748,102 @@ def precision_ratio(context,
   return numerator_expression, denominator_expression
 
 
+def precision_lower_bound(context,
+                          penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                          constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing a lower bound on precision.
+
+  The result of this function represents a lower bound on:
+
+  $$\\mathrm{precision} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{z_i > 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then you can think of it as being the precision itself (although, if
+  lower-bounding, you should consider using precision_ratio, instead). You
+  should *never* upper-bound or minimize the result, however, since the
+  consequence would be to decrease the value of the lower bound, without
+  affecting the model.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing a lower bound on precision (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels.
+  """
+  numerator_expression, denominator_expression = precision_ratio(
+      context, penalty_loss=penalty_loss, constraint_loss=constraint_loss)
+  return _ratio(
+      numerator_expression=numerator_expression,
+      denominator_expression=denominator_expression,
+      lower_bound=True,
+      upper_bound=False)
+
+
+def precision_upper_bound(context,
+                          penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                          constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing an upper bound on precision.
+
+  The result of this function represents an upper bound on:
+
+  $$\\mathrm{precision} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{z_i > 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
+
+  If you're going to be upper-bounding or minimizing the result of this
+  function, then you can think of it as being the precision itself (although, if
+  upper-bounding, you should consider using precision_ratio, instead). You
+  should *never* lower-bound or maximize the result, however, since the
+  consequence would be to increase the value of the upper bound, without
+  affecting the model.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing an upper bound on precision (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels.
+  """
+  numerator_expression, denominator_expression = precision_ratio(
+      context, penalty_loss=penalty_loss, constraint_loss=constraint_loss)
+  return _ratio(
+      numerator_expression=numerator_expression,
+      denominator_expression=denominator_expression,
+      lower_bound=False,
+      upper_bound=True)
+
+
 def f_score_ratio(context,
                   beta=1.0,
                   penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
@@ -718,6 +939,118 @@ def f_score_ratio(context,
   return numerator_expression, denominator_expression
 
 
+def f_score_lower_bound(context,
+                        beta=1.0,
+                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing a lower bound on an F-score.
+
+  The result of this function represents a lower bound on:
+
+  $$\\mathrm{f\_score} = \\frac{
+    \sum_i w_i c_i (1 + \\beta^2) \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
+  }{
+    \sum_i w_i c_i ( (1 + \\beta^2) \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
+    + \\beta^2 \\mathbf{1}\{y_i > 0 \\wedge z_i \\le 0\}
+    + \\mathbf{1}\{y_i \\le 0 \\wedge z_i > 0\} )
+  }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then you can think of it as being the F-score itself (although, if
+  lower-bounding, you should consider using f_score_ratio, instead). You should
+  *never* upper-bound or minimize the result, however, since the consequence
+  would be to decrease the value of the lower bound, without affecting the
+  model.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    beta: nonnegative float, the beta parameter to the f-score. If beta=0, then
+      the result is precision, and if beta=1 (the default), then the result is
+      the F1-score.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing a lower bound on f_score (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels.
+  """
+  numerator_expression, denominator_expression = f_score_ratio(
+      context, beta, penalty_loss=penalty_loss, constraint_loss=constraint_loss)
+  return _ratio(
+      numerator_expression=numerator_expression,
+      denominator_expression=denominator_expression,
+      lower_bound=True,
+      upper_bound=False)
+
+
+def f_score_upper_bound(context,
+                        beta=1.0,
+                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing an upper bound on an F-score.
+
+  The result of this function represents an upper bound on:
+
+  $$\\mathrm{f\_score} = \\frac{
+    \sum_i w_i c_i (1 + \\beta^2) \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
+  }{
+    \sum_i w_i c_i ( (1 + \\beta^2) \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
+    + \\beta^2 \\mathbf{1}\{y_i > 0 \\wedge z_i \\le 0\}
+    + \\mathbf{1}\{y_i \\le 0 \\wedge z_i > 0\} )
+  }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
+
+  If you're going to be upper-bounding or minimizing the result of this
+  function, then you can think of it as being the F-score itself (although, if
+  upper-bounding, you should consider using f_score_ratio, instead). You should
+  *never* lower-bound or maximize the result, however, since the consequence
+  would be to increase the value of the upper bound, without affecting the
+  model.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    beta: nonnegative float, the beta parameter to the f-score. If beta=0, then
+      the result is precision, and if beta=1 (the default), then the result is
+      the F1-score.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing an upper bound on f_score (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels.
+  """
+  numerator_expression, denominator_expression = f_score_ratio(
+      context, beta, penalty_loss=penalty_loss, constraint_loss=constraint_loss)
+  return _ratio(
+      numerator_expression=numerator_expression,
+      denominator_expression=denominator_expression,
+      lower_bound=False,
+      upper_bound=True)
+
+
 def _tpr_at_fpr(context,
                 fpr_target,
                 threshold_tensor,
@@ -786,7 +1119,7 @@ def _tpr_at_fpr(context,
     raise ValueError("recall_at_precision can only be used with a normalized "
                      "constraint_loss (e.g. zero/one, sigmoid or ramp)")
 
-  context = context.transform_predictions(
+  context = context._transform_predictions(  # pylint: disable=protected-access
       lambda predictions: predictions - threshold_tensor)
 
   fpr_expression = false_positive_rate(
@@ -907,9 +1240,9 @@ def roc_auc_lower_bound(context,
 
   If you're going to be lower-bounding or maximizing the result of this
   function, then you can think of it as being the approximate ROC AUC itself.
-  It's different if you're going to be upper-bounding or minimizing the result,
-  however, since the consequence would be to decrease the value of the lower
-  bound, without affecting the model.
+  You should *never* upper-bound or minimize the result, however, since the
+  consequence would be to decrease the value of the lower bound, without
+  affecting the model.
 
   Notice that the result of this function is *not* a lower bound on the ROC AUC.
   Rather, it's a lower bound on a Riemann approximation. As the number of bins
@@ -964,9 +1297,9 @@ def roc_auc_upper_bound(context,
 
   If you're going to be upper-bounding or minimizing the result of this
   function, then you can think of it as being the approximate ROC AUC itself.
-  It's different if you're going to be lower-bounding or maximizing the result,
-  however, since the consequence would be to increase the value of the upper
-  bound, without affecting the model.
+  You should *never* lower-bound or maximize the result, however, since the
+  consequence would be to increase the value of the upper bound, without
+  affecting the model.
 
   Notice that the result of this function is *not* an upper bound on the ROC
   AUC. Rather, it's an upper bound on a Riemann approximation. As the number of
@@ -997,6 +1330,1100 @@ def roc_auc_upper_bound(context,
       nonpositive, or the constraint_loss is not normalized.
   """
   return _roc_auc(
+      context,
+      bins,
+      lower_bound=False,
+      upper_bound=True,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def _recall_at_precision(context,
+                         precision_target,
+                         lower_bound=False,
+                         upper_bound=False,
+                         penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                         constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing recall@precision.
+
+  You should think of the result of this function as "the recall of a
+  thresholded classifier, with the threshold being chosen so as to meet a
+  precision constraint". In other words, the result is:
+
+  $$\\mathrm{recall(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i > 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context). The threshold
+  $$t$$ is defined in such a way that the precision:
+
+  $$\\mathrm{precision(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{z_i - t > 0\} }$$
+
+  is bounded by the precision_target argument (with the direction of this bound
+  being determined by the lower_bound and upper_bound arguments).
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then need to set the lower_bound parameter to `True`. Likewise, if
+  you're going to be upper-bounding or minimizing the result of this function,
+  then the upper_bound parameter must be `True`. At least one of these
+  parameters *must* be `True`, and it's permitted for both of them to be `True`
+  (but we recommend against this, since it would result in equality constraints,
+  which might cause problems during optimization and/or post-processing).
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    precision_target: float, the target precision value that will be used to
+      define the implicit threshold.
+    lower_bound: bool, `True` if you want the result of this function to
+      lower-bound recall@precision.
+    upper_bound: bool, `True` if you want the result of this function to
+      upper-bound recall@precision.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing recall@precision (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if precision_target isn't in (0,1), both lower_bound and
+      upper_bound are `False`, the context doesn't contain labels, or the
+      constraint_loss is not normalized.
+  """
+  if precision_target <= 0 or precision_target >= 1:
+    raise ValueError("precision_target must be in (0,1)")
+
+  # One could set both lower_bound and upper_bound to True, in which case the
+  # result of this function could be treated as the recall@precision itself
+  # (instead of a {lower,upper} bound of it). However, this would come with some
+  # drawbacks: it would of course make optimization more difficult, but more
+  # importantly, it would potentially cause post-processing for feasibility
+  # (e.g. using "shrinking") to fail to find a feasible solution.
+  if not (lower_bound or upper_bound):
+    raise ValueError("at least one of lower_bound or upper_bound must be True")
+
+  # For the constraints on the precision to make sense, it would be best to be
+  # using a normalized loss. The reason for this is that, if both lower_bound
+  # and upper_bound are True (or if one imposes constraints including separate
+  # lower and upper bounds), our constraints on the precisions will be equality
+  # constraints, which could be infeasible for an unnormalized loss. This could
+  # be changed to a warning, however.
+  if not constraint_loss.is_normalized:
+    raise ValueError("recall_at_precision can only be used with a normalized "
+                     "constraint_loss (e.g. zero/one, sigmoid or ramp)")
+
+  # Ideally the threshold would have the same dtype as the predictions, but we
+  # might not know their dtype (e.g. in eager mode), so instead we always use
+  # float32 with auto_cast=True.
+  threshold = deferred_tensor.DeferredVariable(
+      0.0,
+      trainable=True,
+      name="recall_at_precision_threshold",
+      dtype=tf.float32,
+      auto_cast=True)
+
+  context = context._transform_predictions(  # pylint: disable=protected-access
+      lambda predictions: predictions - threshold)
+
+  (precision_numerator_expression,
+   precision_denominator_expression) = precision_ratio(
+       context, penalty_loss=penalty_loss, constraint_loss=constraint_loss)
+  precision_numerator_expression = (
+      precision_numerator_expression.add_dependencies(
+          extra_variables=[threshold]))
+  precision_denominator_expression = (
+      precision_denominator_expression.add_dependencies(
+          extra_variables=[threshold]))
+
+  extra_constraints = []
+  if lower_bound:
+    extra_constraints.append(
+        precision_numerator_expression >= precision_target *
+        precision_denominator_expression)
+  if upper_bound:
+    extra_constraints.append(
+        precision_numerator_expression <= precision_target *
+        precision_denominator_expression)
+
+  return recall(
+      context, penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss).add_dependencies(
+          extra_variables=[threshold], extra_constraints=extra_constraints)
+
+
+def recall_at_precision_lower_bound(
+    context,
+    precision_target,
+    penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+    constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing a lower bound on recall@precision.
+
+  You should think of the result of this function as a lower bound on "the
+  recall of a thresholded classifier, with the threshold being chosen so as to
+  meet a precision constraint". In other words, the result is:
+
+  $$\\mathrm{recall(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i > 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context). The threshold
+  $$t$$ is defined in such a way that the precision:
+
+  $$\\mathrm{precision(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{z_i - t > 0\} }$$
+
+  is lower-bounded by the precision_target argument.
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then you can think of it as being the recall@precision itself. You
+  should *never* upper-bound or minimize the result, however, since the
+  consequence would be to decrease the value of the lower bound, without
+  affecting the model.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    precision_target: float, the target precision value that will be used to
+      define the implicit threshold.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing a lower bound on recall@precision (as defined
+    above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if precision_target isn't in (0,1), the context doesn't contain
+      labels, or the constraint_loss is not normalized.
+  """
+  return _recall_at_precision(
+      context,
+      precision_target=precision_target,
+      lower_bound=True,
+      upper_bound=False,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def recall_at_precision_upper_bound(
+    context,
+    precision_target,
+    penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+    constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing an upper bound on recall@precision.
+
+  You should think of the result of this function as an upper bound on "the
+  recall of a thresholded classifier, with the threshold being chosen so as to
+  meet a precision constraint". In other words, the result is:
+
+  $$\\mathrm{recall(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i > 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context). The threshold
+  $$t$$ is defined in such a way that the precision:
+
+  $$\\mathrm{precision(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{z_i - t > 0\} }$$
+
+  is upper-bounded by the precision_target argument.
+
+  If you're going to be upper-bounding or minimizing the result of this
+  function, then you can think of it as being the recall@precision itself. You
+  should *never* lower-bound or maximize the result, however, since the
+  consequence would be to increase the value of the upper bound, without
+  affecting the model.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    precision_target: float, the target precision value that will be used to
+      define the implicit threshold.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing an upper bound on recall@precision (as defined
+    above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if precision_target isn't in (0,1), the context doesn't contain
+      labels, or the constraint_loss is not normalized.
+  """
+  return _recall_at_precision(
+      context,
+      precision_target=precision_target,
+      lower_bound=False,
+      upper_bound=True,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def _inverse_precision_at_recall(
+    context,
+    recall_target,
+    lower_bound=False,
+    upper_bound=False,
+    penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+    constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing (1/precision)@recall.
+
+  You should think of the result of this function as "the inverse-precision of a
+  thresholded classifier, with the threshold being chosen so as to meet a
+  recall constraint". In other words, the result is:
+
+  $$\\mathrm{precision^{-1}(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{z_i - t > 0\}
+  }{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context). The threshold
+  $$t$$ is defined in such a way that the recall:
+
+  $$\\mathrm{recall(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i > 0\} }$$
+
+  is bounded by the recall_target argument (with the direction of this bound
+  being determined by the lower_bound and upper_bound arguments).
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then need to set the lower_bound parameter to `True`. Likewise, if
+  you're going to be upper-bounding or minimizing the result of this function,
+  then the upper_bound parameter must be `True`. At least one of these
+  parameters *must* be `True`, and it's permitted for both of them to be `True`
+  (but we recommend against this, since it would result in equality constraints,
+  which might cause problems during optimization and/or post-processing).
+
+  The reason for providing this function, in addition to precision_at_recall
+  (which could often be used instead), is that this function is "tighter" than
+  the other. If you can equivalently reformulate your optimization problem to
+  minimize the inverse-precision, instead of maximizing the precision, then you
+  should do so.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    recall_target: float, the target recall value that will be used to define
+      the implicit threshold.
+    lower_bound: bool, `True` if you want the result of this function to
+      lower-bound (1/precision)@recall.
+    upper_bound: bool, `True` if you want the result of this function to
+      upper-bound (1/precision)@recall.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing (1/precision)@recall (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if recall_target isn't in (0,1), both lower_bound and
+      upper_bound are `False`, the context doesn't contain labels, or the
+      constraint_loss is not normalized.
+  """
+
+  # Let #TP and #FP be the number of true and false positives, respectively,
+  # and take #LP to be the number of examples with positive labels. Then we can
+  # write:
+  #   recall = #TP / #LP
+  #   inverse-precision = (#TP / (#TP + #FP))^-1 = 1 + #FP / #TP
+  # Since we're constraining precision at a given recall threshold, we write
+  # inverse-precision as:
+  #   inverse-precision = 1 + #FP / #TP = 1 + (#FP / #LP) / recall
+  # which suggests that we can implement a version of inverse-precision@recall
+  # for maximization or lower-bounding as:
+  #   1 + (#FP / #LP) / recall_target
+  #   s.t. recall_target >= #TP / #LP
+  # Likewise, a version for minimization or upper-bounding would be:
+  #   1 + (#FP / #LP) / recall_target
+  #   s.t. recall_target <= #TP / #LP
+  # The direction of these inequalities is chosen due to the fact that, as
+  # recall increases, precision will tend to decrease, so inverse_precision
+  # will tend to increasse (it won't do so monotonically, but it will have that
+  # tendency).
+
+  if recall_target <= 0 or recall_target >= 1:
+    raise ValueError("recall_target must be in (0,1)")
+
+  # One could set both lower_bound and upper_bound to True, in which case the
+  # result of this function could be treated as the inverse-precision@recall
+  # itself (instead of a {lower,upper} bound of it). However, this would come
+  # with some drawbacks: it would of course make optimization more difficult,
+  # but more importantly, it would potentially cause post-processing for
+  # feasibility (e.g. using "shrinking") to fail to find a feasible solution.
+  if not (lower_bound or upper_bound):
+    raise ValueError("at least one of lower_bound or upper_bound must be True")
+
+  # For the constraints on the recalls to make sense, it would be best to be
+  # using a normalized loss. The reason for this is that, if both lower_bound
+  # and upper_bound are True (or if one imposes constraints including separate
+  # lower and upper bounds), our constraints on the recalls will be equality
+  # constraints, which could be infeasible for an unnormalized loss. This could
+  # be changed to a warning, however.
+  if not constraint_loss.is_normalized:
+    raise ValueError("inverse_precision_at_recall can only be used with a "
+                     "normalized constraint_loss (e.g. zero/one, sigmoid or "
+                     "ramp)")
+
+  # Ideally the threshold would have the same dtype as the predictions, but we
+  # might not know their dtype (e.g. in eager mode), so instead we always use
+  # float32 with auto_cast=True.
+  threshold = deferred_tensor.DeferredVariable(
+      0.0,
+      trainable=True,
+      name="inverse_precision_at_recall_threshold",
+      dtype=tf.float32,
+      auto_cast=True)
+
+  context = context._transform_predictions(  # pylint: disable=protected-access
+      lambda predictions: predictions - threshold)
+
+  if not isinstance(context, subsettable_context.SubsettableContext):
+    raise TypeError("context must be a SubsettableContext object")
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("inverse_precision_at_recall requires a context with "
+                     "labels")
+
+  positive_context = context.subset(raw_context.penalty_labels > 0,
+                                    raw_context.constraint_labels > 0)
+  negative_context = context.subset(raw_context.penalty_labels <= 0,
+                                    raw_context.constraint_labels <= 0)
+
+  recall_expression = _binary_classification_rate(
+      positive_coefficient=1.0,
+      negative_coefficient=0.0,
+      numerator_context=positive_context,
+      denominator_context=positive_context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss).add_dependencies(
+          extra_variables=[threshold])
+
+  extra_constraints = []
+  if lower_bound:
+    extra_constraints.append(recall_expression <= recall_target)
+  if upper_bound:
+    extra_constraints.append(recall_expression >= recall_target)
+
+  return (1 + _binary_classification_rate(
+      positive_coefficient=1.0,
+      negative_coefficient=0.0,
+      numerator_context=negative_context,
+      denominator_context=positive_context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss) / recall_target).add_dependencies(
+          extra_variables=[threshold], extra_constraints=extra_constraints)
+
+
+def inverse_precision_at_recall_lower_bound(
+    context,
+    recall_target,
+    penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+    constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` lower-bounding (1/precision)@recall.
+
+  You should think of the result of this function as a lower bound on "the
+  inverse-precision of a thresholded classifier, with the threshold being chosen
+  so as to meet a recall constraint". In other words, the result is:
+
+  $$\\mathrm{precision^{-1}(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{z_i - t > 0\}
+  }{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context). The threshold
+  $$t$$ is defined in such a way that the recall:
+
+  $$\\mathrm{recall(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i > 0\} }$$
+
+  is upper-bounded by the recall_target argument.
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then you can think of it as being the inverse-precision@recall
+  itself. You should *never* upper-bound or minimize the result, however, since
+  the consequence would be to decrease the value of the lower bound, without
+  affecting the model.
+
+  The reason for providing this function, in addition to
+  precision_at_recall_upper_bound (which could often be used instead), is that
+  this function results in a simpler optimization than the other. If you can
+  equivalently reformulate your optimization problem to maximize the
+  inverse-precision, instead of minimizing the precision, then you should do so.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    recall_target: float, the target recall value that will be used to define
+      the implicit threshold.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing a lower bound on (1/precision)@recall (as
+    defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if recall_target isn't in (0,1), the context doesn't contain
+      labels, or the constraint_loss is not normalized.
+  """
+  return _inverse_precision_at_recall(
+      context,
+      recall_target=recall_target,
+      lower_bound=True,
+      upper_bound=False,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def inverse_precision_at_recall_upper_bound(
+    context,
+    recall_target,
+    penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+    constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` upper-bounding (1/precision)@recall.
+
+  You should think of the result of this function as an upper bound on "the
+  inverse-precision of a thresholded classifier, with the threshold being chosen
+  so as to meet a recall constraint". In other words, the result is:
+
+  $$\\mathrm{precision^{-1}(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{z_i - t > 0\}
+  }{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context). The threshold
+  $$t$$ is defined in such a way that the recall:
+
+  $$\\mathrm{recall(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i > 0\} }$$
+
+  is lower-bounded by the recall_target argument.
+
+  If you're going to be upper-bounding or minimizing the result of this
+  function, then you can think of it as being the inverse-precision@recall
+  itself. You should *never* lower-bound or maximize the result, however, since
+  the consequence would be to increase the value of the upper bound, without
+  affecting the model.
+
+  The reason for providing this function, in addition to
+  precision_at_recall_lower_bound (which could often be used instead), is that
+  this function results in a simpler optimization problem than the other. If you
+  can equivalently reformulate your optimization problem to minimize the
+  inverse-precision, instead of maximizing the precision, then you should do so.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    recall_target: float, the target recall value that will be used to define
+      the implicit threshold.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing an upper bound on (1/precision)@recall (as
+    defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if recall_target isn't in (0,1), the context doesn't contain
+      labels, or the constraint_loss is not normalized.
+  """
+  return _inverse_precision_at_recall(
+      context,
+      recall_target=recall_target,
+      lower_bound=False,
+      upper_bound=True,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def _precision_at_recall(context,
+                         recall_target,
+                         threshold_tensor,
+                         slack_tensor,
+                         extra_variables,
+                         lower_bound=False,
+                         upper_bound=False,
+                         penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                         constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing precision@recall.
+
+  You should think of the result of this function as "the precision of a
+  thresholded classifier, with the threshold being chosen so as to meet a
+  recall constraint". In other words, the result is:
+
+  $$\\mathrm{precision(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{z_i - t > 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context). The threshold
+  $$t$$ is defined in such a way that the recall:
+
+  $$\\mathrm{recall(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i > 0\} }$$
+
+  is bounded by the recall_target argument (with the direction of this bound
+  being determined by the lower_bound and upper_bound arguments).
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then need to set the lower_bound parameter to `True`. Likewise, if
+  you're going to be upper-bounding or minimizing the result of this function,
+  then the upper_bound parameter must be `True`. At least one of these
+  parameters *must* be `True`, and it's permitted for both of them to be `True`
+  (but we recommend against this, since it would result in equality constraints,
+  which might cause problems during optimization and/or post-processing).
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    recall_target: float, the target recall value that will be used to define
+      the implicit threshold.
+    threshold_tensor: `DeferredTensor`, the parameter to use for the threshold.
+    slack_tensor: `DeferredTensor`, the parameter to use for the slack variable.
+    extra_variables: collection of `DeferredVariable`s, the variables upon which
+      the resulting `Expression` should depend (this should include the variable
+      containing the threshold).
+    lower_bound: bool, `True` if you want the result of this function to
+      lower-bound precision@recall.
+    upper_bound: bool, `True` if you want the result of this function to
+      upper-bound precision@recall.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing precision@recall (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if recall_target isn't in (0,1), both lower_bound and
+      upper_bound are `False`, the context doesn't contain labels, or the
+      constraint_loss is not normalized.
+  """
+
+  # Let #TP and #FP be the number of true and false positives, respectively,
+  # and take #LP to be the number of examples with positive labels. Then we can
+  # write:
+  #   recall = #TP / #LP
+  #   precision = #TP / (#TP + #FP)
+  # Since we're constraining precision at a given recall threshold, we write
+  # precision as:
+  #   precision = (#TP / #LP) / ((#TP / #LP) + (#FP / #LP))
+  #             = recall / (recall + (#FP / #LP))
+  # which suggests that we can implement a version of precision@recall for
+  # maximization or lower-bounding as:
+  #   recall_target / (recall_target + slack)
+  #   s.t. recall_target >= #TP / #LP
+  #        slack >= #FP / #LP
+  # Likewise, a version for minimization or upper-bounding would be:
+  #   recall_target / (recall_target + slack)
+  #   s.t. recall_target <= #TP / #LP
+  #        slack <= #FP / #LP
+  # The direction of these inequalities is chosen due to the fact that, as
+  # recall increases, precision will tend to decrease (it won't do so
+  # monotonically, but it will have that tendency).
+
+  if recall_target <= 0 or recall_target >= 1:
+    raise ValueError("recall_target must be in (0,1)")
+
+  # One could set both lower_bound and upper_bound to True, in which case the
+  # result of this function could be treated as the precision@recall itself
+  # (instead of a {lower,upper} bound of it). However, this would come with some
+  # drawbacks: it would of course make optimization more difficult, but more
+  # importantly, it would potentially cause post-processing for feasibility
+  # (e.g. using "shrinking") to fail to find a feasible solution.
+  if not (lower_bound or upper_bound):
+    raise ValueError("at least one of lower_bound or upper_bound must be True")
+
+  # For the constraints on the recalls to make sense, it would be best to be
+  # using a normalized loss. The reason for this is that, if both lower_bound
+  # and upper_bound are True (or if one imposes constraints including separate
+  # lower and upper bounds), our constraints on the recalls will be equality
+  # constraints, which could be infeasible for an unnormalized loss. This could
+  # be changed to a warning, however.
+  if not constraint_loss.is_normalized:
+    raise ValueError("precision_at_recall can only be used with a normalized "
+                     "constraint_loss (e.g. zero/one, sigmoid or ramp)")
+
+  context = context._transform_predictions(  # pylint: disable=protected-access
+      lambda predictions: predictions - threshold_tensor)
+
+  if not isinstance(context, subsettable_context.SubsettableContext):
+    raise TypeError("context must be a SubsettableContext object")
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("precision_at_recall requires a context with labels")
+
+  positive_context = context.subset(raw_context.penalty_labels > 0,
+                                    raw_context.constraint_labels > 0)
+  negative_context = context.subset(raw_context.penalty_labels <= 0,
+                                    raw_context.constraint_labels <= 0)
+
+  recall_expression = _binary_classification_rate(
+      positive_coefficient=1.0,
+      negative_coefficient=0.0,
+      numerator_context=positive_context,
+      denominator_context=positive_context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss).add_dependencies(
+          extra_variables=extra_variables)
+
+  constraint_expression = _binary_classification_rate(
+      positive_coefficient=1.0,
+      negative_coefficient=0.0,
+      numerator_context=negative_context,
+      denominator_context=positive_context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss).add_dependencies(
+          extra_variables=extra_variables)
+
+  slack_basic_expression = basic_expression.BasicExpression(
+      terms=[], tensor=slack_tensor)
+  slack_expression = expression.Expression(
+      penalty_expression=slack_basic_expression,
+      constraint_expression=slack_basic_expression,
+      extra_variables=extra_variables)
+
+  extra_constraints = []
+  if lower_bound:
+    extra_constraints.append(recall_expression >= recall_target)
+    extra_constraints.append(slack_expression >= constraint_expression)
+  if upper_bound:
+    extra_constraints.append(recall_expression <= recall_target)
+    extra_constraints.append(slack_expression <= constraint_expression)
+
+  precision_basic_expression = basic_expression.BasicExpression(
+      terms=[], tensor=recall_target / (recall_target + slack_tensor))
+  return expression.Expression(
+      penalty_expression=precision_basic_expression,
+      constraint_expression=precision_basic_expression,
+      extra_variables=extra_variables,
+      extra_constraints=extra_constraints)
+
+
+def precision_at_recall_lower_bound(
+    context,
+    recall_target,
+    penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+    constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing a lower bound on precision@recall.
+
+  You should think of the result of this function as a lower bound on "the
+  precision of a thresholded classifier, with the threshold being chosen so as
+  to meet a recall constraint". In other words, the result is:
+
+  $$\\mathrm{precision(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{z_i - t > 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context). The threshold
+  $$t$$ is defined in such a way that the recall:
+
+  $$\\mathrm{recall(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i > 0\} }$$
+
+  is lower-bounded by the recall_target argument.
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then you can think of it as being the precision@recall itself. You
+  should *never* upper-bound or minimize the result, however, since the
+  consequence would be to decrease the value of the lower bound, without
+  affecting the model.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    recall_target: float, the target recall value that will be used to define
+      the implicit threshold.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing a lower bound on precision@recall (as defined
+    above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if recall_target isn't in (0,1), the context doesn't contain
+      labels, or the constraint_loss is not normalized.
+  """
+  # Ideally the threshold and slack variable would have the same dtype as the
+  # predictions, but we might not know their dtype (e.g. in eager mode), so
+  # instead we always use float32 with auto_cast=True.
+  threshold = deferred_tensor.DeferredVariable(
+      0.0,
+      trainable=True,
+      name="precision_at_recall_threshold",
+      dtype=tf.float32,
+      auto_cast=True)
+  slack = deferred_tensor.DeferredVariable(
+      0.0,
+      trainable=True,
+      name="precision_at_recall_slack",
+      dtype=tf.float32,
+      constraint=lambda tensor: tf.maximum(0.0, tensor),
+      auto_cast=True)
+
+  return _precision_at_recall(
+      context,
+      recall_target=recall_target,
+      threshold_tensor=threshold,
+      slack_tensor=slack,
+      extra_variables=[threshold, slack],
+      lower_bound=True,
+      upper_bound=False,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def precision_at_recall_upper_bound(
+    context,
+    recall_target,
+    penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+    constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing an upper bound on precision@recall.
+
+  You should think of the result of this function as an upper bound on "the
+  precision of a thresholded classifier, with the threshold being chosen so as
+  to meet a recall constraint". In other words, the result is:
+
+  $$\\mathrm{precision(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{z_i - t > 0\} }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context). The threshold
+  $$t$$ is defined in such a way that the recall:
+
+  $$\\mathrm{recall(t)} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i - t > 0\}
+  }{ \sum_i w_i c_i \\mathbf{1}\{y_i > 0\} }$$
+
+  is upper-bounded by the recall_target argument.
+
+  If you're going to be upper-bounding or minimizing the result of this
+  function, then you can think of it as being the precision@recall itself. You
+  should *never* lower-bound or maximize the result, however, since the
+  consequence would be to increase the value of the upper bound, without
+  affecting the model.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    recall_target: float, the target recall value that will be used to define
+      the implicit threshold.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing an upper bound on precision@recall (as defined
+    above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if recall_target isn't in (0,1), the context doesn't contain
+      labels, or the constraint_loss is not normalized.
+  """
+  # Ideally the threshold and slack variable would have the same dtype as the
+  # predictions, but we might not know their dtype (e.g. in eager mode), so
+  # instead we always use float32 with auto_cast=True.
+  threshold = deferred_tensor.DeferredVariable(
+      0.0,
+      trainable=True,
+      name="precision_at_recall_threshold",
+      dtype=tf.float32,
+      auto_cast=True)
+  slack = deferred_tensor.DeferredVariable(
+      0.0,
+      trainable=True,
+      name="precision_at_recall_slack",
+      dtype=tf.float32,
+      constraint=lambda tensor: tf.maximum(0.0, tensor),
+      auto_cast=True)
+
+  return _precision_at_recall(
+      context,
+      recall_target=recall_target,
+      threshold_tensor=threshold,
+      slack_tensor=slack,
+      extra_variables=[threshold, slack],
+      lower_bound=False,
+      upper_bound=True,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def _pr_auc(context,
+            bins,
+            lower_bound=False,
+            upper_bound=False,
+            penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+            constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` representing an approximate precision-recall AUC.
+
+  The result of this function represents a Riemann approximation to the area
+  under the precision-recall curve (recall on the horizontal axis, precision on
+  the vertical axis), using the constraint-based method proposed by:
+
+  > Eban, Schain, Mackey, Gordon, Rifkin and Elidan. "Scalable Learning of
+  > Non-Decomposable Objectives". AISTATS 2017.
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then need to set the lower_bound parameter to `True`. Likewise, if
+  you're going to be upper-bounding or minimizing the result of this function
+  (which normally wouldn't make much sense for precision-recall AUC), then the
+  upper_bound parameter must be `True`. At least one of these parameters *must*
+  be `True`, and it's permitted for both of them to be `True` (but we recommend
+  against this, since it would result in equality constraints, which might cause
+  problems during optimization and/or post-processing).
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    bins: positive integer, the number of "rectangles" to use for the Riemann
+      approximation to precision-recall AUC.
+    lower_bound: bool, `True` if you want the result of this function to
+      lower-bound the approximate precision-recall AUC.
+    upper_bound: bool, `True` if you want the result of this function to
+      upper-bound the approximate precision-recall AUC.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate. This loss must be "normalized" (see
+      `BinaryClassificationLoss.is_normalized`).
+
+  Returns:
+    An `Expression` representing a Riemann approximation to precision-recall
+    AUC.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, the number of bins is
+      not an integer, or either loss is not a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels, the number of bins is
+      nonpositive, both lower_bound and upper_bound are `False`, or the
+      constraint_loss is not normalized.
+  """
+  if not isinstance(bins, numbers.Integral):
+    raise TypeError("number of pr_auc bins must be an integer")
+  if bins <= 0:
+    raise ValueError("number of pr_auc bins must be strictly positive")
+
+  # Ideally the thresholds and slack variables would have the same dtype as the
+  # predictions, but we might not know their dtype (e.g. in eager mode), so
+  # instead we always use float32 with auto_cast=True.
+  thresholds = deferred_tensor.DeferredVariable(
+      np.zeros((bins,)),
+      trainable=True,
+      name="pr_auc_thresholds",
+      dtype=tf.float32,
+      auto_cast=True)
+  slacks = deferred_tensor.DeferredVariable(
+      np.zeros((bins,)),
+      trainable=True,
+      name="pr_auc_slacks",
+      dtype=tf.float32,
+      constraint=lambda tensor: tf.maximum(0.0, tensor),
+      auto_cast=True)
+
+  average_precision_expression = None
+  for bin_index in xrange(bins):
+    recall_target = (bin_index + 0.5) / bins
+    precision_expression = _precision_at_recall(
+        context,
+        recall_target=recall_target,
+        threshold_tensor=thresholds[bin_index],
+        slack_tensor=slacks[bin_index],
+        extra_variables=[thresholds, slacks],
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+        penalty_loss=penalty_loss,
+        constraint_loss=constraint_loss)
+    if average_precision_expression is None:
+      average_precision_expression = precision_expression
+    else:
+      average_precision_expression += precision_expression
+
+  return average_precision_expression / bins
+
+
+def pr_auc_lower_bound(context,
+                       bins,
+                       penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                       constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` lower-bounding an approximate precision-recall AUC.
+
+  The result of this function represents a lower bound on a Riemann
+  approximation to the area under the precision-recall curve (recall on the
+  horizontal axis, precision on the vertical axis), using the constraint-based
+  method proposed by:
+
+  > Eban, Schain, Mackey, Gordon, Rifkin and Elidan. "Scalable Learning of
+  > Non-Decomposable Objectives". AISTATS 2017.
+
+  If you're going to be lower-bounding or maximizing the result of this
+  function, then you can think of it as being the approximate precision-recall
+  AUC itself. You should *never* upper-bound or minimize the result, however,
+  since the consequence would be to decrease the value of the lower bound,
+  without affecting the model.
+
+  Notice that the result of this function is *not* a lower bound on the
+  precision-recall AUC. Rather, it's a lower bound on a Riemann approximation.
+  As the number of bins increases, this approximation will improve (and the
+  cost, in the form of the difficulty of optimizing a constrained optimization
+  problem including an approximate precision-recall AUC, will increase).
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    bins: positive integer, the number of "rectangles" to use for the Riemann
+      approximation to precision-recall AUC.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate. This loss must be "normalized" (see
+      `BinaryClassificationLoss.is_normalized`).
+
+  Returns:
+    An `Expression` representing a lower bound on a Riemann approximation to
+    precision-recall AUC.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, the number of bins is
+      not an integer, or either loss is not a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels, the number of bins is
+      nonpositive, or the constraint_loss is not normalized.
+  """
+  return _pr_auc(
+      context,
+      bins,
+      lower_bound=True,
+      upper_bound=False,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def pr_auc_upper_bound(context,
+                       bins,
+                       penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                       constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` upper-bounding an approximate precision-recall AUC.
+
+  The result of this function represents an upper bound on a Riemann
+  approximation to the area under the precision-recall curve (recall on the
+  horizontal axis, precision on the vertical axis), using the constraint-based
+  method proposed by:
+
+  > Eban, Schain, Mackey, Gordon, Rifkin and Elidan. "Scalable Learning of
+  > Non-Decomposable Objectives". AISTATS 2017.
+
+  If you're going to be upper-bounding or minimizing the result of this
+  function, then you can think of it as being the approximate precision-recall
+  AUC itself. You should *never* lower-bound or maximize the result, however,
+  since the consequence would be to increase the value of the upper bound,
+  without affecting the model.
+
+  Notice that the result of this function is *not* an upper bound on the
+  precision-recall AUC. Rather, it's an upper bound on a Riemann approximation.
+  As the number of bins increases, this approximation will improve (and the
+  cost, in the form of the difficulty of optimizing a constrained optimization
+  problem including an approximate precision-recall AUC, will increase).
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    bins: positive integer, the number of "rectangles" to use for the Riemann
+      approximation to precision-recall AUC.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate. This loss must be "normalized" (see
+      `BinaryClassificationLoss.is_normalized`).
+
+  Returns:
+    An `Expression` representing an upper bound on a Riemann approximation to
+    precision-recall AUC.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, the number of bins is
+      not an integer, or either loss is not a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels, the number of bins is
+      nonpositive, or the constraint_loss is not normalized.
+  """
+  return _pr_auc(
       context,
       bins,
       lower_bound=False,

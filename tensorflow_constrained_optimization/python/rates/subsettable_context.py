@@ -196,7 +196,7 @@ class _RawContext(helpers.RateObject):
     """Returns the weights `DeferredTensor` for the constraints."""
     return self._constraint_weights
 
-  def transform_predictions(self, transformation):
+  def _transform_predictions(self, transformation):
     """Returns a new `_RawContext` with transformed predictions.
 
     Notice that this method does *not* change `self`: instead, it applies the
@@ -295,7 +295,7 @@ class SubsettableContext(helpers.RateObject):
     """Returns the constraint `Predicate`."""
     return self._constraint_predicate
 
-  def transform_predictions(self, transformation):
+  def _transform_predictions(self, transformation):
     """Returns a new `SubsettableContext` with transformed predictions.
 
     Notice that this method does *not* change `self`: instead, it applies the
@@ -306,7 +306,7 @@ class SubsettableContext(helpers.RateObject):
         and returning a new `DeferredTensor` of transformed predictions.
     """
     return SubsettableContext(
-        self._raw_context.transform_predictions(transformation),
+        self._raw_context._transform_predictions(transformation),  # pylint: disable=protected-access
         self._penalty_predicate, self._constraint_predicate)
 
   def subset(self, penalty_predicate, constraint_predicate=None):

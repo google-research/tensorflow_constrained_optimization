@@ -80,10 +80,10 @@ def upper_bound(expressions):
   returns the slack variable.
 
   If you're going to be upper-bounding or minimizing the result of this
-  function, then you can think of it as taking the `max` of its arguments. It's
-  different from `max` if you're going to be lower-bounding or maximizing the
-  result, however, since the consequence would be to increase the value of the
-  slack variable, without affecting the contents of the expressions list.
+  function, then you can think of it as taking the `max` of its arguments. You
+  should *never* lower-bound or maximize the result, however, since the
+  consequence would be to increase the value of the slack variable, without
+  affecting the contents of the expressions list.
 
   Args:
     expressions: list of `Expression`s, the quantities to upper-bound.
@@ -130,10 +130,10 @@ def lower_bound(expressions):
   returns the slack variable.
 
   If you're going to be lower-bounding or maximizing the result of this
-  function, then you can think of it as taking the `min` of its arguments. It's
-  different from `min` if you're going to be upper-bounding or minimizing the
-  result, however, since the consequence would be to decrease the value of the
-  slack variable, without affecting the contents of the expressions list.
+  function, then you can think of it as taking the `min` of its arguments. You
+  should *never* upper-bound or minimize the result, however, since the
+  consequence would be to decrease the value of the slack variable, without
+  affecting the contents of the expressions list.
 
   Args:
     expressions: list of `Expression`s, the quantities to lower-bound.

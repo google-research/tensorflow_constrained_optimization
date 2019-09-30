@@ -583,6 +583,85 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     self._check_rates(expected_penalty_value, expected_constraint_value,
                       actual_denominator_expression)
 
+  def test_precision_lower_bound(self):
+    """Checks that `precision_lower_bound` calculates the right quantities."""
+    # We don't check precision_upper_bound since most of the code is shared, and
+    # the test is too slow already.
+    bisection_epsilon = 1e-6
+    memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
+
+    expression = binary_rates.precision_lower_bound(self._split_context)
+
+    # Extract the the constraints and the associated variables.
+    constraint_list = []
+    variables = expression.extra_variables
+    for constraint in expression.extra_constraints:
+      constraint_value, constraint_variables = (
+          constraint.expression.constraint_expression.evaluate(memoizer))
+      constraint_list.append(constraint_value)
+      variables.update(constraint_variables)
+      variables.update(constraint.expression.extra_variables)
+    self.assertEqual(2, len(constraint_list))
+    constraints = deferred_tensor.DeferredTensor.apply(
+        lambda *args: tf.stack(args), *constraint_list)
+
+    # We need to explicitly create all variables included in the expression
+    # before we can try to extract the ratio_bounds.
+    for variable in variables:
+      variable.create(memoizer)
+
+    # The find_zeros_of_functions() helper will perform a bisection search over
+    # the ratio_bounds, so we need to extract the Tensor containing them from
+    # the graph.
+    ratio_bounds = None
+    for variable in variables:
+      tensor = variable(memoizer)
+      if tensor.name.startswith("ratio_bounds"):
+        self.assertIsNone(ratio_bounds)
+        ratio_bounds = tensor
+    self.assertIsNotNone(ratio_bounds)
+
+    def pre_train_ops_fn():
+      pre_train_ops = []
+      for variable in variables:
+        pre_train_ops += variable.pre_train_ops(memoizer)
+      return pre_train_ops
+
+    with self.wrapped_session() as session:
+      session.run_ops(pre_train_ops_fn)
+
+      def evaluate_fn(values):
+        """Assigns the variables and evaluates the constraints."""
+        session.run_ops(lambda: tf.assign(ratio_bounds, values))
+        return session.run(constraints(memoizer))
+
+      actual_ratio_bounds = find_zeros_of_functions(
+          2, evaluate_fn, epsilon=bisection_epsilon)
+      actual_numerator = actual_ratio_bounds[0]
+      actual_denominator = actual_ratio_bounds[1]
+
+    expected_numerator = (
+        np.sum((0.5 * (1.0 + np.sign(self._constraint_predictions))) *
+               (self._constraint_labels > 0.0) * self._constraint_weights *
+               self._constraint_predicate) /
+        np.sum(self._constraint_weights * self._constraint_predicate))
+
+    expected_denominator = (
+        np.sum((0.5 * (1.0 + np.sign(self._constraint_predictions))) *
+               self._constraint_weights * self._constraint_predicate) /
+        np.sum(self._constraint_weights * self._constraint_predicate))
+
+    self.assertAllClose(
+        expected_numerator, actual_numerator, rtol=0, atol=bisection_epsilon)
+    self.assertAllClose(
+        expected_denominator,
+        actual_denominator,
+        rtol=0,
+        atol=bisection_epsilon)
+
   def test_f_score_ratio(self):
     """Checks that `f_score_ratio` calculates the right quantities."""
     # We check the most common choices for the beta parameter to the F-score.
@@ -668,6 +747,94 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       self._check_rates(expected_penalty_value, expected_constraint_value,
                         actual_denominator_expression)
 
+  def test_f_score_upper_bound(self):
+    """Checks that `f_score_upper_bound` calculates the right quantities."""
+    # We don't check f_score_lower_bound since most of the code is shared, and
+    # the test is too slow already.
+    beta = 1.6
+    bisection_epsilon = 1e-6
+    memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+    }
+
+    expression = binary_rates.f_score_upper_bound(self._split_context, beta)
+
+    # Extract the the constraints and the associated variables.
+    constraint_list = []
+    variables = expression.extra_variables
+    for constraint in expression.extra_constraints:
+      constraint_value, constraint_variables = (
+          constraint.expression.constraint_expression.evaluate(memoizer))
+      constraint_list.append(constraint_value)
+      variables.update(constraint_variables)
+      variables.update(constraint.expression.extra_variables)
+    self.assertEqual(2, len(constraint_list))
+    constraints = deferred_tensor.DeferredTensor.apply(
+        lambda *args: tf.stack(args), *constraint_list)
+
+    # We need to explicitly create all variables included in the expression
+    # before we can try to extract the ratio_bounds.
+    for variable in variables:
+      variable.create(memoizer)
+
+    # The find_zeros_of_functions() helper will perform a bisection search over
+    # the ratio_bounds, so we need to extract the Tensor containing them from
+    # the graph.
+    ratio_bounds = None
+    for variable in variables:
+      tensor = variable(memoizer)
+      if tensor.name.startswith("ratio_bounds"):
+        self.assertIsNone(ratio_bounds)
+        ratio_bounds = tensor
+    self.assertIsNotNone(ratio_bounds)
+
+    def pre_train_ops_fn():
+      pre_train_ops = []
+      for variable in variables:
+        pre_train_ops += variable.pre_train_ops(memoizer)
+      return pre_train_ops
+
+    with self.wrapped_session() as session:
+      session.run_ops(pre_train_ops_fn)
+
+      def evaluate_fn(values):
+        """Assigns the variables and evaluates the constraints."""
+        session.run_ops(lambda: tf.assign(ratio_bounds, values))
+        return session.run(constraints(memoizer))
+
+      actual_ratio_bounds = find_zeros_of_functions(
+          2, evaluate_fn, epsilon=bisection_epsilon)
+      actual_numerator = actual_ratio_bounds[0]
+      actual_denominator = actual_ratio_bounds[1]
+
+    expected_numerator = (
+        (1.0 + beta * beta) * np.sum(
+            (0.5 * (1.0 + np.sign(self._constraint_predictions))) *
+            (self._constraint_labels > 0.0) * self._constraint_weights *
+            self._constraint_predicate) /
+        np.sum(self._constraint_weights * self._constraint_predicate))
+
+    expected_denominator = (((1.0 + beta * beta) * np.sum(
+        (0.5 * (1.0 + np.sign(self._constraint_predictions))) *
+        (self._constraint_labels > 0.0) * self._constraint_weights *
+        self._constraint_predicate) + (beta * beta) * np.sum(
+            (0.5 * (1.0 - np.sign(self._constraint_predictions))) *
+            (self._constraint_labels > 0.0) * self._constraint_weights *
+            self._constraint_predicate) + np.sum(
+                (0.5 * (1.0 + np.sign(self._constraint_predictions))) *
+                (self._constraint_labels <= 0.0) * self._constraint_weights *
+                self._constraint_predicate)) / np.sum(
+                    self._constraint_weights * self._constraint_predicate))
+
+    self.assertAllClose(
+        expected_numerator, actual_numerator, rtol=0, atol=bisection_epsilon)
+    self.assertAllClose(
+        expected_denominator,
+        actual_denominator,
+        rtol=0,
+        atol=bisection_epsilon)
+
   def _find_roc_auc_thresholds(self, bins):
     """Finds the thresholds associated with each of the ROC AUC bins."""
     indices = [
@@ -725,13 +892,13 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     constraints = deferred_tensor.DeferredTensor.apply(
         lambda *args: tf.stack(args), *constraint_list)
 
-    # We need to explicitly create the variables before we can try to extract
-    # the roc_auc_thresholds.
+    # We need to explicitly create all variables included in the expression
+    # before we can try to extract the roc_auc_thresholds.
     for variable in variables:
       variable.create(memoizer)
 
-    # The check_roc_auc() helper will perform a bisection search over the
-    # thresholds, so we need to extract the Tensor containing the thresholds
+    # The find_zeros_of_functions() helper will perform a bisection search over
+    # the roc_auc_thresholds, so we need to extract the Tensor containing them
     # from the graph.
     roc_auc_thresholds = None
     for variable in variables:
