@@ -69,8 +69,8 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     actual_constraint_value, constraint_variables = (
         expression_object.constraint_expression.evaluate(memoizer))
 
-    # We need to explicitly create the variables before the call to
-    # global_variables_initializer().
+    # We need to explicitly create the variables before creating the wrapped
+    # session.
     variables = penalty_variables | constraint_variables
     for variable in variables:
       variable.create(memoizer)

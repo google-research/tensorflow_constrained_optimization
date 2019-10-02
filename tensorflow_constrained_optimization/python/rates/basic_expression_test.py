@@ -183,8 +183,8 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     actual_hinge_negative_weights, hinge_negative_variables = (
         hinge_term.negative_ratio_weights.evaluate(memoizer))
 
-    # We need to explicitly create the variables before the call to
-    # global_variables_initializer().
+    # We need to explicitly create the variables before creating the wrapped
+    # session.
     variables = (
         zero_one_positive_variables | zero_one_negative_variables
         | hinge_positive_variables | hinge_negative_variables)

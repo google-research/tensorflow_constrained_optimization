@@ -36,7 +36,7 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     Args:
       expression: `Expression` to evaluate.
       extra_pre_train_ops_fn: function that takes a `EvaluationMemoizer`, and
-        returns a list of `Operation`s to execute before evaluation.
+        returns a list of ops to execute before evaluation.
 
     Returns:
       A pair (penalty,constraint) containing the values of the penalty and
@@ -52,8 +52,8 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     constraint_value, constraint_variables = (
         expression.constraint_expression.evaluate(memoizer))
 
-    # We need to explicitly create the variables before the call to
-    # global_variables_initializer().
+    # We need to explicitly create the variables before creating the wrapped
+    # session.
     variables = (
         expression.extra_variables | penalty_variables | constraint_variables)
     for variable in variables:

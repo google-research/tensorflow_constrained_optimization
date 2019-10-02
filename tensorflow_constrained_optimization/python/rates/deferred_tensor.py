@@ -534,8 +534,8 @@ class DeferredVariable(DeferredTensor):
       dtype: as in `tf.Variable`'s constructor.
       pre_train_ops_fn: an optional function taking the two parameters: the
         `tf.Variable` corresponding to this `DeferredVariable`, and a "memoizer"
-        dict; and returning a list of `Operation`s that should be executed
-        before each training iteration.
+        dict; and returning a list of ops that should be executed before each
+        training iteration.
       auto_cast: if `True`, then calls to `DeferredTensor.apply` will attempt to
         perform automatic type promotion on the resulting `DeferredVariable`.
     """
@@ -570,7 +570,7 @@ class DeferredVariable(DeferredTensor):
         use_resource=True)
 
   def pre_train_ops(self, memoizer):
-    """Returns a list of `tf.Operation`s to run at the start of train_op.
+    """Creates and returns a list of ops to run at the start of train_op.
 
     Aside from `DeferredTensor`'s __call__ method, this is the only place that
     the value of the `DeferredVariable` will be accessed.
@@ -579,7 +579,7 @@ class DeferredVariable(DeferredTensor):
       memoizer: dict, which memoizes variables (among other things).
 
     Returns:
-      A list of `Operation`s.
+      A list of ops.
     """
     if self._pre_train_ops_fn is None:
       return []

@@ -191,13 +191,12 @@ class LagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
 
   def _project_multipliers(self, multipliers):
     """Projects the Lagrange multipliers onto the feasible region."""
-    with tf.colocate_with(multipliers):
-      if self._maximum_multiplier_radius:
-        projected_multipliers = _project_multipliers_wrt_euclidean_norm(
-            multipliers, self._maximum_multiplier_radius)
-      else:
-        projected_multipliers = tf.maximum(0.0, multipliers)
-      return projected_multipliers
+    if self._maximum_multiplier_radius:
+      projected_multipliers = _project_multipliers_wrt_euclidean_norm(
+          multipliers, self._maximum_multiplier_radius)
+    else:
+      projected_multipliers = tf.maximum(0.0, multipliers)
+    return projected_multipliers
 
   def _maybe_create_multipliers(self, num_constraints):
     """Fetches/creates the internal state."""
@@ -325,13 +324,12 @@ def create_lagrangian_loss(minimization_problem,
 
   def constraint_fn(multipliers):
     """Projects the Lagrange multipliers onto the feasible region."""
-    with tf.colocate_with(multipliers):
-      if maximum_multiplier_radius:
-        projected_multipliers = _project_multipliers_wrt_euclidean_norm(
-            multipliers, maximum_multiplier_radius)
-      else:
-        projected_multipliers = tf.maximum(0.0, multipliers)
-      return projected_multipliers
+    if maximum_multiplier_radius:
+      projected_multipliers = _project_multipliers_wrt_euclidean_norm(
+          multipliers, maximum_multiplier_radius)
+    else:
+      projected_multipliers = tf.maximum(0.0, multipliers)
+    return projected_multipliers
 
   initial_multipliers = np.zeros((minimization_problem.num_constraints,),
                                  dtype=np.float32)

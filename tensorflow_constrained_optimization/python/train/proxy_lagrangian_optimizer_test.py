@@ -41,7 +41,7 @@ class ProxyLagrangianOptimizerTest(
                              initial_multiplier_radius=None):
     """Tests that the states at each iteration match the expected states."""
     optimizer = proxy_lagrangian_optimizer.ProxyLagrangianOptimizer(
-        tf.train.GradientDescentOptimizer(1.0),
+        tf.compat.v1.train.GradientDescentOptimizer(1.0),
         regret_type=regret_type,
         update_type=update_type,
         minimum_multiplier_radius=minimum_multiplier_radius,

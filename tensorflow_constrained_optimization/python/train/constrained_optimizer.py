@@ -36,7 +36,7 @@ from tensorflow_constrained_optimization.python import constrained_minimization_
 # The implementations of LagrangianOptimizer and ProxyLagrangianOptimizer should
 # be unchanged. You *will* need to fix their tests, though.
 @six.add_metaclass(abc.ABCMeta)
-class ConstrainedOptimizer(tf.train.Optimizer):
+class ConstrainedOptimizer(tf.compat.v1.train.Optimizer):
   """Base class representing a constrained optimizer.
 
   A `ConstrainedOptimizer` wraps an `Optimizer` (or more than one), and applies
@@ -152,7 +152,7 @@ class ConstrainedOptimizer(tf.train.Optimizer):
   def compute_gradients(self,
                         minimization_problem,
                         var_list=None,
-                        gate_gradients=tf.train.Optimizer.GATE_OP,
+                        gate_gradients=tf.compat.v1.train.Optimizer.GATE_OP,
                         aggregation_method=None,
                         colocate_gradients_with_ops=False,
                         grad_loss=None):

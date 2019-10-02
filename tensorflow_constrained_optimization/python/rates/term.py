@@ -284,8 +284,8 @@ class _RatioWeights(helpers.RateObject):
     minibatches). Hence, we can't compute the average weight across the entire
     dataset directly. Instead, we keep running sums of the total weight of
     examples included in the denominator, and the number of examples seen, and
-    update them before each minibatch (in the set of `Operation`s returned by
-    this method).
+    update them before each minibatch (in the pre_train_ops associated with the
+    running sum variables).
 
     Args:
       denominator: (`DeferredTensor`, `Predicate`) pair, the first being the

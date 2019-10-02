@@ -175,7 +175,8 @@ class RateMinimizationProblemTest(
             variables_and_initial_values):
           variable.assign(initial_value)
       else:
-        session.run_ops(lambda: tf.variables_initializer(problem.variables))
+        session.run_ops(
+            lambda: tf.compat.v1.variables_initializer(problem.variables))
 
       reinitialized_objective = session.run(problem.objective())
       reinitialized_constraints = session.run(problem.constraints())

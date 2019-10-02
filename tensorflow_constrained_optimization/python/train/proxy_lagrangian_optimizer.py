@@ -353,38 +353,36 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
 
   def _project_state(self, state):
     """Projects the internal state onto the feasible region."""
-    with tf.colocate_with(state):
-      if self._update_type == _ADDITIVE_UPDATE_TYPE:
-        # If we're performing additive updates, then the feasible region is
-        # either the space of multinoulli distributions (if minimizing external
-        # regret) or the space of left-stochastic matrices (if minimizing swap
-        # regret).
-        return _project_distribution_wrt_euclidean_norm(state)
-      else:
-        # This assertion should always succeed, since we check update_type in
-        # the constructor.
-        assert self._update_type == _MULTPILICATIVE_UPDATE_TYPE
+    if self._update_type == _ADDITIVE_UPDATE_TYPE:
+      # If we're performing additive updates, then the feasible region is either
+      # the space of multinoulli distributions (if minimizing external regret)
+      # or the space of left-stochastic matrices (if minimizing swap regret).
+      return _project_distribution_wrt_euclidean_norm(state)
+    else:
+      # This assertion should always succeed, since we check update_type in the
+      # constructor.
+      assert self._update_type == _MULTPILICATIVE_UPDATE_TYPE
 
-        # Gets the dimension of the state (num_constraints + 1)--the assertions
-        # are of things that cannot possibly fail.
-        state_shape = state.shape.dims
-        assert state_shape is not None
-        dimension = state_shape[0].value
-        assert dimension is not None
+      # Gets the dimension of the state (num_constraints + 1)--the assertions
+      # are of things that cannot possibly fail.
+      state_shape = state.shape.dims
+      assert state_shape is not None
+      dimension = state_shape[0].value
+      assert dimension is not None
 
-        minimum_log_multiplier = math.log(self._minimum_multiplier_radius /
-                                          float(dimension))
+      minimum_log_multiplier = math.log(self._minimum_multiplier_radius /
+                                        float(dimension))
 
-        # If we're performing multiplicative updates, then the feasible region
-        # is either the space element-wise logarithms of multinoulli
-        # distributions (if minimizing external regret) or the space of
-        # element-wise logarithms of left-stochastic matrices (if minimizing
-        # swap regret). In either case, the log of the minimal element is also
-        # constrained to be at least log(minimum_multiplier_radius / (m + 1)),
-        # where m is the number of constraints.
-        return tf.maximum(
-            _project_log_distribution_wrt_kl_divergence(state),
-            tf.constant(minimum_log_multiplier, dtype=state.dtype))
+      # If we're performing multiplicative updates, then the feasible region is
+      # either the space element-wise logarithms of multinoulli distributions
+      # (if minimizing external regret) or the space of element-wise logarithms
+      # of left-stochastic matrices (if minimizing swap regret). In either case,
+      # the log of the minimal element is also constrained to be at least
+      # log(minimum_multiplier_radius / (m + 1)), where m is the number of
+      # constraints.
+      return tf.maximum(
+          _project_log_distribution_wrt_kl_divergence(state),
+          tf.constant(minimum_log_multiplier, dtype=state.dtype))
 
   def _maybe_create_state(self, num_constraints):
     """Fetches/creates the internal state."""

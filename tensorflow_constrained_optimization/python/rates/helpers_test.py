@@ -23,6 +23,10 @@ import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import helpers
 
+# These tests use some placeholder Tensors, so we want to make sure that they
+# execute in graph mode.
+tf.compat.v1.disable_eager_execution()
+
 
 class HelpersTest(tf.test.TestCase):
   """Tests for helper functions in helpers.py."""
@@ -53,7 +57,7 @@ class HelpersTest(tf.test.TestCase):
     # Trying to make a rank-1 Tensor from a shape-(1,None,1) Tensor should
     # succeed (only one of the dimensions is nontrivial).
     expected = [0.2, -2.4, 0.0]
-    placeholder = tf.placeholder(tf.float32, shape=(1, None, 1))
+    placeholder = tf.compat.v1.placeholder(tf.float32, shape=(1, None, 1))
     actual = helpers.convert_to_1d_tensor(placeholder)
     with self.session() as session:
       self.assertAllClose(
@@ -68,7 +72,7 @@ class HelpersTest(tf.test.TestCase):
       _ = helpers.convert_to_1d_tensor([[1, 2], [3, 4]])
 
     # Trying to make a rank-1 Tensor from a shape-(None,2) Tensor should fail.
-    placeholder = tf.placeholder(tf.float32, shape=(None, 2))
+    placeholder = tf.compat.v1.placeholder(tf.float32, shape=(None, 2))
     with self.assertRaises(ValueError):
       _ = helpers.convert_to_1d_tensor(placeholder)
 

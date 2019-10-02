@@ -279,8 +279,8 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     actual_constraint_value, constraint_variables = (
         actual_expression.constraint_expression.evaluate(memoizer))
 
-    # We need to explicitly create the variables before the call to
-    # global_variables_initializer().
+    # We need to explicitly create the variables before creating the wrapped
+    # session.
     variables = (
         actual_expression.extra_variables | penalty_variables
         | constraint_variables)
@@ -635,7 +635,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
       def evaluate_fn(values):
         """Assigns the variables and evaluates the constraints."""
-        session.run_ops(lambda: tf.assign(ratio_bounds, values))
+        session.run_ops(lambda: ratio_bounds.assign(values))
         return session.run(constraints(memoizer))
 
       actual_ratio_bounds = find_zeros_of_functions(
@@ -800,7 +800,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
       def evaluate_fn(values):
         """Assigns the variables and evaluates the constraints."""
-        session.run_ops(lambda: tf.assign(ratio_bounds, values))
+        session.run_ops(lambda: ratio_bounds.assign(values))
         return session.run(constraints(memoizer))
 
       actual_ratio_bounds = find_zeros_of_functions(
@@ -919,7 +919,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
       def evaluate_fn(values):
         """Assigns the variables and evaluates the constraints."""
-        session.run_ops(lambda: tf.assign(roc_auc_thresholds, values))
+        session.run_ops(lambda: roc_auc_thresholds.assign(values))
         return session.run(constraints(memoizer))
 
       actual_thresholds = find_zeros_of_functions(

@@ -186,8 +186,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         numerator_predicate, denominator_predicate)
     actual_weights, variables = ratio_weights.evaluate(memoizer)
 
-    # We need to explicitly create the variables before the call to
-    # global_variables_initializer().
+    # We need to explicitly create the variables before creating the wrapped
+    # session.
     for variable in variables:
       variable.create(memoizer)
 
@@ -276,8 +276,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     actual_weights, variables = ratio_weights.evaluate(memoizer)
 
-    # We need to explicitly create the variables before the call to
-    # global_variables_initializer().
+    # We need to explicitly create the variables before creating the wrapped
+    # session.
     for variable in variables:
       variable.create(memoizer)
 
@@ -385,8 +385,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     actual_term, variables = term_object.evaluate(memoizer)
 
-    # We need to explicitly create the variables before the call to
-    # global_variables_initializer().
+    # We need to explicitly create the variables before creating the wrapped
+    # session.
     for variable in variables:
       variable.create(memoizer)
 

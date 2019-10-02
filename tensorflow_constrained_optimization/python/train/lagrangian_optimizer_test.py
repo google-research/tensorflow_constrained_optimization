@@ -74,7 +74,8 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     minimization_problem = test_util.ConstantMinimizationProblem(
         np.array([0.6, -0.1, 0.4]))
     optimizer = lagrangian_optimizer.LagrangianOptimizer(
-        tf.train.GradientDescentOptimizer(1.0), maximum_multiplier_radius=1.0)
+        tf.compat.v1.train.GradientDescentOptimizer(1.0),
+        maximum_multiplier_radius=1.0)
     # We force the Lagrange multipliers to be created here so that (1) in
     # graph mode, it will be initialized correctly and (2) in eager mode,
     # we'll be able to check its initial value.
@@ -106,7 +107,7 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     loss_fn, pre_train_ops_fn, multipliers_variable = (
         lagrangian_optimizer.create_lagrangian_loss(
             minimization_problem, maximum_multiplier_radius=1.0))
-    optimizer = tf.train.GradientDescentOptimizer(1.0)
+    optimizer = tf.compat.v1.train.GradientDescentOptimizer(1.0)
 
     loss = loss_fn
     if not tf.executing_eagerly():

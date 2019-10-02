@@ -74,7 +74,7 @@ class _GraphWrappedSession(object):
       This object.
     """
     self._session = self._outer_session.__enter__()
-    self._session.run(tf.global_variables_initializer())
+    self._session.run(tf.compat.v1.global_variables_initializer())
     return self
 
   def __exit__(self, exc_type, exc_value, traceback):
@@ -113,15 +113,14 @@ class _GraphWrappedSession(object):
     return self._session.run(tensor, feed_dict=feed_dict)
 
   def run_ops(self, callback, feed_dict=None):
-    """Executes the collection of `Operation`s returned by the given callback.
+    """Executes the collection of ops returned by the given callback.
 
     This, like the `run()` method, is a special-case of `tf.Session.run()`.
-    Unlike the `run()` method, it is used to execute `tf.Operation`s, not
-    evaluate a `Tensor`.
+    Unlike the `run()` method, it is used to execute ops, not evaluate a
+    `Tensor`.
 
     Args:
-      callback: a nullary function returning a collection of `Operation`s to
-        execute.
+      callback: a nullary function returning a collection of ops to execute.
       feed_dict: dict mapping placeholder `Tensor`s to their desired values.
     """
     self._session.run(callback(), feed_dict=feed_dict)
@@ -200,8 +199,8 @@ class _EagerWrappedSession(object):
     """Calls the given callback.
 
     This, like the `run()` method, is a special-case of `tf.Session.run()`.
-    Unlike the `run()` method, it is used to execute `tf.Operation`s, not
-    evaluate a `Tensor`.
+    Unlike the `run()` method, it is used to execute ops, not evaluate a
+    `Tensor`.
 
     Args:
       callback: a nullary function that performs the desired operations.
@@ -217,9 +216,9 @@ class _EagerWrappedSession(object):
                           "_EagerPlaceholder objects")
         key.set(value)
 
-    # The main reason that run_ops() takes a callback, instead of a list of
-    # `Operations` (which would be ignored in eager mode), is to enable us to
-    # account for the feed_dict *before* the callback is called.
+    # The main reason that run_ops() takes a callback, instead of a list of ops
+    # (which would be ignored in eager mode), is to enable us to account for the
+    # feed_dict *before* the callback is called.
     callback()
 
     # Before returning, clear out the placeholders to make sure that the *next*
@@ -237,7 +236,7 @@ class GraphAndEagerTestCase(tf.test.TestCase):
     """Returns a placeholder in graph mode, or a fake in eager mode."""
     if tf.executing_eagerly():
       return _EagerPlaceholder()
-    return tf.placeholder(dtype, shape=shape, name=name)
+    return tf.compat.v1.placeholder(dtype, shape=shape, name=name)
 
   def wrapped_session(self):
     """Returns a wrapper object around a session.
