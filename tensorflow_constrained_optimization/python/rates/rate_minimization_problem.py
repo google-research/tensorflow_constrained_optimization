@@ -262,41 +262,15 @@ class RateMinimizationProblem(
     return [variable(self._memoizer) for variable in self._variables
            ] + [self._global_step]
 
-  @property
-  def trainable_variables(self):
-    """Returns a list of trainable variables owned by this problem.
-
-    The returned variables will only be those that are owned by the rate
-    minimization problem itself, e.g. implicit slack variables. The model
-    variables will *not* be included.
-
-    Returns:
-      A list of variables.
-    """
-    return [variable for variable in self.variables if variable.trainable]
-
-  @property
-  def non_trainable_variables(self):
-    """Returns a list of non-trainable variables owned by this problem.
-
-    The returned variables will only be those that are owned by the rate
-    minimization problem itself, e.g. implicit denominator accumulators. The
-    model variables will *not* be included.
-
-    Returns:
-      A list of variables.
-    """
-    return [variable for variable in self.variables if not variable.trainable]
-
   def pre_train_ops(self):
-    """Returns a list of `tf.Operation`s to run at the start of train_op.
+    """Creates and returns a list of ops to run at the start of train_op.
 
     When a constrained optimizer creates a train_op, it will include these ops
     before the main training step. These ops update internal state that is used
     to estimate the denominators of rates.
 
     Returns:
-      A list of `tf.Operation`s.
+      A list of ops.
     """
     pre_train_ops = []
     for variable in self._variables:

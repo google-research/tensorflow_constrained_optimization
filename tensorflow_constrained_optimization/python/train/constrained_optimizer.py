@@ -26,131 +26,264 @@ import tensorflow as tf
 from tensorflow_constrained_optimization.python import constrained_minimization_problem
 
 
-# Change the base class from tf.train.Optimizer to tf.keras.optimizers.Optimizer
-# to move to V2 optimizers. You will also need to:
-#   1. Replace compute_gradients() with _compute_gradients()
-#   2. Update the _create_slots(), _prepare(), _resource_apply_dense() and
-#      _resourse_apply_sparse() implementations
-#   3. Remove _apply_dense() and _apply_sparse()
-#   4. Implement get_config() (it should probably just raise)
-# The implementations of LagrangianOptimizer and ProxyLagrangianOptimizer should
-# be unchanged. You *will* need to fix their tests, though.
 @six.add_metaclass(abc.ABCMeta)
-class ConstrainedOptimizer(tf.compat.v1.train.Optimizer):
-  """Base class representing a constrained optimizer.
+class Formulation(object):
+  """Represents a constrained optimization formulation.
 
-  A `ConstrainedOptimizer` wraps an `Optimizer` (or more than one), and applies
-  it to a `ConstrainedMinimizationProblem`. Like an `Optimizer`, its minimize()
-  method can be used to minimize a `Tensor` argument. Unlike a normal
-  `Optimizer`, however, a `ConstrainedOptimizer` can *instead* take a
+  Currently, the two formulations that this library supports are the Lagrangian
+  formulation, and the proxy-Lagrangian formulation. Both formulations have an
+  associated internal state. For example, the Lagrangian formulation maintains a
+  `Tensor` of Lagrange multipliers.
+
+  Implementations of this class are responsible for maintaining the internal
+  state (the "state" and "create_state" methods), and constructing the
+  appropriate updates for both this state, and the parameters of the model that
+  we're training (the "get_loss_fn" method).
+  """
+
+  @abc.abstractproperty
+  def state(self):
+    """Fetches the internal state, or returns None if it hasn't been created.
+
+    Returns:
+      The state `Tensor`, if create_state() has been called, or None otherwise.
+    """
+
+  @abc.abstractmethod
+  def create_state(self, num_constraints):
+    """Fetches the internal state, creating it if necessary.
+
+    Args:
+      num_constraints: int, the number of constraints in the
+        `ConstrainedMinimizationProblem` that will eventually be minimized.
+
+    Returns:
+      The state `Tensor`.
+    """
+
+  @abc.abstractmethod
+  def get_loss_fn(self, minimization_problem):
+    """Returns the loss function.
+
+    The resulting loss function should use `tf.custom_gradient` to override its
+    gradients. First, the gradients w.r.t. the internal state should be written
+    in terms of the constraints, instead of the proxy_constraints. Second, the
+    gradients may be negated, depending on the formulation (for example, for the
+    Lagrangian formulation, we wish to maximize over the Lagrange multipliers,
+    so the associated gradients will be negated).
+
+    Args:
+      minimization_problem: `ConstrainedMinimizationProblem`, the problem to
+        minimize.
+
+    Returns:
+      The loss function.
+    """
+
+
+def create_loss(formulation, minimization_problem):
+  """Creates a loss function from a `ConstrainedMinimizationProblem`.
+
+  Minimizing the returned loss will have the effect of jointly optimizing over
+  both the internal state used by the given formulation, and the parameters of
+  the model that we're training.
+
+  In addition to a loss function, this method returns a function returning a
+  list of operations that should be executed before each iteration ("pre-train
+  ops"), and a `tf.Variable` containing the formulation's internal state.
+
+  In graph mode, the result of this pre-train ops function could be "attached"
+  to the train_op using tf.control_dependencies. In eager mode, it should be
+  called before each iteration. Likewise, you should make sure to differentiate
+  w.r.t. the internal state variable by e.g. including it in the var_list that
+  you pass to an `Optimizer`'s minimize() method.
+
+  For example, in graph mode, your code could look like this:
+
+  ```python
+  # We ignore the returned state, since we won't provide a var_list to the
+  # Optimizer's minimize() method.
+  loss_fn, pre_train_ops_fn, _ = create_loss(formulation, minimization_problem)
+
+  optimizer = tf.compat.v1.train.GradientDescentOptimizer()
+  with tf.control_dependencies(pre_train_ops_fn()):
+    # Since we don't provide a var_list, we'll just differentiate w.r.t. all
+    # trainable variables, including the state.
+    train_op = optimizer.minimize(loss_fn())
+
+  with tf.compat.v1.Session() as session:
+    for iteration in xrange(num_iterations):
+      session.run(train_op)
+  ```
+
+  while in eager mode, it could look like this:
+
+  ```python
+  loss_fn, pre_train_ops_fn, state_variable = create_loss(formulation,
+      minimization_problem)
+
+  # Assuming that we already have a var_list containing the model parameters.
+  var_list += minimization_problem.trainable_variables
+  var_list.append(state_variable)
+
+  optimizer = tf.keras.optimizers.SGD()
+
+  for iteration in xrange(num_iterations):
+    pre_train_ops_fn()
+    optimizer.minimize(loss_fn, var_list=var_list)
+  ```
+
+  Args:
+    formulation: `Formulation` to use for performing constrained optimization.
+    minimization_problem: `ConstrainedMinimizationProblem`, the problem to
+      optimize.
+
+  Returns:
+    A (loss_fn, pre_train_ops_fn, state_variable) tuple, where loss_fn is
+    a nullary function returning a `Tensor` that can be minimized to optimize
+    the constrained problem, pre_train_ops_fn is a nullary function that returns
+    a list of operations that should be executed before each training iteration,
+    and multipliers_variable is a `tf.Variable` containing the internal state of
+    the given formulation.
+  """
+  state_variable = formulation.create_state(
+      minimization_problem.num_constraints)
+  loss_fn = formulation.get_loss_fn(minimization_problem)
+
+  return loss_fn, minimization_problem.pre_train_ops, state_variable
+
+
+class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
+  """Base class representing a constrained V1 optimizer.
+
+  A `ConstrainedOptimizerV1` wraps one or two `tf.compat.v1.train.Optimizer`s,
+  and applies them to a `ConstrainedMinimizationProblem`. Like a
+  `tf.compat.v1.train.Optimizer`, its minimize() method can be used to minimize
+  a `Tensor` argument. Unlike a normal `tf.compat.v1.train.Optimizer`, however,
+  a `ConstrainedOptimizerV1` can *instead* take a
   `ConstrainedMinimizationProblem` as the first parameter to minimize(), in
   which case it will perform constrained optimization.
 
-  A `ConstrainedOptimizer` wraps a normal `Optimizer` (the "optimizer"
-  constructor parameter). If you minimize a `Tensor`, then the
-  `ConstrainedOptimizer` will basically be an overly-complicated wrapper around
-  this optimizer. The "constraint_optimizer" constructor parameter is used only
-  for constrained optimization (i.e. when minimize() is given a
+  A `ConstrainedOptimizerV1` wraps a normal `tf.compat.v1.train.Optimizer` (the
+  "optimizer" constructor parameter). If you minimize a `Tensor`, then the
+  `ConstrainedOptimizerV1` will basically be an overly-complicated wrapper
+  around this optimizer. The "constraint_optimizer" constructor parameter is
+  used only for constrained optimization (i.e. when minimize() is given a
   `ConstrainedMinimizationProblem`), and is used to impose the constraints by
   maximizing over Lagrange multipliers (or their equivalents, if not using the
   Lagrangian formulation). If "constraint_optimizer" is not provided, then we
   will default to using the "optimizer" for the constraint portion of the
   optimization.
+
+  All `ConstrainedOptimizerV1` implementations are stateful. The internal state
+  can be accessed via the "trainable_variables" method, which should be included
+  in the var_list parameter that you pass to "minimize" (unless var_list is
+  None). *However*, you should be aware that the state will generally not exist
+  before the first call to "minimize". The reason for this is that if we're
+  using e.g. the Lagrangian formulation, then we need to know how many
+  constraints we'll have before we can create the Lagrange multipliers. Hence,
+  you may need to create the internal state explicitly, by providing the
+  num_constraints argument to the constructor.
   """
 
   def __init__(self,
+               formulation,
                optimizer,
+               num_constraints=None,
                constraint_optimizer=None,
-               name="ConstrainedOptimizer"):
-    """Constructs a new `ConstrainedOptimizer`.
+               name="ConstrainedOptimizerV1"):
+    """Constructs a new `ConstrainedOptimizerV1`.
 
     Args:
-      optimizer: `Optimizer`, used to optimize the objective and
-        proxy_constraints portion of `ConstrainedMinimizationProblem`. If
+      formulation: `Formulation` to use for performing constrained optimization.
+      optimizer: `tf.compat.v1.train.Optimizer`, used to optimize the objective
+        and proxy_constraints portion of `ConstrainedMinimizationProblem`. If
         constraint_optimizer is not provided, this will also be used to optimize
         the Lagrange multipliers (or their analogues).
-      constraint_optimizer: optional `Optimizer`, used to optimize the Lagrange
-        multipliers (or their analogues).
+      num_constraints: optional int, the number of constraints in the
+        `ConstrainedMinimizationProblem` that will eventually be minimized. If
+        this argument is provided, then the internal state will be created
+        inside this constructor. Otherwise, it will be created inside the first
+        call to get_loss_fn().
+      constraint_optimizer: optional `tf.compat.v1.train.Optimizer`, used to
+        optimize the Lagrange multipliers (or their analogues).
       name: a non-empty string, which will be passed on to the parent
-        `Optimizer`'s  constructor.
+        `tf.compat.v1.train.Optimizer`'s constructor.
     """
-    # I believe that use_locking does nothing here (we should just use whatever
-    # locking behavior was given to the constructor(s) of the contained
-    # optimizer(s)). The V2 optimizers don't take this parameter, so if the base
-    # class of ConstrainedOptimizer is changed to tf.keras.optimizers.Optimizer,
-    # then use_locking should be removed from the following __init__ call.
-    super(ConstrainedOptimizer, self).__init__(use_locking=False, name=name)
+    # The use_locking parameter does nothing here (the locking behavior will be
+    # based on the use_locking parameters that were passed to the constructor(s)
+    # of the wrapped optimizer and constraint_optimizer).
+    super(ConstrainedOptimizerV1, self).__init__(use_locking=False, name=name)
 
+    self._formulation = formulation
     self._optimizer = optimizer
     self._constraint_optimizer = constraint_optimizer
 
-  @property
-  def optimizer(self):
-    """Returns the `Optimizer` used for the objective and proxy_constraints."""
-    return self._optimizer
+    if num_constraints is not None:
+      self._formulation.create_state(num_constraints)
 
-  @property
-  def constraint_optimizer(self):
-    """Returns the `Optimizer` used for the Lagrange multiplier analogues."""
-    return self._constraint_optimizer
+  # As in Optimizer, this is *not* a property.
+  def variables(self):
+    """Returns a list of variables owned by this optimizer.
 
-  @abc.abstractmethod
-  def _is_state(self, variable_or_handle):
-    """Checks whether the given object is an internal state `Variable`.
+    The returned variables will only be those that are owned by the constrained
+    optimizer itself, i.e. the variables owned by the wrapped optimizer and
+    constraint_optimizer, and the constrained formulation's internal state
+    variable (e.g. Lagrange multipliers, for the Lagrangian formulation).
 
-    Must be overridden by all subclasses.
-
-    `ConstrainedOptimizer` implementations contain internal state. For example,
-    the `LagrangianOptimizer` contains a `Variable` of Lagrange multipliers.
-    This function will return True iff the given "variable_or_handle"
-    corresponds to such an internal state variable.
-
-    The parameter is called "variable_or_handle" since, if it originates from
-    the _apply_dense() or _apply_sparse() `Optimizer` methods, then it will be a
-    variable, whereas if it originates from the _resource_apply_dense() or
-    _resource_apply_sparse() methods, then it will be the handle of a resource
-    variable.
-
-    Args:
-      variable_or_handle: the `Variable` to check.
+    These internal state variables won't exist until the first call to
+    minimize() or compute_gradients(), since we need to know the number of
+    constraints in order to create them. For this reason, until you've started
+    optimization, this method will return the empty list.
 
     Returns:
-      True iff variable_or_handle corresponds to an internal state variable of
-      this `ConstrainedOptimizer`.
+      A list of variables.
     """
-    pass
+    result = self._optimizer.variables()
+    if self._constraint_optimizer is not None:
+      result += self._constraint_optimizer.variables()
+    if self._formulation.state is not None:
+      result.append(self._formulation.state)
+    return result
 
-  @abc.abstractmethod
-  def _compute_constrained_minimization_gradients(self, compute_gradients_fn,
-                                                  minimization_problem):
-    """Computes gradients of a `ConstrainedMinimizationProblem`.
+  def trainable_variables(self):
+    """Returns a list of trainable variables owned by this optimizer.
 
-    Must be overridden by all subclasses.
+    The returned variables will only be those that are owned by the constrained
+    optimizer itself, i.e. the variables owned by the wrapped optimizer and
+    constraint_optimizer, and the constrained formulation's internal state
+    variable (e.g. Lagrange multipliers, for the Lagrangian formulation).
 
-    This is the analogue of the "compute_gradients" method of a normal
-    `Optimizer`, *except* that, instead of differentiating a loss, it
-    differentiates a `ConstrainedMinimizationProblem`. The compute_gradients_fn
-    argument can be used by implementations to differentiate losses.
+    These internal state variables won't exist until the first call to
+    minimize() or compute_gradients(), since we need to know the number of
+    constraints in order to create them. For this reason, until you've started
+    optimization, this method will return the empty list.
 
-    For example, if the optimizer uses the Lagrangian formulation, then the
-    implementation of this method would construct the Lagrangian for the given
-    minimization_problem, and then call compute_gradients_fn to differentiate
-    it.
-
-    Args:
-      compute_gradients_fn: a function taking a loss (a `Tensor` in graph mode,
-        or a nullary function returning a `Tensor` in eager mode), and returning
-        a list of (gradient, variable) pairs.
-      minimization_problem: `ConstrainedMinimizationProblem`, the problem to
-        differentiate. The actual function that will be differentiated depends
-        on the formulation used by the `ConstrainedOptimizer` implementation
-        (for example, the `LagrangianOptimizer` will differentiate the
-        Lagrangian).
+    Returns:
+      A list of variables.
     """
-    pass
+    return [variable for variable in self.variables() if variable.trainable]
+
+  def non_trainable_variables(self):
+    """Returns a list of non-trainable variables owned by this optimizer.
+
+    The returned variables will only be those that are owned by the constrained
+    optimizer itself, i.e. the variables owned by the wrapped optimizer and
+    constraint_optimizer, and the constrained formulation's internal state
+    variable (e.g. Lagrange multipliers, for the Lagrangian formulation).
+
+    These internal state variables won't exist until the first call to
+    minimize() or compute_gradients(), since we need to know the number of
+    constraints in order to create them. For this reason, until you've started
+    optimization, this method will return the empty list.
+
+    Returns:
+      A list of variables.
+    """
+    return [variable for variable in self.variables() if not variable.trainable]
 
   def compute_gradients(self,
-                        minimization_problem,
+                        loss,
                         var_list=None,
                         gate_gradients=tf.compat.v1.train.Optimizer.GATE_OP,
                         aggregation_method=None,
@@ -158,43 +291,47 @@ class ConstrainedOptimizer(tf.compat.v1.train.Optimizer):
                         grad_loss=None):
     """Compute gradients of a `ConstrainedMinimizationProblem` (or loss).
 
-    If minimization_problem is a `ConstrainedMinimizationProblem` (which is
-    the most common use-case for this method), then there is one significant
-    difference compated to the compute_gradients() method of a normal
-    `Optimizer`: regardless of the value of the var_list parameter, the returned
-    list of (gradient, variable) pairs will *always* include entries for all
-    internal state variables of the `ConstrainedOptimizer` implementation (e.g.
-    the Lagrange multipliers, for a `LagrangianOptimizer`).
+    If "loss" is a `ConstrainedMinimizationProblem` (which is the most common
+    use-case for this method), *and* var_list is `None`, then the returned list
+    of (gradient, variable) pairs will include an entry for the internal state
+    variable of the constrained optimization formulation (e.g. the Lagrange
+    multipliers, for the Lagrangian formulation). If var_list is not `None`,
+    then these extra gradients will only be computed if the trainable_variables
+    for this `ConstrainedOptimizerV1` are included in var_list.
 
-    Inside apply_gradients(), these extra gradients will be dispatched to the
+    There is a complication here, however: the internal state won't exist until
+    the first time we enter this function, because we cannot create it until we
+    know the number of constraints). You can work around this by providing the
+    num_constraints argument to the constructor.
+
+    Inside apply_gradients(), the state gradient will be dispatched to the
     appropriate contained optimizer (i.e. either the "optimizer" or
     "constrained_optimizer"), and optionally projected, in the
     {,_resource}_apply_{dense,sparse}() methods.
 
-    If minimization_problem is *not* a `ConstrainedMinimizationProblem`, then
-    this function will thunk down to the compute_gradients() method of the
-    contained "optimizer".
+    If "loss" is *not* a `ConstrainedMinimizationProblem`, then this function
+    will thunk down to the compute_gradients() method of the contained
+    "optimizer".
 
     Args:
-      minimization_problem: either a `ConstrainedMinimizationProblem`, or, if we
-        do not wish to perform constrained optimization, a loss `Tensor` (in
-        graph mode) or a nullary function returning a loss `Tensor` (in eager
-        mode). In the two latter cases, this function will thunk down to the
-        compute_gradients() method of the contained "optimizer".
-      var_list: as in `tf.train.Optimizer`.
-      gate_gradients: as in `tf.train.Optimizer`.
-      aggregation_method: as in `tf.train.Optimizer`.
-      colocate_gradients_with_ops: as in `tf.train.Optimizer`.
-      grad_loss: as in `tf.train.Optimizer`.
+      loss: either a `ConstrainedMinimizationProblem`, or, if we do not wish to
+        perform constrained optimization, a loss `Tensor` (in graph mode) or a
+        nullary function returning a loss `Tensor` (in eager mode). In the two
+        latter cases, this function will thunk down to the compute_gradients()
+        method of the contained "optimizer".
+      var_list: as in `tf.compat.v1.train.Optimizer`.
+      gate_gradients: as in `tf.compat.v1.train.Optimizer`.
+      aggregation_method: as in `tf.compat.v1.train.Optimizer`.
+      colocate_gradients_with_ops: as in `tf.compat.v1.train.Optimizer`.
+      grad_loss: as in `tf.compat.v1.train.Optimizer`.
 
     Returns:
-      A list of (gradient, variable) pairs, as in the compute_gradients() mtehod
-      of `tf.train.Optimizer`.
+      A list of (gradient, variable) pairs, as in the compute_gradients() method
+      of `tf.compat.v1.train.Optimizer`.
     """
-
-    def compute_gradients_fn(loss):
-      """Computes gradients of the given loss."""
-      return super(ConstrainedOptimizer, self).compute_gradients(
+    if not isinstance(
+        loss, constrained_minimization_problem.ConstrainedMinimizationProblem):
+      return super(ConstrainedOptimizerV1, self).compute_gradients(
           loss,
           var_list=var_list,
           gate_gradients=gate_gradients,
@@ -202,34 +339,39 @@ class ConstrainedOptimizer(tf.compat.v1.train.Optimizer):
           colocate_gradients_with_ops=colocate_gradients_with_ops,
           grad_loss=grad_loss)
 
-    if not isinstance(
-        minimization_problem,
-        constrained_minimization_problem.ConstrainedMinimizationProblem):
-      return compute_gradients_fn(minimization_problem)
-
     if grad_loss is not None:
       raise ValueError("the grad_loss argument cannot be provided when the "
                        "loss argument is a ConstrainedMinimizationProblem")
 
-    return self._compute_constrained_minimization_gradients(
-        compute_gradients_fn, minimization_problem)
+    with tf.control_dependencies(loss.pre_train_ops()):
+      loss = self._formulation.get_loss_fn(loss)
+      if not tf.executing_eagerly():
+        loss = loss()
+      return super(ConstrainedOptimizerV1, self).compute_gradients(
+          loss,
+          var_list=var_list,
+          gate_gradients=gate_gradients,
+          aggregation_method=aggregation_method,
+          colocate_gradients_with_ops=colocate_gradients_with_ops,
+          grad_loss=grad_loss)
 
   # pylint: disable=protected-access
 
   def _create_slots(self, var_list):
-    if self._constraint_optimizer is None:
+    state = self._formulation.state
+    if self._constraint_optimizer is None or state is None:
       return self._optimizer._create_slots(var_list)
 
-    optimizer_var_list = []
-    constraint_optimizer_var_list = []
-    for variable in var_list:
-      is_state = self._is_state(variable)
-      if is_state:
-        constraint_optimizer_var_list.append(variable)
-      else:
-        optimizer_var_list.append(variable)
-    self._optimizer._create_slots(optimizer_var_list)
-    self._constraint_optimizer._create_slots(constraint_optimizer_var_list)
+    var_list = set(var_list)
+    if state not in var_list:
+      state_var_list = []
+    else:
+      var_list.discard(state)
+      state_var_list = [state]
+    var_list = list(var_list)
+
+    self._optimizer._create_slots(var_list)
+    self._constraint_optimizer._create_slots(state_var_list)
 
   def _prepare(self):
     self._optimizer._prepare()
@@ -237,22 +379,34 @@ class ConstrainedOptimizer(tf.compat.v1.train.Optimizer):
       self._constraint_optimizer._prepare()
 
   def _apply_dense(self, gradient, variable):
-    if self._constraint_optimizer is not None and self._is_state(variable):
+    assert variable is not None
+    if (self._constraint_optimizer is not None and
+        variable == self._formulation.state):
       return self._constraint_optimizer._apply_dense(gradient, variable)
     return self._optimizer._apply_dense(gradient, variable)
 
   def _apply_sparse(self, gradient, variable):
-    if self._constraint_optimizer is not None and self._is_state(variable):
+    assert variable is not None
+    if (self._constraint_optimizer is not None and
+        variable == self._formulation.state):
       return self._constraint_optimizer._apply_sparse(gradient, variable)
     return self._optimizer._apply_sparse(gradient, variable)
 
   def _resource_apply_dense(self, gradient, handle):
-    if self._constraint_optimizer is not None and self._is_state(handle):
+    assert handle is not None
+    # TODO: is it safe to compare variables and handles? It works in
+    # the tests, but will it *always* work?
+    if (self._constraint_optimizer is not None and
+        handle == self._formulation.state):
       return self._constraint_optimizer._resource_apply_dense(gradient, handle)
     return self._optimizer._resource_apply_dense(gradient, handle)
 
   def _resource_apply_sparse(self, gradient, handle):
-    if self._constraint_optimizer is not None and self._is_state(handle):
+    assert handle is not None
+    # TODO: is it safe to compare variables and handles? It works in
+    # the tests, but will it *always* work?
+    if (self._constraint_optimizer is not None and
+        handle == self._formulation.state):
       return self._constraint_optimizer._resource_apply_sparse(gradient, handle)
     return self._optimizer._resource_apply_sparse(gradient, handle)
 

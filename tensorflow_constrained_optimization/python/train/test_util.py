@@ -42,9 +42,10 @@ class ConstantMinimizationProblem(
     Returns:
       A new `ConstantMinimizationProblem`.
     """
-    # We make an fake 1-parameter linear objective so that we don't get a "no
+    # We make a fake 1-parameter linear objective so that we don't get a "no
     # variables to optimize" error.
-    self._objective = tf.Variable(0.0, dtype=tf.float32)
+    self._objective = tf.Variable(
+        0.0, trainable=True, dtype=tf.float32, use_resource=True)
     self._constraints = tf.constant(constraints, dtype=tf.float32)
 
   def objective(self):
@@ -68,3 +69,8 @@ class ConstantMinimizationProblem(
   def constraints(self):
     """Returns the constant constraint violations."""
     return self._constraints
+
+  @property
+  def variables(self):
+    """Returns a list of variables owned by this problem."""
+    return [self._objective]

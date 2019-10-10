@@ -89,8 +89,8 @@ class ConstrainedMinimizationProblem(object):
     """
 
   # This is a method, instead of an abstract method, since it doesn't need to be
-  # overridden: if proxy_constraints returns None, then there are no proxy
-  # constraints.
+  # overridden: if you don't override it, then there are no proxy constraints
+  # (we'll just use the constraints).
   def proxy_constraints(self):
     """Returns the optional `Tensor` of proxy constraint functions.
 
@@ -113,13 +113,55 @@ class ConstrainedMinimizationProblem(object):
     Returns:
       A `Tensor` of proxy constraint functions.
     """
-    return None
+    return self.constraints()
+
+  # This is a method, instead of an abstract method, since it doesn't need to be
+  # overridden: if variables returns [], then there are no Variables owned by
+  # this problem.
+  @property
+  def variables(self):
+    """Returns a list of variables owned by this problem.
+
+    The returned variables will only be those that are owned by the constrained
+    minimization problem itself, e.g. implicit slack variables. The model
+    variables will *not* be included.
+
+    Returns:
+      A list of variables.
+    """
+    return []
+
+  @property
+  def trainable_variables(self):
+    """Returns a list of trainable variables owned by this problem.
+
+    The returned variables will only be those that are owned by the constrained
+    minimization problem itself, e.g. implicit slack variables. The model
+    variables will *not* be included.
+
+    Returns:
+      A list of variables.
+    """
+    return [variable for variable in self.variables if variable.trainable]
+
+  @property
+  def non_trainable_variables(self):
+    """Returns a list of non-trainable variables owned by this problem.
+
+    The returned variables will only be those that are owned by the constrained
+    minimization problem itself, e.g. implicit slack variables. The model
+    variables will *not* be included.
+
+    Returns:
+      A list of variables.
+    """
+    return [variable for variable in self.variables if not variable.trainable]
 
   # This is a method, instead of an abstract method, since it doesn't need to be
   # overridden: if pre_train_ops() returns [], then there are no ops to run
   # before train_op.
   def pre_train_ops(self):
-    """Returns a list of `Operation`s to run before the train_op.
+    """Creates and returns a list of ops to run at the start of train_op.
 
     When a `ConstrainedOptimizer` calculates gradients or creates a train_op, it
     will include these ops before the main training step.
@@ -128,6 +170,6 @@ class ConstrainedMinimizationProblem(object):
     In graph mode, it needs only to return the ops.
 
     Returns:
-      A list of `Operation`s.
+      A list of ops.
     """
     return []

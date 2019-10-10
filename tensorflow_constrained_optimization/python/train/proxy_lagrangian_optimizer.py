@@ -13,34 +13,21 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 # ==============================================================================
-"""Defines `ProxyLagrangianOptimizer`.
+"""Constrained optimization using the proxy-Lagrangian formulation.
 
-A `ProxyLagrangianOptimizer` is used to minimize a constrained optimizion
-problem specified using the `ConstrainedMinimizationProblem` interface.
-Compared with the `LagrangianOptimizer`, `ProxyLagrangianOptimizer` is the more
-complex and expensive option, although it has more theoretical backing.
-Generally, the extra computational cost of using a `ProxyLagrangianOptimizer`
-will be small, assuming that the minibatch size is sufficiently large compared
-to the number of constraints. In this case, we recommend it over the
-`LagrangianOptimizer`.
-
-Specifically, a `ProxyLagrangianOptimizer` learns what weights should be
-associated with the objective function and constraints using the so-called
-"proxy-Lagrangian" formulation, which does *not* use Lagrange multipliers (but
-the idea is similar). The main differences between the formulation used here,
-and the standard Lagrangian formulation, are that (i) the objective function is
-weighted, in addition to the constraints, and (ii) these "multipliers" are taken
-from the (m+1)-dimensional simplex (m being the number of constraints), instead
-of the m-dimensional positive orthant.
+The code in this file uses the proxy-Lagrangian formulation to minimize a
+constrained problem specified using the `ConstrainedMinimizationProblem`
+interface. Compared with the Lagrangian formulation, the proxy-Lagrangian is the
+more complex and expensive option, although it has more theoretical backing.
+Generally, the extra computational cost of using the proxy-Lagrangian
+formuilation will be small, assuming that the minibatch size and complexity of
+the model are sufficiently large compared to the number of constraints. In this
+case, we recommend it over the Lagrangian formulation.
 
 At least in theory, external regret minimization of the Lagrangian formulation
-(using the `LagrangianOptimizer`) suffices if the
-`ConstrainedMinimizationProblem` we're optimizing doesn't have any
-"proxy_constraints", while swap regret minimization of the proxy-Lagrangian
-formulation (using the `ProxyLagrangianOptimizer` defined here) is recommended
-if "proxy_constraints" are present. In practice, the `LagrangianOptimizer` works
-in the latter case, but seemingly not quite as well as the
-`ProxyLagrangianOptimizer`.
+could converge more slowly than swap regret minimization using the
+proxy-Lagrangian formulation, assuming that the `ConstrainedMinimizationProblem`
+we're optimizing uses "proxy_constraints".
 
 For more specifics, please refer to:
 
@@ -48,10 +35,9 @@ For more specifics, please refer to:
 > Constrained Optimization". ALT'19.
 > [https://arxiv.org/abs/1804.06500](https://arxiv.org/abs/1804.06500)
 
-The formulation used by the `ProxyLagrangianOptimizer` is the so-called
-"proxy-Lagrangian" formulation, which can be found in Definition 2, and is
-discussed in Section 4. If using multiplicative updates to minimize swap regret
-(the update_type and regret_type constructor parameters), the algorithm is most
+The proxy-Lagrangian formulation can be found in Definition 2, and is discussed
+in Section 4. If using multiplicative updates to minimize swap regret (the
+update_type and regret_type constructor parameters), the algorithm is most
 similar to Algorithm 2 in Section 4, with the difference being that it uses
 `Optimizer`s, instead of SGD, for the "inner" updates. Instead of swap regret,
 one can alternatively use external regret, and instead of multiplicative
@@ -62,6 +48,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import functools
 import math
 import numpy as np
 import tensorflow as tf
@@ -229,12 +216,14 @@ def _project_log_distribution_wrt_kl_divergence(log_distribution):
   return log_distribution
 
 
-class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
-  """A `ConstrainedOptimizer` based on the proxy-Lagrangian formulation.
+class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
+  """Contains the internal state for the proxy-Lagrangian formulation.
 
-  This `ConstrainedOptimizer` uses the given `Optimizer`s to jointly minimize
-  over the model parameters, and maximize over constraint/objective weights (the
-  analogues of Lagrange multipliers).
+  To optimize using the proxy-Lagrangian formulation, we jointly minimize over
+  the model parameters, and maximize over constraint/objective weights (the
+  analogues of Lagrange multipliers). This latter maximization uses either
+  multiplicative or additive updates, and either an algorithm that minimizes
+  swap regret, or one that minimizes external regret.
 
   For more specifics, please refer to:
 
@@ -243,41 +232,17 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
   > [https://arxiv.org/abs/1804.06500](https://arxiv.org/abs/1804.06500)
 
   The formulation used by this optimizer is the so-called "proxy-Lagrangian"
-  formulation, which can be found in Definition 2, and is discussed in Section
-  4. If using multiplicative updates to minimize swap regret (the update_type
-  and regret_type constructor parameters), the algorithm is most similar to
-  Algorithm 2 in Section 4, with the difference being that it uses
-  `Optimizer`s, instead of SGD, for the "inner" updates. Instead of swap regret,
-  one can alternatively use external regret, and instead of multiplicative
-  updates, one can alternatively use additive updates, if desired.
-
-  The internal state (the analogues of the Lagrange multipliers) are owned by
-  the optimizer. Hence, if you want to use a ProxyLagrangianOptimizer on
-  multiple `ConstrainedMinimizationProblem`s, while sharing this internal state
-  between them, then you may do so. However, each problem must have the same
-  number of constraints (an exception will be raised, otherwise), so that the
-  internal states are compatible.
+  formulation, which can be found in Definition 2.
   """
 
   def __init__(self,
-               optimizer,
-               constraint_optimizer=None,
-               regret_type=_SWAP_REGRET_TYPE,
-               update_type=_MULTPILICATIVE_UPDATE_TYPE,
+               regret_type,
+               update_type,
                minimum_multiplier_radius=None,
-               initial_multiplier_radius=None,
-               name="ProxyLagrangianOptimizer"):
-    """Constructs a new `ProxyLagrangianOptimizer`.
-
-    The difference between "optimizer" and "constraint_optimizer" (if the latter
-    is provided) is that the former is used for learning the model parameters,
-    while the latter us used for the update to the constraint/objective weights
-    (the analogues of Lagrange multipliers). If no "constraint_optimizer" is
-    provided, then "optimizer" is used for both.
+               initial_multiplier_radius=None):
+    """Constructs a new `_ProxyLagrangianFormulation`.
 
     Args:
-      optimizer: as in `ConstrainedOptimizer`.
-      constraint_optimizer: as in `ConstrainedOptimizer`.
       regret_type: string, either "external" or "swap", determines what type of
         regret minimization to perform when updating the constraint/objective
         weights (the analogues of the Lagrange multipliers). This parameter has
@@ -299,18 +264,12 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
         defaults to the value of minimum_multiplier_radius (and must be no
         smaller than minimum_multiplier_radius if it's explicitly specified),
         and defaults to zero if update_type="additive".
-      name: as in `ConstrainedOptimizer`.
 
     Raises:
       ValueError: if the "regret_type" or "update_type" parameters are invalid,
         or if "minimum_multiplier_radius" or "initial_multiplier_radius" violate
         the conditions described above.
     """
-    super(ProxyLagrangianOptimizer, self).__init__(
-        optimizer=optimizer,
-        constraint_optimizer=constraint_optimizer,
-        name=name)
-
     self._regret_type = regret_type.lower()
     if self._regret_type not in (_EXTERNAL_REGRET_TYPE, _SWAP_REGRET_TYPE):
       raise ValueError("regret_type must be either \"external\" or \"swap\"")
@@ -348,8 +307,12 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
 
     # We can't create the internal state here, since we don't know how many
     # constraints there will be until we see the ConstrainedMinimizationProblem.
-    # Instead, we do so lazily, in _maybe_create_state().
+    # Instead, we do so lazily, in create_state().
     self._state = None
+
+  @property
+  def state(self):
+    return self._state
 
   def _project_state(self, state):
     """Projects the internal state onto the feasible region."""
@@ -384,8 +347,8 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
           _project_log_distribution_wrt_kl_divergence(state),
           tf.constant(minimum_log_multiplier, dtype=state.dtype))
 
-  def _maybe_create_state(self, num_constraints):
-    """Fetches/creates the internal state."""
+  def create_state(self, num_constraints):
+    """Fetches (or creates, if necessary) the internal state."""
     # For swap regret minimizing updates, we have a total of m+1 weights, where
     # m is the number of constraints: one for the objective, and one for each
     # constraint.
@@ -407,7 +370,7 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
       # constraints, and therefore the same internal state shape.
       if any(dim.value != dimension for dim in dims):
         raise RuntimeError(
-            "if you use the same ProxyLagrangianOptimizer on multiple "
+            "if you use the same proxy-Lagrangian optimizer on multiple "
             "problems, then they must have the same number of constraints, so "
             "that the internal state (the analogues of the Lagrange "
             "multipliers) can be shared")
@@ -459,7 +422,7 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
       # FUTURE WORK: make the dtype a parameter.
       self._state = tf.Variable(
           initial_state,
-          trainable=False,
+          trainable=True,
           name="proxy_lagrangian_state",
           dtype=tf.float32,
           constraint=self._project_state,
@@ -527,65 +490,295 @@ class ProxyLagrangianOptimizer(constrained_optimizer.ConstrainedOptimizer):
           tf.expand_dims(tf.cast(zero_and_constraints, distribution.dtype), 1),
           tf.expand_dims(distribution, 0))
 
-  def _is_state(self, variable_or_handle):
-    # This assertion should always succeed, since the internal state will be
-    # created inside compute_gradients(), whereas this function will only be
-    # called from within apply_gradients().
-    assert self._state is not None
+  def get_loss_fn(self, minimization_problem):
+    """Returns the proxy-Lagrangian loss function.
 
-    # This comparison seems to work even if self._state is a resource variable,
-    # and variable_or_handle is a handle coming from _resource_apply_dense() or
-    # _resource_apply_sparse(). This might not be strictly correct, though.
-    return variable_or_handle == self._state
+    The resulting loss function will use `tf.custom_gradient` to override its
+    gradients. In particular, the gradients w.r.t. the internal state will be
+    negated (since we wish to maximize them), and will be written in terms of
+    the constraints, instead of the proxy_constraints.
 
-  def _compute_constrained_minimization_gradients(self, compute_gradients_fn,
-                                                  minimization_problem):
+    Args:
+      minimization_problem: `ConstrainedMinimizationProblem`, the problem to
+        minimize.
+
+    Returns:
+      The proxy-Lagrangian loss function.
+    """
+    # This function returns both the value of the Lagrangian, and its gradients
+    # w.r.t. the contents of the constrained minimization problem (objective,
+    # constraints and proxy_constraints) and the internal proxy-Lagrangian
+    # state (state). The reason for using tf.custom_gradient is that it allows
+    # us to override the gradient w.r.t. the state to use (i) the original
+    # constraints instead of the proxy constraints, and (ii) to create swap
+    # regret updates, if necessary.
+    @tf.custom_gradient
+    def loss_gradient_fn(objective, constraints, proxy_constraints, state):
+      """Evaluates the loss for the current interbnal state."""
+      # Make sure that the objective and proxy constraints have the same dtype.
+      if (constraints.dtype.base_dtype != objective.dtype.base_dtype or
+          proxy_constraints.dtype.base_dtype != objective.dtype.base_dtype):
+        raise TypeError("objective, constraints and proxy_constraints must all "
+                        "have the same dtypes")
+
+      with tf.GradientTape() as tape:
+        tape.watch(objective)
+        tape.watch(proxy_constraints)
+
+        distribution = self._distribution(state)
+        zero_and_constraints = tf.pad(constraints, [[1, 0]])
+        objective_and_proxy_constraints = tf.concat(
+            (tf.expand_dims(objective, 0), proxy_constraints), axis=0)
+
+        output = tf.tensordot(
+            tf.cast(distribution,
+                    objective_and_proxy_constraints.dtype.base_dtype),
+            objective_and_proxy_constraints, 1)
+
+      wrt_objective, wrt_proxy_constraints = tape.gradient(
+          output, [objective, proxy_constraints])
+      wrt_state = -self._state_gradient(zero_and_constraints, distribution)
+
+      def gradient_fn(output_gradient):
+        # We return the gradient w.r.t. the objective, constraints,
+        # proxy_constraints and internal state, respectively (this is the same
+        # order as the arguments to loss_gradient_fn). Notice that the gradient
+        # w.r.t. the constraints is None.
+        return (output_gradient * wrt_objective, None,
+                output_gradient * wrt_proxy_constraints,
+                output_gradient * wrt_state)
+
+      return output, gradient_fn
+
     # Create the internal state over which we will minimize swap regret.
     num_constraints = minimization_problem.num_constraints
-    state = self._maybe_create_state(num_constraints)
-    distribution = self._distribution(state)
+    state = self.create_state(num_constraints)
 
-    # The "primal" portion of the proxy-Lagrangian game.
-    def loss_fn():
-      """Evaluates the loss for the current internal state."""
-      objective = minimization_problem.objective()
-      proxy_constraints = minimization_problem.proxy_constraints()
-      if proxy_constraints is None:
-        proxy_constraints = minimization_problem.constraints()
+    return functools.partial(
+        loss_gradient_fn, minimization_problem.objective(),
+        tf.reshape(
+            minimization_problem.constraints(), shape=(num_constraints,)),
+        tf.reshape(
+            minimization_problem.proxy_constraints(), shape=(num_constraints,)),
+        state)
 
-      # Make sure that the objective and proxy constraints have the same dtype.
-      if objective.dtype.base_dtype != proxy_constraints.dtype.base_dtype:
-        raise TypeError("objective and proxy_constraints must have the same "
-                        "dtypes")
 
-      # Flatten the proxy constraint tensor to 1d.
-      proxy_constraints = tf.reshape(
-          proxy_constraints, shape=(num_constraints,))
+def create_proxy_lagrangian_loss(minimization_problem,
+                                 regret_type=_SWAP_REGRET_TYPE,
+                                 update_type=_MULTPILICATIVE_UPDATE_TYPE,
+                                 minimum_multiplier_radius=None,
+                                 initial_multiplier_radius=None):
+  """Creates a loss function from a `ConstrainedMinimizationProblem`.
 
-      objective_and_proxy_constraints = tf.concat(
-          (tf.expand_dims(objective, 0), proxy_constraints), axis=0)
-      return tf.tensordot(
-          tf.cast(distribution, objective_and_proxy_constraints.dtype),
-          objective_and_proxy_constraints, 1)
+  Minimizing the returned loss will have the effect of jointly minimizing
+  over the model parameters, and maximizing over constraint/objective weights
+  (the analogues of Lagrange multipliers). This latter maximization uses either
+  multiplicative or additive updates, and either an algorithm that minimizes
+  swap regret, or one that minimizes external regret.
 
-    with tf.control_dependencies(minimization_problem.pre_train_ops()):
-      # Create a list of (gradient,variable) pairs for the model parameters. In
-      # graph mode, compute_gradients() expects a Tensor, while in eager mode,
-      # it expects a function returning a Tensor.
-      if not tf.executing_eagerly():
-        loss_fn = loss_fn()
-      grads_and_vars = compute_gradients_fn(loss_fn)
+  For more specifics, please refer to:
 
-      # Compute the gradient w.r.t. the internal state (the "dual" portion of
-      # the proxy-Lagrangian game).
-      constraints = minimization_problem.constraints()
-      constraints = tf.reshape(constraints, shape=(num_constraints,))
-      zero_and_constraints = tf.pad(constraints, [[1, 0]])
-      state_gradient = self._state_gradient(zero_and_constraints, distribution)
+  > Cotter, Jiang and Sridharan. "Two-Player Games for Efficient Non-Convex
+  > Constrained Optimization". ALT'19.
+  > [https://arxiv.org/abs/1804.06500](https://arxiv.org/abs/1804.06500)
 
-      # Create a (gradient,variable) pair for the internal state. We negate
-      # state_gradient since we want to maximize We negate state_gradient since
-      # we want to maximize over the objective/constraint weights.
-      grads_and_vars.append((-state_gradient, state))
+  The formulation used here is the so-called "proxy-Lagrangian"
+  formulation, which can be found in Definition 2, and is discussed in Section
+  4. If using multiplicative updates to minimize swap regret (the update_type
+  and regret_type constructor parameters), the algorithm is most similar to
+  Algorithm 2 in Section 4, with the difference being that it uses
+  `Optimizer`s, instead of SGD, for the "inner" updates. Instead of swap regret,
+  one can alternatively use external regret, and instead of multiplicative
+  updates, one can alternatively use additive updates, if desired.
 
-      return grads_and_vars
+  In addition to a loss function, this method returns a function returning a
+  list of operations that should be executed before each iteration ("pre-train
+  ops"), and a `tf.Variable` containing the internal proxy-Lagrangian state
+  (the analogue of the Lagrange multipliers).
+
+  In graph mode, the result of this pre-train ops function could be "attached"
+  to the train_op using tf.control_dependencies. In eager mode, it should be
+  called before each iteration. Likewise, you should make sure to differentiate
+  w.r.t. the state, e.g. by including it in the var_list that you pass to an
+  `Optimizer`'s minimize() method.
+
+  For example, in graph mode, your code could look like this:
+
+  ```python
+  # We ignore the returned state, since we won't provide a var_list to the
+  # Optimizer's minimize() method.
+  loss_fn, pre_train_ops_fn, _ = create_loss(formulation, minimization_problem)
+
+  optimizer = tf.compat.v1.train.GradientDescentOptimizer()
+  with tf.control_dependencies(pre_train_ops_fn()):
+    # Since we don't provide a var_list, we'll just differentiate w.r.t. all
+    # trainable variables, including the state.
+    train_op = optimizer.minimize(loss_fn())
+
+  with tf.compat.v1.Session() as session:
+    for iteration in xrange(num_iterations):
+      session.run(train_op)
+  ```
+
+  while in eager mode, it could look like this:
+
+  ```python
+  loss_fn, pre_train_ops_fn, state_variable = create_loss(formulation,
+      minimization_problem)
+
+  # Assuming that we already have a var_list containing the model parameters.
+  var_list += minimization_problem.trainable_variables
+  var_list.append(state_variable)
+
+  optimizer = tf.keras.optimizers.SGD()
+
+  for iteration in xrange(num_iterations):
+    pre_train_ops_fn()
+    optimizer.minimize(loss_fn, var_list=var_list)
+  ```
+
+  Args:
+    minimization_problem: `ConstrainedMinimizationProblem`, the problem to
+      optimize.
+    regret_type: string, either "external" or "swap", determines what type of
+      regret minimization to perform when updating the constraint/objective
+      weights (the analogues of the Lagrange multipliers). This parameter has
+      *no effect* on the optimization of the model parameters. Defaults to
+      "swap".
+    update_type: string, either "additive" or "multiplicative", determines what
+      type of updates to use for maximizing over the constraint/objective
+      weights (the analogues of the Lagrange multipliers). This parameter has
+      *no effect* on the optimization of the model parameters. Defaults to
+      "multiplicative".
+    minimum_multiplier_radius: optional float in the range (0,1), only allowed
+      if update_type="multiplicative". The constraint/objective weights will be
+      lower bounded by "minimum_multiplier_radius" divided by one plus the
+      number of constraints. Defaults to 10^-3.
+    initial_multiplier_radius: optional float in the range [0,1], the initial
+      value of each constraint weight (i.e. excluding the weight associated with
+      the objective) will be "initial_multiplier_radius" divided by one plus the
+      number of constraints. If update_type="multiplicative", it defaults to the
+      value of minimum_multiplier_radius (and must be no smaller than
+      minimum_multiplier_radius if it's explicitly specified), and defaults to
+      zero if update_type="additive".
+
+  Returns:
+    A (loss_fn, pre_train_ops_fn, state_variable) tuple, where loss_fn is a
+    nullary function returning a `Tensor` that can be minimized to optimize the
+    constrained problem, pre_train_ops_fn is a nullary function that returns a
+    list of operations that should be executed before each training iteration,
+    and state_variable is a `tf.Variable` containing the internal state of the
+    proxy-Lagrangian formulation.
+  """
+  return constrained_optimizer.create_loss(
+      _ProxyLagrangianFormulation(
+          regret_type=regret_type,
+          update_type=update_type,
+          minimum_multiplier_radius=minimum_multiplier_radius,
+          initial_multiplier_radius=initial_multiplier_radius),
+      minimization_problem)
+
+
+class ProxyLagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):
+  """A `ConstrainedOptimizerV1` based on the proxy-Lagrangian formulation.
+
+  This constrained optimizer uses the given `tf.compat.v1.train.Optimizer`s to
+  jointly minimize over the model parameters, and maximize over
+  constraint/objective weights (the analogues of Lagrange multipliers). This
+  latter maximization uses either multiplicative or additive updates, and either
+  an algorithm that minimizes swap regret, or one that minimizes external
+  regret.
+
+  For more specifics, please refer to:
+
+  > Cotter, Jiang and Sridharan. "Two-Player Games for Efficient Non-Convex
+  > Constrained Optimization". ALT'19.
+  > [https://arxiv.org/abs/1804.06500](https://arxiv.org/abs/1804.06500)
+
+  The formulation used by this optimizer is the so-called "proxy-Lagrangian"
+  formulation, which can be found in Definition 2, and is discussed in Section
+  4. If using multiplicative updates to minimize swap regret (the update_type
+  and regret_type constructor parameters), the algorithm is most similar to
+  Algorithm 2 in Section 4, with the difference being that it uses
+  `tf.compat.v1.train.Optimizer`s, instead of SGD, for the "inner" updates.
+  Instead of swap regret, one can alternatively use external regret, and instead
+  of multiplicative updates, one can alternatively use additive updates, if
+  desired.
+
+  The internal state (the analogues of the Lagrange multipliers) are owned by
+  this optimizer. Hence, if you want to use a `ProxyLagrangianOptimizerV1` on
+  multiple `ConstrainedMinimizationProblem`s, while sharing this internal state
+  between them, then you may do so. However, each problem must have the same
+  number of constraints (an exception will be raised, otherwise), so that the
+  internal states are compatible.
+  """
+
+  def __init__(self,
+               optimizer,
+               num_constraints=None,
+               constraint_optimizer=None,
+               regret_type=_SWAP_REGRET_TYPE,
+               update_type=_MULTPILICATIVE_UPDATE_TYPE,
+               minimum_multiplier_radius=None,
+               initial_multiplier_radius=None,
+               name="ProxyLagrangianOptimizerV1"):
+    """Constructs a new `ProxyLagrangianOptimizerV1`.
+
+    The difference between "optimizer" and "constraint_optimizer" (if the latter
+    is provided) is that the former is used for learning the model parameters,
+    while the latter us used for the update to the constraint/objective weights
+    (the analogues of Lagrange multipliers). If no "constraint_optimizer" is
+    provided, then "optimizer" is used for both.
+
+    Args:
+      optimizer: `tf.compat.v1.train.Optimizer`, used to optimize the objective
+        and proxy_constraints portion of `ConstrainedMinimizationProblem`. If
+        constraint_optimizer is not provided, this will also be used to optimize
+        the internal constrained optimization state (the analogues of the
+        Lagrange multipliers).
+      num_constraints: optional int, the number of constraints in the
+        `ConstrainedMinimizationProblem` that will eventually be minimized. If
+        this argument is provided, then the internal state will be created
+        inside this constructor. Otherwise, it will be created inside the first
+        call to get_loss_fn().
+      constraint_optimizer: optional `tf.compat.v1.train.Optimizer`, used to
+        optimize the internal constrained optimization state (the analogues of
+        the Lagrange multipliers).
+      regret_type: string, either "external" or "swap", determines what type of
+        regret minimization to perform when updating the constraint/objective
+        weights (the analogues of the Lagrange multipliers). This parameter has
+        *no effect* on the optimization of the model parameters. Defaults to
+        "swap".
+      update_type: string, either "additive" or "multiplicative", determines
+        what type of updates to use for maximizing over the constraint/objective
+        weights (the analogues of the Lagrange multipliers). This parameter has
+        *no effect* on the optimization of the model parameters. Defaults to
+        "multiplicative".
+      minimum_multiplier_radius: optional float in the range (0,1), only allowed
+        if update_type="multiplicative". The constraint/objective weights will
+        be lower bounded by "minimum_multiplier_radius" divided by one plus the
+        number of constraints. Defaults to 10^-3.
+      initial_multiplier_radius: optional float in the range [0,1], the initial
+        value of each constraint weight (i.e. excluding the weight associated
+        with the objective) will be "initial_multiplier_radius" divided by one
+        plus the number of constraints. If update_type="multiplicative", it
+        defaults to the value of minimum_multiplier_radius (and must be no
+        smaller than minimum_multiplier_radius if it's explicitly specified),
+        and defaults to zero if update_type="additive".
+      name: as in `ConstrainedOptimizerV1`.
+
+    Raises:
+      ValueError: if the "regret_type" or "update_type" parameters are invalid,
+        or if "minimum_multiplier_radius" or "initial_multiplier_radius" violate
+        the conditions described above.
+    """
+    super(ProxyLagrangianOptimizerV1, self).__init__(
+        _ProxyLagrangianFormulation(
+            regret_type=regret_type,
+            update_type=update_type,
+            minimum_multiplier_radius=minimum_multiplier_radius,
+            initial_multiplier_radius=initial_multiplier_radius),
+        optimizer=optimizer,
+        num_constraints=num_constraints,
+        constraint_optimizer=constraint_optimizer,
+        name=name)
