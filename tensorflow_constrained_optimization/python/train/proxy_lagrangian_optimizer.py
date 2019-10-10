@@ -782,3 +782,105 @@ class ProxyLagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):
         num_constraints=num_constraints,
         constraint_optimizer=constraint_optimizer,
         name=name)
+
+
+class ProxyLagrangianOptimizerV2(constrained_optimizer.ConstrainedOptimizerV2):
+  """A `ConstrainedOptimizerV2` based on the proxy-Lagrangian formulation.
+
+  This constrained optimizer uses the given `tf.keras.optimizers.Optimizer`s to
+  jointly minimize over the model parameters, and maximize over
+  constraint/objective weights (the analogues of Lagrange multipliers). This
+  latter maximization uses either multiplicative or additive updates, and either
+  an algorithm that minimizes swap regret, or one that minimizes external
+  regret.
+
+  For more specifics, please refer to:
+
+  > Cotter, Jiang and Sridharan. "Two-Player Games for Efficient Non-Convex
+  > Constrained Optimization". ALT'19.
+  > [https://arxiv.org/abs/1804.06500](https://arxiv.org/abs/1804.06500)
+
+  The formulation used by this optimizer is the so-called "proxy-Lagrangian"
+  formulation, which can be found in Definition 2, and is discussed in Section
+  4. If using multiplicative updates to minimize swap regret (the update_type
+  and regret_type constructor parameters), the algorithm is most similar to
+  Algorithm 2 in Section 4, with the difference being that it uses
+  `tf.keras.optimizers.Optimizer`s, instead of SGD, for the "inner" updates.
+  Instead of swap regret, one can alternatively use external regret, and instead
+  of multiplicative updates, one can alternatively use additive updates, if
+  desired.
+
+  The internal state (the analogues of the Lagrange multipliers) are owned by
+  this optimizer. Hence, if you want to use a `ProxyLagrangianOptimizerV2` on
+  multiple `ConstrainedMinimizationProblem`s, while sharing this internal state
+  between them, then you may do so. However, each problem must have the same
+  number of constraints (an exception will be raised, otherwise), so that the
+  internal states are compatible.
+  """
+
+  def __init__(self,
+               optimizer,
+               num_constraints,
+               constraint_optimizer=None,
+               regret_type=_SWAP_REGRET_TYPE,
+               update_type=_MULTPILICATIVE_UPDATE_TYPE,
+               minimum_multiplier_radius=None,
+               initial_multiplier_radius=None,
+               name="ProxyLagrangianOptimizer"):
+    """Constructs a new `ProxyLagrangianOptimizerV2`.
+
+    The difference between "optimizer" and "constraint_optimizer" (if the latter
+    is provided) is that the former is used for learning the model parameters,
+    while the latter us used for the update to the constraint/objective weights
+    (the analogues of Lagrange multipliers). If no "constraint_optimizer" is
+    provided, then "optimizer" is used for both.
+
+    Args:
+      optimizer: `tf.keras.optimizers.Optimizer`, used to optimize the objective
+        and proxy_constraints portion of `ConstrainedMinimizationProblem`. If
+        constraint_optimizer is not provided, this will also be used to optimize
+        the internal constrained optimization state (the analogues of the
+        Lagrange multipliers).
+      num_constraints: int, the number of constraints in the
+        `ConstrainedMinimizationProblem` that will eventually be minimized.
+      constraint_optimizer: optional `tf.keras.optimizers.Optimizer`, used to
+        optimize the internal constrained optimization state (the analogues of
+        the Lagrange multipliers).
+      regret_type: string, either "external" or "swap", determines what type of
+        regret minimization to perform when updating the constraint/objective
+        weights (the analogues of the Lagrange multipliers). This parameter has
+        *no effect* on the optimization of the model parameters. Defaults to
+        "swap".
+      update_type: string, either "additive" or "multiplicative", determines
+        what type of updates to use for maximizing over the constraint/objective
+        weights (the analogues of the Lagrange multipliers). This parameter has
+        *no effect* on the optimization of the model parameters. Defaults to
+        "multiplicative".
+      minimum_multiplier_radius: optional float in the range (0,1), only allowed
+        if update_type="multiplicative". The constraint/objective weights will
+        be lower bounded by "minimum_multiplier_radius" divided by one plus the
+        number of constraints. Defaults to 10^-3.
+      initial_multiplier_radius: optional float in the range [0,1], the initial
+        value of each constraint weight (i.e. excluding the weight associated
+        with the objective) will be "initial_multiplier_radius" divided by one
+        plus the number of constraints. If update_type="multiplicative", it
+        defaults to the value of minimum_multiplier_radius (and must be no
+        smaller than minimum_multiplier_radius if it's explicitly specified),
+        and defaults to zero if update_type="additive".
+      name: as in `ConstrainedOptimizerV1`.
+
+    Raises:
+      ValueError: if the "regret_type" or "update_type" parameters are invalid,
+        or if "minimum_multiplier_radius" or "initial_multiplier_radius" violate
+        the conditions described above.
+    """
+    super(ProxyLagrangianOptimizerV2, self).__init__(
+        _ProxyLagrangianFormulation(
+            regret_type=regret_type,
+            update_type=update_type,
+            minimum_multiplier_radius=minimum_multiplier_radius,
+            initial_multiplier_radius=initial_multiplier_radius),
+        optimizer=optimizer,
+        num_constraints=num_constraints,
+        constraint_optimizer=constraint_optimizer,
+        name=name)

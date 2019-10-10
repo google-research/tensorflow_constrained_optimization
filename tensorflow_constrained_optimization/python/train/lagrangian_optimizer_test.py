@@ -35,7 +35,7 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                         minimization_problem,
                         expected_multipliers,
                         maximum_multiplier_radius=None):
-    """Test helper for create_lagrangian_loss."""
+    """Tests create_lagrangian_loss on the given minimization_problem."""
     loss_fn, pre_train_ops_fn, state_variable = (
         lagrangian_optimizer.create_lagrangian_loss(
             minimization_problem,
@@ -51,6 +51,7 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       train_op = optimizer.minimize(loss_fn, var_list)
       train_op_fn = lambda: train_op
 
+    # Perform a few steps of training, and record the Lagrange multipliers.
     states = []
     with self.wrapped_session() as session:
       while len(states) < len(expected_multipliers):
@@ -58,6 +59,7 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         states.append(session.run(state_variable))
         session.run_ops(train_op_fn)
 
+    # Compare the observed sequence of Lagrange multipliers to the expected one.
     for expected, actual in zip(expected_multipliers, states):
       self.assertAllClose(expected, actual, rtol=0, atol=1e-6)
 
@@ -65,7 +67,7 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                                 minimization_problem,
                                 expected_multipliers,
                                 maximum_multiplier_radius=None):
-    """Test helper for LagrangianOptimizerV1."""
+    """Tests LagrangianOptimizerV1 on the given minimization_problem."""
     # The "optimizer" argument won't actually be used, here, but we provide two
     # different optimizers to make sure that proxy-Lagrangian state updates are
     # correctly dispatched to the "constraint_optimizer".
@@ -88,12 +90,50 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       train_op = optimizer.minimize(minimization_problem)
       train_op_fn = lambda: train_op
 
+    # Perform a few steps of training, and record the Lagrange multipliers.
     states = []
     with self.wrapped_session() as session:
       while len(states) < len(expected_multipliers):
         states.append(session.run(optimizer._formulation.state))
         session.run_ops(train_op_fn)
 
+    # Compare the observed sequence of Lagrange multipliers to the expected one.
+    for expected, actual in zip(expected_multipliers, states):
+      self.assertAllClose(expected, actual, rtol=0, atol=1e-6)
+
+  def _optimizer_v2_test_helper(self,
+                                minimization_problem,
+                                expected_multipliers,
+                                maximum_multiplier_radius=None):
+    """Tests LagrangianOptimizerV2 on the given minimization_problem."""
+    # The "optimizer" argument won't actually be used, here, but we provide two
+    # different optimizers to make sure that proxy-Lagrangian state updates are
+    # correctly dispatched to the "constraint_optimizer".
+    optimizer = lagrangian_optimizer.LagrangianOptimizerV2(
+        optimizer=tf.keras.optimizers.SGD(0.1),
+        num_constraints=minimization_problem.num_constraints,
+        constraint_optimizer=tf.keras.optimizers.SGD(1.0),
+        maximum_multiplier_radius=maximum_multiplier_radius)
+    var_list = (
+        minimization_problem.trainable_variables +
+        optimizer.trainable_variables())
+
+    if tf.executing_eagerly():
+      train_op_fn = lambda: optimizer.minimize(minimization_problem, var_list)
+    else:
+      # If we're in graph mode, then we need to create the train_op before the
+      # session, so that we know which variables need to be initialized.
+      train_op = optimizer.minimize(minimization_problem, var_list)
+      train_op_fn = lambda: train_op
+
+    # Perform a few steps of training, and record the Lagrange multipliers.
+    states = []
+    with self.wrapped_session() as session:
+      while len(states) < len(expected_multipliers):
+        states.append(session.run(optimizer._formulation.state))
+        session.run_ops(train_op_fn)
+
+    # Compare the observed sequence of Lagrange multipliers to the expected one.
     for expected, actual in zip(expected_multipliers, states):
       self.assertAllClose(expected, actual, rtol=0, atol=1e-6)
 
@@ -106,6 +146,10 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         expected_multipliers,
         maximum_multiplier_radius=maximum_multiplier_radius)
     self._optimizer_v1_test_helper(
+        minimization_problem,
+        expected_multipliers,
+        maximum_multiplier_radius=maximum_multiplier_radius)
+    self._optimizer_v2_test_helper(
         minimization_problem,
         expected_multipliers,
         maximum_multiplier_radius=maximum_multiplier_radius)

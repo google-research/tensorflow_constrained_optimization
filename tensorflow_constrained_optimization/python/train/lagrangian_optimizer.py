@@ -412,3 +412,68 @@ class LagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):
         num_constraints=num_constraints,
         constraint_optimizer=constraint_optimizer,
         name=name)
+
+
+class LagrangianOptimizerV2(constrained_optimizer.ConstrainedOptimizerV2):
+  """A `ConstrainedOptimizerV2` based on the Lagrangian formulation.
+
+  This constrained optimizer uses the given `tf.keras.optimizers.Optimizer`s to
+  jointly minimize over the model parameters, and maximize over Lagrange
+  multipliers, with the latter maximization using additive updates and an
+  algorithm that minimizes external regret.
+
+  For more specifics, please refer to:
+
+  > Cotter, Jiang and Sridharan. "Two-Player Games for Efficient Non-Convex
+  > Constrained Optimization". ALT'19.
+  > [https://arxiv.org/abs/1804.06500](https://arxiv.org/abs/1804.06500)
+
+  The formulation used by this optimizer--which is simply the usual Lagrangian
+  formulation--can be found in Definition 1, and is discussed in Section 3. It
+  is most similar to Algorithm 3 in Appendix C.3, with the two differences being
+  that it uses proxy constraints (if they're provided) in the update of the
+  model parameters, and uses `tf.keras.optimizers.Optimizer`s, instead of SGD,
+  for the "inner" updates.
+
+  The Lagrange multipliers are owned by this optimizer. Hence, if you want to
+  use a `LagrangianOptimizerV2` on multiple `ConstrainedMinimizationProblem`s,
+  while sharing the Lagrange multipliers between them, then you may do so.
+  However, each problem must have the same number of constraints (an exception
+  will be raised, otherwise), so that the Lagrange multipliers are compatible.
+  """
+
+  def __init__(self,
+               optimizer,
+               num_constraints,
+               constraint_optimizer=None,
+               maximum_multiplier_radius=None,
+               name="LagrangianOptimizerV2"):
+    """Constructs a new `LagrangianOptimizerV2`.
+
+    The difference between "optimizer" and "constraint_optimizer" (if the latter
+    is provided) is that the former is used for learning the model parameters,
+    while the latter us used for the Lagrange multipliers. If no
+    "constraint_optimizer" is provided, then "optimizer" is used for both.
+
+    Args:
+      optimizer: `tf.keras.optimizers.Optimizer`, used to optimize the objective
+        and proxy_constraints portion of `ConstrainedMinimizationProblem`. If
+        constraint_optimizer is not provided, this will also be used to optimize
+        the Lagrange multipliers.
+      num_constraints: int, the number of constraints in the
+        `ConstrainedMinimizationProblem` that will eventually be minimized.
+      constraint_optimizer: optional `tf.keras.optimizers.Optimizer`, used to
+        optimize the Lagrange multipliers.
+      maximum_multiplier_radius: float, an optional upper bound to impose on the
+        sum of the Lagrange multipliers.
+      name: as in `ConstrainedOptimizerV2`.
+
+    Raises:
+      ValueError: if the maximum_multiplier_radius parameter is nonpositive.
+    """
+    super(LagrangianOptimizerV2, self).__init__(
+        _LagrangianFormulation(maximum_multiplier_radius),
+        optimizer=optimizer,
+        num_constraints=num_constraints,
+        constraint_optimizer=constraint_optimizer,
+        name=name)
