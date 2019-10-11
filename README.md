@@ -129,29 +129,31 @@ performance out of your model, consider using the "shrinking" procedure of
         to optimize, and perform constrained optimization.
 
     *   [lagrangian_optimizer.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/lagrangian_optimizer.py):
-        contains the `LagrangianOptimizer` implementation, which is a
-        `ConstrainedOptimizer` implementing the Lagrangian approach discussed
-        above (with additive updates to the Lagrange multipliers). You should
-        use this optimizer for problems *without* proxy constraints. It may also
-        work for problems with proxy constraints, but we recommend using a
-        proxy-Lagrangian optimizer, instead.
+        contains the `LagrangianOptimizerV1` and `LagrangianOptimizerV2'
+        implementation, which are constrained optimizers implementing the
+        Lagrangian approach discussed above (with additive updates to the
+        Lagrange multipliers). You should use these optimizer for problems
+        *without* proxy constraints. It may also work for problems with proxy
+        constraints, but we recommend using a proxy-Lagrangian optimizer,
+        instead.
 
-        This optimizer is most similar to Algorithm 3 in Appendix C.3 of
-        [CoJiSr19], and is discussed in Section 3. The two differences are that
-        it uses proxy constraints (if they're provided) in the update of the
-        model parameters, and uses `tf.train.Optimizer`s, instead of SGD, for
+        These optimizers is most similar to Algorithm 3 in Appendix C.3 of
+        [CoJiSr19], which is discussed in Section 3. The two differences are
+        that they use proxy constraints (if they're provided) in the update of
+        the model parameters, and use wrapped `Optimizer`s, instead of SGD, for
         the "inner" updates.
 
     *   [proxy_lagrangian_optimizer.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/proxy_lagrangian_optimizer.py):
-        contains the `ProxyLagrangianOptimizer` implementation, which is a
-        `ConstrainedOptimizer` implementing the proxy-Lagrangian approach
-        mentioned above. We recommend using this optimizer for problems *with*
-        proxy constraints.
+        contains the `ProxyLagrangianOptimizerV1` and
+        `ProxyLagrangianOptimizerV2` implementations, which are constrained
+        optimizers implementing the proxy-Lagrangian approach mentioned above.
+        We recommend using these optimizers for problems *with* proxy
+        constraints.
 
-        The `ProxyLagrangianOptimizer` with multiplicative swap-regret updates
-        is most similar to Algorithm 2 in Section 4 of [CoJiSr19], with the
-        difference being that it uses `tf.train.Optimizer`s, instead of SGD, for
-        the "inner" updates.
+        The `ProxyLagrangianOptimizerVx` optimizer with multiplicative
+        swap-regret updates is most similar to Algorithm 2 in Section 4 of
+        [CoJiSr19], with the difference being that it uses wrapped `Optimizer`s,
+        instead of SGD, for the "inner" updates.
 
 *   [Helpers for constructing rate-based optimization problems](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/)
 
@@ -408,17 +410,17 @@ def recall(labels, predictions):
 As was mentioned earlier, the Lagrangian optimizer often suffices for problems
 without proxy constraints, but proxy-Lagrangian optimizers are recommended for
 problems *with* proxy constraints. Since this problem contains proxy
-constraints, we use the `ProxyLagrangianOptimizer`.
+constraints, we use the `ProxyLagrangianOptimizerV1`.
 
 For this problem, the constraint is fairly easy to satisfy, so we can use the
 same "inner" optimizer (an `AdagradOptimizer` with a learning rate of 1) for
 optimization of both the model parameters (`weights` and `threshold`), and the
 internal parameters associated with the constraints (these are the analogues of
-the Lagrange multipliers used by the `ProxyLagrangianOptimizer`). For more
+the Lagrange multipliers used by the `ProxyLagrangianOptimizerV1`). For more
 difficult problems, it will often be necessary to use different optimizers, with
 different learning rates (presumably found via a hyperparameter search): to
 accomplish this, pass *both* the `optimizer` and `constraint_optimizer`
-parameters to `ProxyLagrangianOptimizer`'s constructor.
+parameters to `ProxyLagrangianOptimizerV1`'s constructor.
 
 Since this is a convex problem (both the objective and proxy constraint
 functions are convex), we can just take the last iterate. Periodic snapshotting,
@@ -428,7 +430,7 @@ non-convex problems (and even then, it isn't *always* necessary).
 
 ```python
 with tf.Session() as session:
-  optimizer = tfco.ProxyLagrangianOptimizer(
+  optimizer = tfco.ProxyLagrangianOptimizerV1(
       optimizer=tf.train.AdagradOptimizer(learning_rate=1.0))
   train_op = optimizer.minimize(problem)
 
