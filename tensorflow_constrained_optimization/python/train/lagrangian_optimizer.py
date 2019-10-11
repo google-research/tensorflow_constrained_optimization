@@ -124,20 +124,27 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
   regret.
   """
 
-  def __init__(self, maximum_multiplier_radius=None):
+  def __init__(self, maximum_multiplier_radius=None, dual_scale=1.0):
     """Constructs a new `_LagrangianFormulation`.
 
     Args:
       maximum_multiplier_radius: float, an optional upper bound to impose on the
         sum of the Lagrange multipliers.
+      dual_scale: optional float defaulting to 1, a multiplicative scaling
+        factor applied to gradients w.r.t. the Lagrange multipliers.
 
     Raises:
-      ValueError: if the maximum_multiplier_radius parameter is nonpositive.
+      ValueError: if "maximum_multiplier_radius" or "dual_scale" are
+        nonpositive.
     """
-    if maximum_multiplier_radius and (maximum_multiplier_radius <= 0.0):
+    if (maximum_multiplier_radius is not None and
+        maximum_multiplier_radius <= 0.0):
       raise ValueError("maximum_multiplier_radius must be strictly positive")
-
     self._maximum_multiplier_radius = maximum_multiplier_radius
+
+    if dual_scale <= 0.0:
+      raise ValueError("dual_scale must be strictly positive")
+    self._dual_scale = dual_scale
 
     # We can't create the Lagrange multipliers here, since we don't know how
     # many constraints there will be until we see the
@@ -242,10 +249,11 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
         # We return the gradient w.r.t. the objective, constraints,
         # proxy_constraints and Lagrange multipliers, respectively (this is the
         # same order as the arguments to loss_gradient_fn). Notice that the
-        # gradient w.r.t. the constraints is None.
+        # gradient w.r.t. the constraints is None, and that w.r.t. the Lagrange
+        # multipliers is scaled by dual_scale.
         return (output_gradient * wrt_objective, None,
                 output_gradient * wrt_proxy_constraints,
-                output_gradient * wrt_multipliers)
+                self._dual_scale * output_gradient * wrt_multipliers)
 
       return output, gradient_fn
 
@@ -263,7 +271,8 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
 
 
 def create_lagrangian_loss(minimization_problem,
-                           maximum_multiplier_radius=None):
+                           maximum_multiplier_radius=None,
+                           dual_scale=1.0):
   """Creates a loss function from a `ConstrainedMinimizationProblem`.
 
   Minimizing the returned loss will have the effect of jointly minimizing over
@@ -334,6 +343,8 @@ def create_lagrangian_loss(minimization_problem,
       optimize.
     maximum_multiplier_radius: float, an optional upper bound to impose on the
       sum of the Lagrange multipliers.
+    dual_scale: optional float defaulting to 1, a multiplicative scaling factor
+      applied to gradients w.r.t. the Lagrange multipliers.
 
   Returns:
     A (loss_fn, pre_train_ops_fn, multipliers_variable) tuple, where loss_fn is
@@ -343,7 +354,9 @@ def create_lagrangian_loss(minimization_problem,
     and multipliers_variable is a `tf.Variable` of Lagrange multipliers.
   """
   return constrained_optimizer.create_loss(
-      _LagrangianFormulation(maximum_multiplier_radius), minimization_problem)
+      _LagrangianFormulation(
+          maximum_multiplier_radius=maximum_multiplier_radius,
+          dual_scale=dual_scale), minimization_problem)
 
 
 class LagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):
@@ -407,7 +420,8 @@ class LagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):
       ValueError: if the maximum_multiplier_radius parameter is nonpositive.
     """
     super(LagrangianOptimizerV1, self).__init__(
-        _LagrangianFormulation(maximum_multiplier_radius),
+        _LagrangianFormulation(
+            maximum_multiplier_radius=maximum_multiplier_radius),
         optimizer=optimizer,
         num_constraints=num_constraints,
         constraint_optimizer=constraint_optimizer,
@@ -472,7 +486,8 @@ class LagrangianOptimizerV2(constrained_optimizer.ConstrainedOptimizerV2):
       ValueError: if the maximum_multiplier_radius parameter is nonpositive.
     """
     super(LagrangianOptimizerV2, self).__init__(
-        _LagrangianFormulation(maximum_multiplier_radius),
+        _LagrangianFormulation(
+            maximum_multiplier_radius=maximum_multiplier_radius),
         optimizer=optimizer,
         num_constraints=num_constraints,
         constraint_optimizer=constraint_optimizer,

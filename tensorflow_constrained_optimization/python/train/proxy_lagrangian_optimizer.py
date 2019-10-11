@@ -239,7 +239,8 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
                regret_type,
                update_type,
                minimum_multiplier_radius=None,
-               initial_multiplier_radius=None):
+               initial_multiplier_radius=None,
+               dual_scale=1.0):
     """Constructs a new `_ProxyLagrangianFormulation`.
 
     Args:
@@ -264,11 +265,13 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
         defaults to the value of minimum_multiplier_radius (and must be no
         smaller than minimum_multiplier_radius if it's explicitly specified),
         and defaults to zero if update_type="additive".
+      dual_scale: optional float defaulting to 1, a multiplicative scaling
+        factor applied to gradients w.r.t. the internal state.
 
     Raises:
       ValueError: if the "regret_type" or "update_type" parameters are invalid,
-        or if "minimum_multiplier_radius" or "initial_multiplier_radius" violate
-        the conditions described above.
+        if "minimum_multiplier_radius" or "initial_multiplier_radius" violate
+        the conditions described above, or if "dual_scale" is nonpositive.
     """
     self._regret_type = regret_type.lower()
     if self._regret_type not in (_EXTERNAL_REGRET_TYPE, _SWAP_REGRET_TYPE):
@@ -304,6 +307,10 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
 
     self._minimum_multiplier_radius = minimum_multiplier_radius
     self._initial_multiplier_radius = initial_multiplier_radius
+
+    if dual_scale <= 0.0:
+      raise ValueError("dual_scale must be strictly positive")
+    self._dual_scale = dual_scale
 
     # We can't create the internal state here, since we don't know how many
     # constraints there will be until we see the ConstrainedMinimizationProblem.
@@ -514,7 +521,7 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
     # regret updates, if necessary.
     @tf.custom_gradient
     def loss_gradient_fn(objective, constraints, proxy_constraints, state):
-      """Evaluates the loss for the current interbnal state."""
+      """Evaluates the loss for the current internal state."""
       # Make sure that the objective and proxy constraints have the same dtype.
       if (constraints.dtype.base_dtype != objective.dtype.base_dtype or
           proxy_constraints.dtype.base_dtype != objective.dtype.base_dtype):
@@ -543,14 +550,15 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
         # We return the gradient w.r.t. the objective, constraints,
         # proxy_constraints and internal state, respectively (this is the same
         # order as the arguments to loss_gradient_fn). Notice that the gradient
-        # w.r.t. the constraints is None.
+        # w.r.t. the constraints is None, and that w.r.t. the internal state is
+        # scaled by dual_scale.
         return (output_gradient * wrt_objective, None,
                 output_gradient * wrt_proxy_constraints,
-                output_gradient * wrt_state)
+                self._dual_scale * output_gradient * wrt_state)
 
       return output, gradient_fn
 
-    # Create the internal state over which we will minimize swap regret.
+    # Create the internal state.
     num_constraints = minimization_problem.num_constraints
     state = self.create_state(num_constraints)
 
@@ -567,7 +575,8 @@ def create_proxy_lagrangian_loss(minimization_problem,
                                  regret_type=_SWAP_REGRET_TYPE,
                                  update_type=_MULTPILICATIVE_UPDATE_TYPE,
                                  minimum_multiplier_radius=None,
-                                 initial_multiplier_radius=None):
+                                 initial_multiplier_radius=None,
+                                 dual_scale=1.0):
   """Creates a loss function from a `ConstrainedMinimizationProblem`.
 
   Minimizing the returned loss will have the effect of jointly minimizing
@@ -661,6 +670,8 @@ def create_proxy_lagrangian_loss(minimization_problem,
       value of minimum_multiplier_radius (and must be no smaller than
       minimum_multiplier_radius if it's explicitly specified), and defaults to
       zero if update_type="additive".
+    dual_scale: optional float defaulting to 1, a multiplicative scaling factor
+      applied to gradients w.r.t. the internal state.
 
   Returns:
     A (loss_fn, pre_train_ops_fn, state_variable) tuple, where loss_fn is a
@@ -675,8 +686,8 @@ def create_proxy_lagrangian_loss(minimization_problem,
           regret_type=regret_type,
           update_type=update_type,
           minimum_multiplier_radius=minimum_multiplier_radius,
-          initial_multiplier_radius=initial_multiplier_radius),
-      minimization_problem)
+          initial_multiplier_radius=initial_multiplier_radius,
+          dual_scale=dual_scale), minimization_problem)
 
 
 class ProxyLagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):
