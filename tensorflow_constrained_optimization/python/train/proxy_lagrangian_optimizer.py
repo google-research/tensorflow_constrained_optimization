@@ -48,7 +48,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import functools
 import math
 import numpy as np
 import tensorflow as tf
@@ -528,22 +527,20 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
         raise TypeError("objective, constraints and proxy_constraints must all "
                         "have the same dtypes")
 
-      with tf.GradientTape() as tape:
-        tape.watch(objective)
-        tape.watch(proxy_constraints)
+      distribution = self._distribution(state)
+      zero_and_constraints = tf.pad(constraints, [[1, 0]])
+      objective_and_proxy_constraints = tf.concat(
+          (tf.expand_dims(objective, 0), proxy_constraints), axis=0)
 
-        distribution = self._distribution(state)
-        zero_and_constraints = tf.pad(constraints, [[1, 0]])
-        objective_and_proxy_constraints = tf.concat(
-            (tf.expand_dims(objective, 0), proxy_constraints), axis=0)
+      output = tf.tensordot(
+          tf.cast(
+              distribution,
+              dtype=objective_and_proxy_constraints.dtype.base_dtype),
+          objective_and_proxy_constraints, 1)
 
-        output = tf.tensordot(
-            tf.cast(distribution,
-                    objective_and_proxy_constraints.dtype.base_dtype),
-            objective_and_proxy_constraints, 1)
-
-      wrt_objective, wrt_proxy_constraints = tape.gradient(
-          output, [objective, proxy_constraints])
+      wrt_objective = tf.cast(distribution[0], dtype=objective.dtype.base_dtype)
+      wrt_proxy_constraints = tf.cast(
+          distribution[1:], dtype=proxy_constraints.dtype.base_dtype)
       wrt_state = -self._state_gradient(zero_and_constraints, distribution)
 
       def gradient_fn(output_gradient):
@@ -562,13 +559,18 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
     num_constraints = minimization_problem.num_constraints
     state = self.create_state(num_constraints)
 
-    return functools.partial(
-        loss_gradient_fn, minimization_problem.objective(),
-        tf.reshape(
-            minimization_problem.constraints(), shape=(num_constraints,)),
-        tf.reshape(
-            minimization_problem.proxy_constraints(), shape=(num_constraints,)),
-        state)
+    # We don't use functools.partial since we need the arguments to be evaluated
+    # when the loss is called, not when we construct the partial application.
+    def partial_loss_gradient_fn():
+      return loss_gradient_fn(
+          minimization_problem.objective(),
+          tf.reshape(
+              minimization_problem.constraints(), shape=(num_constraints,)),
+          tf.reshape(
+              minimization_problem.proxy_constraints(),
+              shape=(num_constraints,)), state)
+
+    return partial_loss_gradient_fn
 
 
 def create_proxy_lagrangian_loss(minimization_problem,
