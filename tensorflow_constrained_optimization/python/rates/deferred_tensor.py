@@ -562,12 +562,11 @@ class DeferredVariable(DeferredTensor):
     if key in memoizer:
       raise RuntimeError("attempted to create a DeferredVariable that has "
                          "already been created")
-    memoizer[key] = tf.Variable(
+    memoizer[key] = tf.compat.v2.Variable(
         initial_value=self._initial_value,
         trainable=self._trainable,
         name=self._name,
-        dtype=self._dtype,
-        use_resource=True)
+        dtype=self._dtype)
 
   def pre_train_ops(self, memoizer):
     """Creates and returns a list of ops to run at the start of train_op.

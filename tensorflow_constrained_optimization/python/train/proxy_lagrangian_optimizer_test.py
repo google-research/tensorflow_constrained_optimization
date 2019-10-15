@@ -271,7 +271,7 @@ class ProxyLagrangianOptimizerTest(
                 tf.exp(
                     proxy_lagrangian_optimizer
                     ._project_log_distribution_wrt_kl_divergence(
-                        tf.log(distribution)))))
+                        tf.math.log(distribution)))))
 
     self.assertAllClose(
         expected_projected_distributions,
@@ -289,7 +289,8 @@ class ProxyLagrangianOptimizerTest(
       projected_matrix = session.run(
           tf.exp(
               proxy_lagrangian_optimizer
-              ._project_log_distribution_wrt_kl_divergence(tf.log(matrix))))
+              ._project_log_distribution_wrt_kl_divergence(
+                  tf.math.log(matrix))))
 
     self.assertAllClose(
         expected_projected_matrix, projected_matrix, rtol=0, atol=1e-6)

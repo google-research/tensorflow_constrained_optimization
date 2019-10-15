@@ -155,7 +155,7 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests `_RatioWeights` with all-zero weights class method."""
     memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
     ratio_weights = term._RatioWeights({})
@@ -175,7 +175,7 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         tf.bool, shape=(None,))
     memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
     numerator_predicate = predicate.Predicate(numerator_predicate_placeholder)
@@ -252,7 +252,7 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests `_RatioWeights`'s arithmetic operators."""
     memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
     def create_ratio_weights(weights_tensor):
@@ -290,7 +290,7 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests memoization."""
     memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
     weights_tensor = deferred_tensor.DeferredTensor(
@@ -321,7 +321,7 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests `BinaryClassificationTerm`."""
     memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
     def numpy_binary_classification_loss(positive_weights_array,

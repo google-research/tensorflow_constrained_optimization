@@ -620,25 +620,26 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     # FUTURE WORK: find a way to implement this method.
     raise NotImplementedError("ConstrainedOptimizerV2s cannot be serialized")
 
-  def _resource_apply_dense(self, gradient, handle, apply_state):
+  def _resource_apply_dense(self, gradient, handle, *args, **kwargs):
     assert handle is not None
     # TODO: is it safe to compare variables and handles? It works in
     # the tests, but will it *always* work?
     if (self._constraint_optimizer is not None and
         handle == self._formulation.state):
       return self._constraint_optimizer._resource_apply_dense(
-          gradient, handle, apply_state)
-    return self._optimizer._resource_apply_dense(gradient, handle, apply_state)
+          gradient, handle, *args, **kwargs)
+    return self._optimizer._resource_apply_dense(gradient, handle, *args,
+                                                 **kwargs)
 
-  def _resource_apply_sparse(self, gradient, handle, indices, apply_state):
+  def _resource_apply_sparse(self, gradient, handle, *args, **kwargs):
     assert handle is not None
     # TODO: is it safe to compare variables and handles? It works in
     # the tests, but will it *always* work?
     if (self._constraint_optimizer is not None and
         handle == self._formulation.state):
       return self._constraint_optimizer._resource_apply_sparse(
-          gradient, handle, indices, apply_state)
-    return self._optimizer._resource_apply_sparse(gradient, handle, indices,
-                                                  apply_state)
+          gradient, handle, *args, **kwargs)
+    return self._optimizer._resource_apply_sparse(gradient, handle, *args,
+                                                  **kwargs)
 
   # pylint: enable=protected-access

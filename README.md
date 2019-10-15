@@ -349,10 +349,12 @@ class ExampleProblem(tfco.ConstrainedMinimizationProblem):
     self._positive_count = tf.reduce_sum(self._labels)
 
   @property
+  def num_constraints(self):
+    return 1
+
   def objective(self):
     return tf.losses.hinge_loss(labels=self._labels, logits=self._predictions)
 
-  @property
   def constraints(self):
     # Recall that the labels are binary (0 or 1).
     true_positives = self._labels * tf.to_float(self._predictions > 0)
@@ -368,7 +370,6 @@ class ExampleProblem(tfco.ConstrainedMinimizationProblem):
     # constraint, so we return a one-element tensor.
     return self._recall_lower_bound - recall
 
-  @property
   def proxy_constraints(self):
     # Use 1 - hinge since we're SUBTRACTING recall in the constraint function,
     # and we want the proxy constraint function to be convex. Recall that the

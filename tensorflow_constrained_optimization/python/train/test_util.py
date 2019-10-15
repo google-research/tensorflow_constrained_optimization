@@ -44,8 +44,8 @@ class ConstantMinimizationProblem(
     """
     # We make a fake 1-parameter linear objective so that we don't get a "no
     # variables to optimize" error.
-    self._objective = tf.Variable(
-        0.0, trainable=True, dtype=tf.float32, use_resource=True)
+    self._objective = tf.compat.v2.Variable(
+        0.0, trainable=True, dtype=tf.float32)
     self._constraints = tf.constant(constraints, dtype=tf.float32)
 
   def objective(self):

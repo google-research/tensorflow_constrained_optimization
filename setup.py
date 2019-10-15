@@ -45,13 +45,13 @@ _install_requires = [
 
     # TODO: Uncomment this once TF can automatically select between CPU
     # and GPU installation:
-    #   "tensorflow<2",
-    #   "tensorflow-gpu<2",
+    #   "tensorflow>=1.14",
+    #   "tensorflow-gpu>=1.14",
 ]
 # TODO: get rid of this, once _install_requires includes TensorFlow.
 _extras_require = {
-    "tensorflow": "tensorflow<2",
-    "tensorflow-gpu": "tensorflow-gpu<2",
+    "tensorflow": "tensorflow>=1.14",
+    "tensorflow-gpu": "tensorflow-gpu>=1.14",
 }
 
 _classifiers = [

@@ -392,7 +392,7 @@ class CrossEntropyLoss(BinaryClassificationLoss):
     # consequence that optimization could get "stuck".
     condition = (predictions <= zeros)
     absolute_predictions = tf.where(condition, -predictions, predictions)
-    intermediate = tf.log(1 + tf.exp(-absolute_predictions))
+    intermediate = tf.math.log(1 + tf.exp(-absolute_predictions))
 
     # Notice that:
     #   is_positive = log(1 + exp(-|predictions|)) + max{0, predictions}

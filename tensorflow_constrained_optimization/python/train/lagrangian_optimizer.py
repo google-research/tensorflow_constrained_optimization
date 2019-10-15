@@ -191,13 +191,12 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
 
     else:
       initial_multipliers = np.zeros((num_constraints,), dtype=np.float32)
-      self._multipliers = tf.Variable(
+      self._multipliers = tf.compat.v2.Variable(
           initial_multipliers,
           trainable=True,
           name="lagrange_multipliers",
           dtype=tf.float32,
-          constraint=self._project_multipliers,
-          use_resource=True)
+          constraint=self._project_multipliers)
 
     return self._multipliers
 

@@ -140,12 +140,11 @@ class RateMinimizationProblem(
     # don't take one as a parameter since we want complete ownership, to avoid
     # any shenanigans: it has to start at zero, and be incremented after every
     # minibatch.
-    self._global_step = tf.Variable(
+    self._global_step = tf.compat.v2.Variable(
         0,
         trainable=False,
         name="global_step",
         dtype=tf.int64,
-        use_resource=True,
         aggregation=tf.VariableAggregation.ONLY_FIRST_REPLICA)
 
     # This memoizer will remember and re-use certain intermediate values,
