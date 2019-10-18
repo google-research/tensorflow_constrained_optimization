@@ -523,6 +523,7 @@ class DeferredVariable(DeferredTensor):
                trainable=None,
                name=None,
                dtype=None,
+               constraint=None,
                pre_train_ops_fn=None,
                auto_cast=False):
     """Constructs a new `DeferredVariable`.
@@ -532,6 +533,7 @@ class DeferredVariable(DeferredTensor):
       trainable: as in `tf.Variable`'s constructor.
       name: as in `tf.Variable`'s constructor.
       dtype: as in `tf.Variable`'s constructor.
+      constraint: as in `tf.Variable`'s constructor.
       pre_train_ops_fn: an optional function taking the two parameters: the
         `tf.Variable` corresponding to this `DeferredVariable`, and a "memoizer"
         dict; and returning a list of ops that should be executed before each
@@ -543,6 +545,7 @@ class DeferredVariable(DeferredTensor):
     self._trainable = trainable
     self._name = name
     self._dtype = dtype
+    self._constraint = constraint
 
     def value_and_auto_cast_fn(memoizer):
       """Returns the variable's value, and whether it should be auto-casted."""
@@ -566,7 +569,8 @@ class DeferredVariable(DeferredTensor):
         initial_value=self._initial_value,
         trainable=self._trainable,
         name=self._name,
-        dtype=self._dtype)
+        dtype=self._dtype,
+        constraint=self._constraint)
 
   def pre_train_ops(self, memoizer):
     """Creates and returns a list of ops to run at the start of train_op.

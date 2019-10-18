@@ -180,14 +180,15 @@ class _RatioWeights(helpers.RateObject):
       value *= tf.cast(predicate_value, dtype=dtype)
       return value
 
-    # Notice that we force the set of examples included in the numerator to be
-    # a subset of those in the denominator. It'll actually work fine either
-    # way, but this should be closer to what users expect.
+    # Formerly, we forced the set of examples included in the numerator to be a
+    # subset of those in the denominator by using (numerator_predicate.tensor &
+    # denominator_predicate.tensor) here. For some rates, however, it's
+    # convenient for the numerator to not be a subset of the denominator, so
+    # this was removed.
     return _RatioWeights({
         key:
-            deferred_tensor.DeferredTensor.apply(
-                value_fn, weights,
-                (numerator_predicate & denominator_predicate).tensor)
+            deferred_tensor.DeferredTensor.apply(value_fn, weights,
+                                                 numerator_predicate.tensor)
     })
 
   def __mul__(self, scalar):
