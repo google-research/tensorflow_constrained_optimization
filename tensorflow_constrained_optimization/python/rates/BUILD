@@ -285,6 +285,7 @@ py_test(
     name = "binary_rates_test",
     size = "large",
     srcs = ["binary_rates_test.py"],
+    # shard_count = 3,
     srcs_version = "PY2AND3",
     deps = [
         ":binary_rates",
