@@ -36,7 +36,7 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                         expected_multipliers,
                         maximum_multiplier_radius=None):
     """Tests create_lagrangian_loss on the given minimization_problem."""
-    loss_fn, pre_train_ops_fn, state_variable = (
+    loss_fn, update_ops_fn, state_variable = (
         lagrangian_optimizer.create_lagrangian_loss(
             minimization_problem,
             maximum_multiplier_radius=maximum_multiplier_radius))
@@ -55,7 +55,7 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     states = []
     with self.wrapped_session() as session:
       while len(states) < len(expected_multipliers):
-        session.run_ops(pre_train_ops_fn)
+        session.run_ops(update_ops_fn)
         states.append(session.run(state_variable))
         session.run_ops(train_op_fn)
 

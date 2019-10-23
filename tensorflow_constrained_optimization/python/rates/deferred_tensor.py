@@ -290,8 +290,8 @@ class DeferredTensor(helpers.RateObject):
   def __call__(self, memoizer):
     """Returns the value of this `DeferredTensor`.
 
-    This is the *only* place (aside from `DeferredVariable.pre_train_ops`) that
-    the value of the `DeferredTensor` will be accessed. In particular, if it was
+    This is the *only* place (aside from `DeferredVariable.update_ops`) that the
+    value of the `DeferredTensor` will be accessed. In particular, if it was
     constructed from a nullary function, this is the only place that this
     function will be called.
 
@@ -524,7 +524,7 @@ class DeferredVariable(DeferredTensor):
                name=None,
                dtype=None,
                constraint=None,
-               pre_train_ops_fn=None,
+               update_ops_fn=None,
                auto_cast=False):
     """Constructs a new `DeferredVariable`.
 
@@ -534,7 +534,7 @@ class DeferredVariable(DeferredTensor):
       name: as in `tf.Variable`'s constructor.
       dtype: as in `tf.Variable`'s constructor.
       constraint: as in `tf.Variable`'s constructor.
-      pre_train_ops_fn: an optional function taking the two parameters: the
+      update_ops_fn: an optional function taking the two parameters: the
         `tf.Variable` corresponding to this `DeferredVariable`, and a "memoizer"
         dict; and returning a list of ops that should be executed before each
         training iteration.
@@ -555,7 +555,7 @@ class DeferredVariable(DeferredTensor):
                            "yet been created")
       return memoizer[key], auto_cast
 
-    self._pre_train_ops_fn = pre_train_ops_fn
+    self._update_ops_fn = update_ops_fn
     super(DeferredVariable,
           self).__init__(_DerivedDeferredTensorState(value_and_auto_cast_fn))
 
@@ -572,7 +572,7 @@ class DeferredVariable(DeferredTensor):
         dtype=self._dtype,
         constraint=self._constraint)
 
-  def pre_train_ops(self, memoizer):
+  def update_ops(self, memoizer):
     """Creates and returns a list of ops to run at the start of train_op.
 
     Aside from `DeferredTensor`'s __call__ method, this is the only place that
@@ -584,6 +584,6 @@ class DeferredVariable(DeferredTensor):
     Returns:
       A list of ops.
     """
-    if self._pre_train_ops_fn is None:
+    if self._update_ops_fn is None:
       return []
-    return self._pre_train_ops_fn(self.__call__(memoizer), memoizer)
+    return self._update_ops_fn(self.__call__(memoizer), memoizer)

@@ -22,7 +22,8 @@ represents a linear combination of `Term`s (which represent rates) and
 
 Rates are things like the error rate, the false positive rate, and so on. The
 `RateMinimizationProblem` class defined represents the overall rate-based
-optimization problem, and can be optimized using a `ConstrainedOptimizer`.
+optimization problem, and can be optimized using a `ConstrainedOptimizerV1` or
+`ConstrainedOptimizerV2`.
 
 Example
 =======
@@ -61,7 +62,7 @@ constructor as follows:
 problem = RateMinimizationProblem(objective, constraints)
 ```
 
-This problem can then be solved using a `ConstrainedOptimizer`.
+This problem can then be solved using a constrained optimizer.
 """
 
 from __future__ import absolute_import
@@ -82,15 +83,15 @@ class RateMinimizationProblem(
   instance of this class from the objective function that you wish to minimize
   and the list of constraints you wish to impose. This class implements the
   `ConstrainedMinimizationProblem` interface, so the resulting object can then
-  be optimized using a `ConstrainedOptimizer`.
+  be optimized using a `ConstrainedOptimizerV1` or `ConstrainedOptimizerV2`.
 
   It's important to understand that this object is *stateful*. In addition to
   slack variables (which are automatically inserted for certain rates), the
   denominators of the rates are estimated from running sums over all of the data
-  that has been seen by pre_train_ops (which will be executed at the start of
-  every train_op). Hence, these estimated denominators--upon which the
-  objective, constraints and proxy_constraints `Tensor`s depend--will change
-  from iteration-to-iteration as they converge to their true values.
+  that has been seen by update_ops (which will be executed at the start of every
+  train_op). Hence, these estimated denominators--upon which the objective,
+  constraints and proxy_constraints `Tensor`s depend--will change from
+  iteration-to-iteration as they converge to their true values.
   """
 
   def __init__(self, objective, constraints=None, denominator_lower_bound=1e-3):
@@ -261,7 +262,7 @@ class RateMinimizationProblem(
     return [variable(self._memoizer) for variable in self._variables
            ] + [self._global_step]
 
-  def pre_train_ops(self):
+  def update_ops(self):
     """Creates and returns a list of ops to run at the start of train_op.
 
     When a constrained optimizer creates a train_op, it will include these ops
@@ -271,12 +272,12 @@ class RateMinimizationProblem(
     Returns:
       A list of ops.
     """
-    pre_train_ops = []
+    update_ops = []
     for variable in self._variables:
-      pre_train_ops += variable.pre_train_ops(self._memoizer)
+      update_ops += variable.update_ops(self._memoizer)
 
-    # Increment our internal global_step after all of the other pre_train_ops.
-    with tf.control_dependencies(pre_train_ops):
-      pre_train_ops = [self._global_step.assign_add(1)]
+    # Increment our internal global_step after all of the other update_ops.
+    with tf.control_dependencies(update_ops):
+      update_ops = [self._global_step.assign_add(1)]
 
-    return pre_train_ops
+    return update_ops

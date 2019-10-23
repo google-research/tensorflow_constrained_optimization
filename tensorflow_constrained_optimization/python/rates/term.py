@@ -285,7 +285,7 @@ class _RatioWeights(helpers.RateObject):
     minibatches). Hence, we can't compute the average weight across the entire
     dataset directly. Instead, we keep running sums of the total weight of
     examples included in the denominator, and the number of examples seen, and
-    update them before each minibatch (in the pre_train_ops associated with the
+    update them before each minibatch (in the update_ops associated with the
     running sum variables).
 
     Args:
@@ -310,7 +310,7 @@ class _RatioWeights(helpers.RateObject):
       # large number of iterations.
       running_dtype = tf.float64
 
-      def pre_train_ops_fn(running_averages_variable, memoizer):
+      def update_ops_fn(running_averages_variable, memoizer):
         """Updates the running sums before each call to the train_op."""
         weights, denominator_predicate = denominator
         weights = helpers.convert_to_1d_tensor(
@@ -319,8 +319,8 @@ class _RatioWeights(helpers.RateObject):
         if not dtype.is_floating:
           raise TypeError("weights must be floating-point")
 
-        pre_train_ops = []
-        pre_train_ops.append(
+        update_ops = []
+        update_ops.append(
             tf.debugging.assert_non_negative(
                 weights, message="weights must be non-negative"))
 
@@ -344,11 +344,11 @@ class _RatioWeights(helpers.RateObject):
             tf.cast(tf.size(denominator_weights), dtype=running_dtype) *
             running_proportion)
 
-        pre_train_ops.append(
+        update_ops.append(
             running_averages_variable.assign(
                 [running_average_sum, running_average_count]))
 
-        return pre_train_ops
+        return update_ops
 
       # The first element of the running_averages variable will contain the sum
       # of the weights included in the denominator that we've seen so far,
@@ -364,7 +364,7 @@ class _RatioWeights(helpers.RateObject):
           trainable=False,
           name="running_average_sum_and_count",
           dtype=running_dtype,
-          pre_train_ops_fn=pre_train_ops_fn)
+          update_ops_fn=update_ops_fn)
 
       def average_denominator_weight_fn(running_averages_variable):
         """Returns the average denominator weight `Tensor`."""

@@ -172,7 +172,7 @@ def _ratio(numerator_expression, denominator_expression, lower_bound,
   The result of this function is an `Expression` representing:
     numerator_bound / denominator_bound
   where numerator_bound and denominator_bound are two newly-created slack
-  variables projected to satisfy the following in a pre-train op:
+  variables projected to satisfy the following in an update op:
     0 <= numerator_bound <= denominator_bound <= 1
     denominator_lower_bound <= denominator_bound
   Additionally, the following two constraints will be added if lower_bound is
@@ -225,10 +225,10 @@ def _ratio(numerator_expression, denominator_expression, lower_bound,
   if not (lower_bound or upper_bound):
     raise ValueError("at least one of lower_bound or upper_bound must be True")
 
-  # We use a "pre_train_ops_fn" instead of a "constraint" (which we would
-  # usually prefer) to perform the projection because we want to grab the
-  # denominator lower bound out of the memoizer.
-  def pre_train_ops_fn(ratio_bounds_variable, memoizer):
+  # We use a "update_ops_fn" instead of a "constraint" (which we would usually
+  # prefer) to perform the projection because we want to grab the denominator
+  # lower bound out of the memoizer.
+  def update_ops_fn(ratio_bounds_variable, memoizer):
     """Projects ratio_bounds onto the feasible region."""
     numerator = ratio_bounds_variable[0]
     denominator = ratio_bounds_variable[1]
@@ -249,13 +249,12 @@ def _ratio(numerator_expression, denominator_expression, lower_bound,
   # Ideally the slack variables would have the same dtype as the predictions,
   # but we might not know their dtype (e.g. in eager mode), so instead we always
   # use float32 with auto_cast=True.
-  ratio_bounds = deferred_tensor.DeferredVariable(
-      [0.0, 1.0],
-      trainable=True,
-      name="ratio_bounds",
-      dtype=tf.float32,
-      pre_train_ops_fn=pre_train_ops_fn,
-      auto_cast=True)
+  ratio_bounds = deferred_tensor.DeferredVariable([0.0, 1.0],
+                                                  trainable=True,
+                                                  name="ratio_bounds",
+                                                  dtype=tf.float32,
+                                                  update_ops_fn=update_ops_fn,
+                                                  auto_cast=True)
   extra_variables = [ratio_bounds]
 
   numerator_bound_basic_expression = basic_expression.BasicExpression(

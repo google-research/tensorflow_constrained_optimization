@@ -191,11 +191,11 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     for variable in variables:
       variable.create(memoizer)
 
-    def pre_train_ops_fn():
-      pre_train_ops = []
+    def update_ops_fn():
+      update_ops = []
       for variable in variables:
-        pre_train_ops += variable.pre_train_ops(memoizer)
-      return pre_train_ops
+        update_ops += variable.update_ops(memoizer)
+      return update_ops
 
     with self.wrapped_session() as session:
       running_count = 0.0
@@ -218,10 +218,10 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         expected_weights = (weights_subarray * numerator_predicate_subarray)
         expected_weights /= average_denominator
 
-        # Running the pre_train_ops will update the running denominator
-        # count/sum calculated by the _RatioWeights object.
+        # Running the update_ops will update the running denominator count/sum
+        # calculated by the _RatioWeights object.
         session.run_ops(
-            pre_train_ops_fn,
+            update_ops_fn,
             feed_dict={
                 weights_placeholder:
                     weights_subarray,

@@ -159,9 +159,9 @@ class RateMinimizationProblemTest(
       initial_constraints = session.run(problem.constraints())
       initial_proxy_constraints = session.run(problem.proxy_constraints())
 
-      # We only need to run the pre-train ops once, since the entire dataset is
+      # We only need to run the update ops once, since the entire dataset is
       # contained within the Tensors, so the denominators will be correct.
-      session.run_ops(problem.pre_train_ops)
+      session.run_ops(problem.update_ops)
 
       actual_objective = session.run(problem.objective())
       actual_constraints = session.run(problem.constraints())
@@ -169,7 +169,7 @@ class RateMinimizationProblemTest(
 
       # If we update the internal state, and then re-initialize, then the
       # resulting objective, constraints and proxy constraints should be the
-      # same as they were before running the pre_train_ops.
+      # same as they were before running the update_ops.
       if tf.executing_eagerly():
         for variable, initial_value in six.iteritems(
             variables_and_initial_values):
@@ -209,7 +209,7 @@ class RateMinimizationProblemTest(
         atol=1e-6)
 
     # Make sure that, after re-initialization, we get the same results as we did
-    # before executing the pre_train_ops.
+    # before executing the update_ops.
     self.assertAllClose(
         initial_objective, reinitialized_objective, rtol=0, atol=1e-6)
     self.assertAllClose(

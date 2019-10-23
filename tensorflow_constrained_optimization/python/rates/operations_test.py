@@ -30,12 +30,12 @@ from tensorflow_constrained_optimization.python.rates import operations
 class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `Expression`-manipulation functions."""
 
-  def _evaluate_expression(self, expression, extra_pre_train_ops_fn=None):
+  def _evaluate_expression(self, expression, extra_update_ops_fn=None):
     """Evaluates and returns both portions of an Expression.
 
     Args:
       expression: `Expression` to evaluate.
-      extra_pre_train_ops_fn: function that takes a `EvaluationMemoizer`, and
+      extra_update_ops_fn: function that takes a `EvaluationMemoizer`, and
         returns a list of ops to execute before evaluation.
 
     Returns:
@@ -59,17 +59,17 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     for variable in variables:
       variable.create(memoizer)
 
-    def pre_train_ops_fn():
-      if not extra_pre_train_ops_fn:
-        pre_train_ops = []
+    def update_ops_fn():
+      if not extra_update_ops_fn:
+        update_ops = []
       else:
-        pre_train_ops = extra_pre_train_ops_fn(memoizer)
+        update_ops = extra_update_ops_fn(memoizer)
       for variable in variables:
-        pre_train_ops += variable.pre_train_ops(memoizer)
-      return pre_train_ops
+        update_ops += variable.update_ops(memoizer)
+      return update_ops
 
     with self.wrapped_session() as session:
-      session.run_ops(pre_train_ops_fn)
+      session.run_ops(update_ops_fn)
       return [
           session.run(penalty_value(memoizer)),
           session.run(constraint_value(memoizer))
@@ -149,7 +149,7 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # Before evaluating any expressions, we'll assign "bound_value" to the slack
     # variable, so that we can make sure that the same slack variable is being
     # used for all of the constraints.
-    def pre_train_ops_fn(memoizer):
+    def update_ops_fn(memoizer):
       bound_tensor = bounded.penalty_expression.tensor(memoizer)
       return [bound_tensor.assign(bound_value)]
 
@@ -162,7 +162,7 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     actual_values = []
     for constraint in constraints:
       actual_penalty_value, actual_constraint_value = self._evaluate_expression(
-          constraint.expression, pre_train_ops_fn)
+          constraint.expression, update_ops_fn)
       self.assertEqual(actual_penalty_value, actual_constraint_value)
       actual_values.append(actual_penalty_value)
     # Constraints take the form expression <= 0, and these are upper-bound
@@ -204,7 +204,7 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # Before evaluating any expressions, we'll assign "bound_value" to the slack
     # variable, so that we can make sure that the same slack variable is being
     # used for all of the constraints.
-    def pre_train_ops_fn(memoizer):
+    def update_ops_fn(memoizer):
       bound_tensor = bounded.penalty_expression.tensor(memoizer)
       return [bound_tensor.assign(bound_value)]
 
@@ -217,7 +217,7 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     actual_values = []
     for constraint in constraints:
       actual_penalty_value, actual_constraint_value = self._evaluate_expression(
-          constraint.expression, pre_train_ops_fn)
+          constraint.expression, update_ops_fn)
       self.assertEqual(actual_penalty_value, actual_constraint_value)
       actual_values.append(actual_penalty_value)
     # Constraints take the form expression <= 0, and these are lower-bound

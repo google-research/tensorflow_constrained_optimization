@@ -498,7 +498,7 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
   def get_loss_fn(self, minimization_problem):
     """Returns the proxy-Lagrangian loss function.
 
-    The resulting loss function will use `tf.custom_gradient` to override its
+    The resulting loss function uses `tf.custom_gradient` to override its
     gradients. In particular, the gradients w.r.t. the internal state will be
     negated (since we wish to maximize them), and will be written in terms of
     the constraints, instead of the proxy_constraints.
@@ -561,13 +561,16 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
     # We don't use functools.partial since we need the arguments to be evaluated
     # when the loss is called, not when we construct the partial application.
     def partial_loss_gradient_fn():
-      return loss_gradient_fn(
-          minimization_problem.objective(),
-          tf.reshape(
-              minimization_problem.constraints(), shape=(num_constraints,)),
-          tf.reshape(
-              minimization_problem.proxy_constraints(),
-              shape=(num_constraints,)), state)
+      constraints = tf.reshape(
+          minimization_problem.constraints(), shape=(num_constraints,))
+      proxy_constraints = minimization_problem.proxy_constraints()
+      if proxy_constraints is None:
+        proxy_constraints = constraints
+      else:
+        proxy_constraints = tf.reshape(
+            proxy_constraints, shape=(num_constraints,))
+      return loss_gradient_fn(minimization_problem.objective(), constraints,
+                              proxy_constraints, state)
 
     return partial_loss_gradient_fn
 
@@ -602,14 +605,14 @@ def create_proxy_lagrangian_loss(minimization_problem,
   updates, one can alternatively use additive updates, if desired.
 
   In addition to a loss function, this method returns a function returning a
-  list of operations that should be executed before each iteration ("pre-train
-  ops"), and a `tf.Variable` containing the internal proxy-Lagrangian state
-  (the analogue of the Lagrange multipliers).
+  list of operations that should be executed before each iteration
+  ("update_ops"), and a `tf.Variable` containing the internal proxy-Lagrangian
+  state (the analogue of the Lagrange multipliers).
 
-  In graph mode, the result of this pre-train ops function could be "attached"
-  to the train_op using tf.control_dependencies. In eager mode, it should be
-  called before each iteration. Likewise, you should make sure to differentiate
-  w.r.t. the state, e.g. by including it in the var_list that you pass to an
+  In graph mode, the result of this update_ops function could be "attached" to
+  the train_op using tf.control_dependencies. In eager mode, it should be called
+  before each iteration. Likewise, you should make sure to differentiate w.r.t.
+  the state, e.g. by including it in the var_list that you pass to an
   `Optimizer`'s minimize() method.
 
   For example, in graph mode, your code could look like this:
@@ -617,10 +620,10 @@ def create_proxy_lagrangian_loss(minimization_problem,
   ```python
   # We ignore the returned state, since we won't provide a var_list to the
   # Optimizer's minimize() method.
-  loss_fn, pre_train_ops_fn, _ = create_loss(formulation, minimization_problem)
+  loss_fn, update_ops_fn, _ = create_loss(formulation, minimization_problem)
 
   optimizer = tf.compat.v1.train.GradientDescentOptimizer()
-  with tf.control_dependencies(pre_train_ops_fn()):
+  with tf.control_dependencies(update_ops_fn()):
     # Since we don't provide a var_list, we'll just differentiate w.r.t. all
     # trainable variables, including the state.
     train_op = optimizer.minimize(loss_fn())
@@ -633,7 +636,7 @@ def create_proxy_lagrangian_loss(minimization_problem,
   while in eager mode, it could look like this:
 
   ```python
-  loss_fn, pre_train_ops_fn, state_variable = create_loss(formulation,
+  loss_fn, update_ops_fn, state_variable = create_loss(formulation,
       minimization_problem)
 
   # Assuming that we already have a var_list containing the model parameters.
@@ -643,7 +646,7 @@ def create_proxy_lagrangian_loss(minimization_problem,
   optimizer = tf.keras.optimizers.SGD()
 
   for iteration in xrange(num_iterations):
-    pre_train_ops_fn()
+    update_ops_fn()
     optimizer.minimize(loss_fn, var_list=var_list)
   ```
 
@@ -675,11 +678,11 @@ def create_proxy_lagrangian_loss(minimization_problem,
       applied to gradients w.r.t. the internal state.
 
   Returns:
-    A (loss_fn, pre_train_ops_fn, state_variable) tuple, where loss_fn is a
-    nullary function returning a `Tensor` that can be minimized to optimize the
-    constrained problem, pre_train_ops_fn is a nullary function that returns a
-    list of operations that should be executed before each training iteration,
-    and state_variable is a `tf.Variable` containing the internal state of the
+    A (loss_fn, update_ops_fn, state_variable) tuple, where loss_fn is a nullary
+    function returning a `Tensor` that can be minimized to optimize the
+    constrained problem, update_ops_fn is a nullary function that returns a list
+    of operations that should be executed before each training iteration, and
+    state_variable is a `tf.Variable` containing the internal state of the
     proxy-Lagrangian formulation.
   """
   return constrained_optimizer.create_loss(

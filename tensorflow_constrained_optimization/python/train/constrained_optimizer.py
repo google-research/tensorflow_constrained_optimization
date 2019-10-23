@@ -13,7 +13,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 # ==============================================================================
-"""Defines base class for `ConstrainedOptimizer`s."""
+"""Defines constrained optimizer base classes."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -89,24 +89,25 @@ def create_loss(formulation, minimization_problem):
   the model that we're training.
 
   In addition to a loss function, this method returns a function returning a
-  list of operations that should be executed before each iteration ("pre-train
-  ops"), and a `tf.Variable` containing the formulation's internal state.
+  list of operations that should be executed before each iteration
+  ("update_ops"), and a `tf.Variable` containing the formulation's internal
+  state.
 
-  In graph mode, the result of this pre-train ops function could be "attached"
-  to the train_op using tf.control_dependencies. In eager mode, it should be
-  called before each iteration. Likewise, you should make sure to differentiate
-  w.r.t. the internal state variable by e.g. including it in the var_list that
-  you pass to an `Optimizer`'s minimize() method.
+  In graph mode, the result of this update_ops function could be "attached" to
+  the train_op using tf.control_dependencies. In eager mode, it should be called
+  before each iteration. Likewise, you should make sure to differentiate w.r.t.
+  the internal state variable by e.g. including it in the var_list that you pass
+  to an `Optimizer`'s minimize() method.
 
   For example, in graph mode, your code could look like this:
 
   ```python
   # We ignore the returned state, since we won't provide a var_list to the
   # Optimizer's minimize() method.
-  loss_fn, pre_train_ops_fn, _ = create_loss(formulation, minimization_problem)
+  loss_fn, update_ops_fn, _ = create_loss(formulation, minimization_problem)
 
   optimizer = tf.compat.v1.train.GradientDescentOptimizer()
-  with tf.control_dependencies(pre_train_ops_fn()):
+  with tf.control_dependencies(update_ops_fn()):
     # Since we don't provide a var_list, we'll just differentiate w.r.t. all
     # trainable variables, including the state.
     train_op = optimizer.minimize(loss_fn())
@@ -119,7 +120,7 @@ def create_loss(formulation, minimization_problem):
   while in eager mode, it could look like this:
 
   ```python
-  loss_fn, pre_train_ops_fn, state_variable = create_loss(formulation,
+  loss_fn, update_ops_fn, state_variable = create_loss(formulation,
       minimization_problem)
 
   # Assuming that we already have a var_list containing the model parameters.
@@ -129,7 +130,7 @@ def create_loss(formulation, minimization_problem):
   optimizer = tf.keras.optimizers.SGD()
 
   for iteration in xrange(num_iterations):
-    pre_train_ops_fn()
+    update_ops_fn()
     optimizer.minimize(loss_fn, var_list=var_list)
   ```
 
@@ -140,18 +141,18 @@ def create_loss(formulation, minimization_problem):
       optimize.
 
   Returns:
-    A (loss_fn, pre_train_ops_fn, state_variable) tuple, where loss_fn is
-    a nullary function returning a `Tensor` that can be minimized to optimize
-    the constrained problem, pre_train_ops_fn is a nullary function that returns
-    a list of operations that should be executed before each training iteration,
-    and multipliers_variable is a `tf.Variable` containing the internal state of
-    the given formulation.
+    A (loss_fn, update_ops_fn, state_variable) tuple, where loss_fn is a nullary
+    function returning a `Tensor` that can be minimized to optimize the
+    constrained problem, update_ops_fn is a nullary function that returns a list
+    of operations that should be executed before each training iteration, and
+    multipliers_variable is a `tf.Variable` containing the internal state of the
+    given formulation.
   """
   state_variable = formulation.create_state(
       minimization_problem.num_constraints)
   loss_fn = formulation.get_loss_fn(minimization_problem)
 
-  return loss_fn, minimization_problem.pre_train_ops, state_variable
+  return loss_fn, minimization_problem.update_ops, state_variable
 
 
 class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
@@ -234,11 +235,11 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
     constrained formulation's internal state variable (e.g. Lagrange
     multipliers, for the Lagrangian formulation).
 
-    If you didn't pass num_constraints to the constructor, these internal state
-    variables won't exist until the first call to minimize() or
-    compute_gradients(), since we need to know the number of constraints in
-    order to create them. For this reason, until you've started optimization,
-    this method will return the empty list.
+    If you didn't pass num_constraints to the constructor, the constrained
+    formulation's internal state variables won't exist until the first call to
+    minimize() or compute_gradients(), since we need to know the number of
+    constraints in order to create them. For this reason, until you've started
+    optimization, this method will return the empty list.
 
     Returns:
       A list of variables.
@@ -259,11 +260,11 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
     constrained formulation's internal state variable (e.g. Lagrange
     multipliers, for the Lagrangian formulation).
 
-    If you didn't pass num_constraints to the constructor, these internal state
-    variables won't exist until the first call to minimize() or
-    compute_gradients(), since we need to know the number of constraints in
-    order to create them. For this reason, until you've started optimization,
-    this method will return the empty list.
+    If you didn't pass num_constraints to the constructor, the constrained
+    formulation's internal state variables won't exist until the first call to
+    minimize() or compute_gradients(), since we need to know the number of
+    constraints in order to create them. For this reason, until you've started
+    optimization, this method will return the empty list.
 
     Returns:
       A list of variables.
@@ -275,15 +276,7 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
 
     The returned variables will only be those that are owned by the constrained
     optimizer itself, or transitively by objects that it owns. These include the
-    variables owned by the wrapped optimizer and constraint_optimizer, and the
-    constrained formulation's internal state variable (e.g. Lagrange
-    multipliers, for the Lagrangian formulation).
-
-    If you didn't pass num_constraints to the constructor, these internal state
-    variables won't exist until the first call to minimize() or
-    compute_gradients(), since we need to know the number of constraints in
-    order to create them. For this reason, until you've started optimization,
-    this method will return the empty list.
+    variables owned by the wrapped optimizer and constraint_optimizer.
 
     Returns:
       A list of variables.
@@ -351,7 +344,7 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
       raise ValueError("the grad_loss argument cannot be provided when the "
                        "loss argument is a ConstrainedMinimizationProblem")
 
-    with tf.control_dependencies(loss.pre_train_ops()):
+    with tf.control_dependencies(loss.update_ops()):
       loss = self._formulation.get_loss_fn(loss)
       if not tf.executing_eagerly():
         loss = loss()
@@ -518,9 +511,7 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
 
     The returned variables will only be those that are owned by the constrained
     optimizer itself, or transitively by objects that it owns. These include the
-    variables owned by the wrapped optimizer and constraint_optimizer, and the
-    constrained formulation's internal state variable (e.g. Lagrange
-    multipliers, for the Lagrangian formulation).
+    variables owned by the wrapped optimizer and constraint_optimizer.
 
     Returns:
       A list of variables.
@@ -588,7 +579,7 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
       raise ValueError("the grad_loss argument cannot be provided when the "
                        "loss argument is a ConstrainedMinimizationProblem")
 
-    with tf.control_dependencies(loss.pre_train_ops()):
+    with tf.control_dependencies(loss.update_ops()):
       loss_fn = self._formulation.get_loss_fn(loss)
       return super(ConstrainedOptimizerV2, self)._compute_gradients(
           loss_fn, var_list=var_list, grad_loss=grad_loss)

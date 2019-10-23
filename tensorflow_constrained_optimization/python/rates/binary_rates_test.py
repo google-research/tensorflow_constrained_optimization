@@ -287,16 +287,16 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     for variable in variables:
       variable.create(memoizer)
 
-    def pre_train_ops_fn():
-      pre_train_ops = []
+    def update_ops_fn():
+      update_ops = []
       for variable in variables:
-        pre_train_ops += variable.pre_train_ops(memoizer)
-      return pre_train_ops
+        update_ops += variable.update_ops(memoizer)
+      return update_ops
 
     with self.wrapped_session() as session:
-      # We only need to run the pre-train ops once, since the entire dataset is
+      # We only need to run the update ops once, since the entire dataset is
       # contained within the Tensors, so the denominators will be correct.
-      session.run_ops(pre_train_ops_fn)
+      session.run_ops(update_ops_fn)
 
       self.assertAllClose(
           expected_penalty_value,
@@ -624,14 +624,14 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         ratio_bounds = tensor
     self.assertIsNotNone(ratio_bounds)
 
-    def pre_train_ops_fn():
-      pre_train_ops = []
+    def update_ops_fn():
+      update_ops = []
       for variable in variables:
-        pre_train_ops += variable.pre_train_ops(memoizer)
-      return pre_train_ops
+        update_ops += variable.update_ops(memoizer)
+      return update_ops
 
     with self.wrapped_session() as session:
-      session.run_ops(pre_train_ops_fn)
+      session.run_ops(update_ops_fn)
 
       def evaluate_fn(values):
         """Assigns the variables and evaluates the constraints."""
@@ -789,14 +789,14 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         ratio_bounds = tensor
     self.assertIsNotNone(ratio_bounds)
 
-    def pre_train_ops_fn():
-      pre_train_ops = []
+    def update_ops_fn():
+      update_ops = []
       for variable in variables:
-        pre_train_ops += variable.pre_train_ops(memoizer)
-      return pre_train_ops
+        update_ops += variable.update_ops(memoizer)
+      return update_ops
 
     with self.wrapped_session() as session:
-      session.run_ops(pre_train_ops_fn)
+      session.run_ops(update_ops_fn)
 
       def evaluate_fn(values):
         """Assigns the variables and evaluates the constraints."""
@@ -908,14 +908,14 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         roc_auc_thresholds = tensor
     self.assertIsNotNone(roc_auc_thresholds)
 
-    def pre_train_ops_fn():
-      pre_train_ops = []
+    def update_ops_fn():
+      update_ops = []
       for variable in variables:
-        pre_train_ops += variable.pre_train_ops(memoizer)
-      return pre_train_ops
+        update_ops += variable.update_ops(memoizer)
+      return update_ops
 
     with self.wrapped_session() as session:
-      session.run_ops(pre_train_ops_fn)
+      session.run_ops(update_ops_fn)
 
       def evaluate_fn(values):
         """Assigns the variables and evaluates the constraints."""

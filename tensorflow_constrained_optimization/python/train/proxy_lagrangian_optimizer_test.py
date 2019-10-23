@@ -40,7 +40,7 @@ class ProxyLagrangianOptimizerTest(
                         minimum_multiplier_radius=None,
                         initial_multiplier_radius=None):
     """Tests create_proxy_lagrangian_loss on the given minimization_problem."""
-    loss_fn, pre_train_ops_fn, state_variable = (
+    loss_fn, update_ops_fn, state_variable = (
         proxy_lagrangian_optimizer.create_proxy_lagrangian_loss(
             minimization_problem,
             regret_type=regret_type,
@@ -62,7 +62,7 @@ class ProxyLagrangianOptimizerTest(
     states = []
     with self.wrapped_session() as session:
       while len(states) < len(expected_states):
-        session.run_ops(pre_train_ops_fn)
+        session.run_ops(update_ops_fn)
         states.append(session.run(state_variable))
         session.run_ops(train_op_fn)
 

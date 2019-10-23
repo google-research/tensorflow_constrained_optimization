@@ -43,7 +43,7 @@ class ConstrainedMinimizationProblem(object):
   nonpositive.
 
   In addition to the constraint functions, there may (optionally) be proxy
-  constraint functions: a `ConstrainedOptimizer` will attempt to penalize these
+  constraint functions: a constrained optimizer will attempt to penalize these
   proxy constraint functions so as to satisfy the (non-proxy) constraints. Proxy
   constraints could be used if the constraints functions are difficult or
   impossible to optimize (e.g. if they're piecewise constant), in which case the
@@ -85,7 +85,8 @@ class ConstrainedMinimizationProblem(object):
     instead of merely returning a cached `Tensor` as one might do in graph mode.
 
     Returns:
-      A `Tensor` of constraint functions.
+      A `Tensor` of constraint functions. If the proxy_constraints() method is
+      defined, then both must return a `Tensor` with the same shape.
     """
 
   # This is a method, instead of an abstract method, since it doesn't need to be
@@ -111,9 +112,11 @@ class ConstrainedMinimizationProblem(object):
     graph mode.
 
     Returns:
-      A `Tensor` of proxy constraint functions.
+      A `Tensor` of proxy constraint functions with the same shape as that
+      returned by the constraints() method, or `None` if the proxy constraints
+      are identical to the constraints.
     """
-    return self.constraints()
+    return
 
   # This is a method, instead of an abstract method, since it doesn't need to be
   # overridden: if variables returns [], then there are no Variables owned by
@@ -158,12 +161,12 @@ class ConstrainedMinimizationProblem(object):
     return [variable for variable in self.variables if not variable.trainable]
 
   # This is a method, instead of an abstract method, since it doesn't need to be
-  # overridden: if pre_train_ops() returns [], then there are no ops to run
-  # before train_op.
-  def pre_train_ops(self):
+  # overridden: if update_ops() returns [], then there are no ops to run before
+  # train_op.
+  def update_ops(self):
     """Creates and returns a list of ops to run at the start of train_op.
 
-    When a `ConstrainedOptimizer` calculates gradients or creates a train_op, it
+    When a constrained optimizer calculates gradients or creates a train_op, it
     will include these ops before the main training step.
 
     In eager mode, this method should actually perform the required operations.
