@@ -14,8 +14,6 @@
 # the License.
 # ==============================================================================
 
-# Placeholder for internal Python version compatibility macro.
-
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])  # Apache 2.0

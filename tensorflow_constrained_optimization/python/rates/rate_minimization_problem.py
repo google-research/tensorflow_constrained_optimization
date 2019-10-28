@@ -22,7 +22,8 @@ represents a linear combination of `Term`s (which represent rates) and
 
 Rates are things like the error rate, the false positive rate, and so on. The
 `RateMinimizationProblem` class defined represents the overall rate-based
-optimization problem, and can be optimized using a `ConstrainedOptimizer`.
+optimization problem, and can be optimized using a `ConstrainedOptimizerV1` or
+`ConstrainedOptimizerV2`.
 
 Example
 =======
@@ -35,27 +36,33 @@ constraint on a protected class (the "blue" examples). The following code will
 create two contexts (see subsettable_context.py) representing all of the
 examples, and only the "blue" examples, respectively.
 
->>> ctx = rate_context(model(examples_tensor), labels_tensor)
->>> blue_ctx = ctx.subset(examples_tensor[:, is_blue_idx])
+```python
+ctx = rate_context(model(examples_tensor), labels_tensor)
+blue_ctx = ctx.subset(examples_tensor[:, is_blue_idx])
+```
 
 Now that we have the contexts, we can create the rates. We'll try to minimize
 the overall error rate, while constraining the true positive rate on the "blue"
 class to be between 90% and 110% of the overall true positive rate:
 
->>> objective = error_rate(ctx)
->>> constraints = [
->>>     true_positive_rate(blue_ctx) >= 0.9 * true_positive_rate(ctx),
->>>     true_positive_rate(blue_ctx) <= 1.1 * true_positive_rate(ctx)
->>> ]
+```python
+objective = error_rate(ctx)
+constraints = [
+    true_positive_rate(blue_ctx) >= 0.9 * true_positive_rate(ctx),
+    true_positive_rate(blue_ctx) <= 1.1 * true_positive_rate(ctx)
+]
+```
 
 The error_rate() and true_positive_rate() functions are two of the
 rate-constructing functions that are defined rates.py. This objective and
 list of constraints can then be passed on to the `RateMinimizationProblem`
 constructor as follows:
 
->>> problem = RateMinimizationProblem(objective, constraints)
+```python
+problem = RateMinimizationProblem(objective, constraints)
+```
 
-This problem can then be solved using a `ConstrainedOptimizer`.
+This problem can then be solved using a constrained optimizer.
 """
 
 from __future__ import absolute_import
@@ -63,9 +70,9 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
-from tensorflow_constrained_optimization.python import constrained_minimization_problem
 
-from tensorflow_constrained_optimization.python.rates import basic_expression
+from tensorflow_constrained_optimization.python import constrained_minimization_problem
+from tensorflow_constrained_optimization.python.rates import defaults
 
 
 class RateMinimizationProblem(
@@ -76,15 +83,15 @@ class RateMinimizationProblem(
   instance of this class from the objective function that you wish to minimize
   and the list of constraints you wish to impose. This class implements the
   `ConstrainedMinimizationProblem` interface, so the resulting object can then
-  be optimized using a `ConstrainedOptimizer`.
+  be optimized using a `ConstrainedOptimizerV1` or `ConstrainedOptimizerV2`.
 
-  It's important to understand that this object is *stateful*. The denominators
-  of the rates are estimated from running sums over all of the data that have
-  been seen by pre_train_ops (which will be executed at the start of every
-  train_op). Hence, these estimated denominators---upon which the objective,
-  constraints and proxy_constraints `Tensor`s depend---will change from
-  iteration-to-iteration as they converge to their true values. This state can
-  be re-initialized by executing the restart_ops.
+  It's important to understand that this object is *stateful*. In addition to
+  slack variables (which are automatically inserted for certain rates), the
+  denominators of the rates are estimated from running sums over all of the data
+  that has been seen by update_ops (which will be executed at the start of every
+  train_op). Hence, these estimated denominators--upon which the objective,
+  constraints and proxy_constraints `Tensor`s depend--will change from
+  iteration-to-iteration as they converge to their true values.
   """
 
   def __init__(self, objective, constraints=None, denominator_lower_bound=1e-3):
@@ -134,19 +141,28 @@ class RateMinimizationProblem(
     # don't take one as a parameter since we want complete ownership, to avoid
     # any shenanigans: it has to start at zero, and be incremented after every
     # minibatch.
-    global_step = tf.Variable(
-        0, trainable=False, dtype=tf.int64, name="global_step")
+    self._global_step = tf.compat.v2.Variable(
+        0,
+        trainable=False,
+        name="global_step",
+        dtype=tf.int64,
+        aggregation=tf.VariableAggregation.ONLY_FIRST_REPLICA)
 
-    # This evaluation context will remember and re-use certain intermediate
-    # values, causing the TensorFlow graph we construct to contain fewer
-    # redundancies than it would otherwise.
-    evaluation_context = basic_expression.BasicExpression.EvaluationContext(
-        denominator_lower_bound, global_step)
+    # This memoizer will remember and re-use certain intermediate values,
+    # causing the TensorFlow graph we construct to contain fewer redundancies
+    # than it would otherwise. Additionally, it will store any slack variables
+    # or denominator variables that need to be created for the optimization
+    # problem.
+    self._memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: denominator_lower_bound,
+        defaults.GLOBAL_STEP_KEY: self._global_step
+    }
 
     # We ignore the "constraint_expression" field here, since we're not inside a
     # constraint (this is the objective function).
-    self._objective, pre_train_ops, restart_ops = (
-        objective.penalty_expression.evaluate(evaluation_context))
+    self._objective, self._variables = (
+        objective.penalty_expression.evaluate(self._memoizer))
+    self._variables.update(objective.extra_variables)
     constraints.update(objective.extra_constraints)
 
     # Evaluating expressions can result in extra constraints being introduced,
@@ -155,49 +171,53 @@ class RateMinimizationProblem(
     # repeatedly evaluate the contents of constraints - checked_constraints
     # until none are left.
     checked_constraints = set()
-    penalty_values = []
-    constraint_values = []
+    self._proxy_constraints = []
+    self._constraints = []
     while constraints != checked_constraints:
       new_constraints = constraints - checked_constraints
       for constraint in new_constraints:
         if not constraint.expression.penalty_expression.is_differentiable:
           raise ValueError("non-differentiable losses (e.g. the zero-one loss) "
                            "cannot be optimized--they can only be constrained")
-        penalty_value, penalty_pre_train_ops, penalty_restart_ops = (
-            constraint.expression.penalty_expression.evaluate(
-                evaluation_context))
-        constraint_value, constraint_pre_train_ops, constraint_restart_ops = (
+        penalty_value, penalty_variables = (
+            constraint.expression.penalty_expression.evaluate(self._memoizer))
+        constraint_value, constraint_variables = (
             constraint.expression.constraint_expression.evaluate(
-                evaluation_context))
-        penalty_values.append(penalty_value)
-        constraint_values.append(constraint_value)
-        pre_train_ops.update(penalty_pre_train_ops)
-        pre_train_ops.update(constraint_pre_train_ops)
-        restart_ops.update(penalty_restart_ops)
-        restart_ops.update(constraint_restart_ops)
+                self._memoizer))
+        self._proxy_constraints.append(penalty_value)
+        self._constraints.append(constraint_value)
+        self._variables.update(penalty_variables)
+        self._variables.update(constraint_variables)
+        self._variables.update(constraint.expression.extra_variables)
         constraints.update(constraint.expression.extra_constraints)
       checked_constraints.update(new_constraints)
 
-    self._proxy_constraints = tf.stack(penalty_values)
-    self._constraints = tf.stack(constraint_values)
+    # Explicitly create all of the variables. This also functions as a sanity
+    # check: before this point, no variable should have been accessed
+    # directly, and since their storage didn't exist yet, they couldn't have
+    # been.
+    for variable in self._variables:
+      variable.create(self._memoizer)
 
-    # Increment our internal global_step after all of the other pre_train_ops.
-    with tf.control_dependencies(pre_train_ops):
-      self._pre_train_ops = [tf.assign_add(global_step, 1)]
-    # Add an op that re-initializes the global_step to restart_ops.
-    restart_ops.add(tf.assign(global_step, 0))
-    self._restart_ops = list(restart_ops)
-
-  @property
   def objective(self):
     """Returns the objective function.
 
     Returns:
       A scalar `Tensor` that should be minimized.
     """
-    return self._objective
+    return self._objective(self._memoizer)
 
   @property
+  def num_constraints(self):
+    """Returns the number of constraints.
+
+    Returns:
+      An int containing the number of constraints.
+    """
+    num_constraints = len(self._constraints)
+    assert num_constraints == len(self._proxy_constraints)
+    return num_constraints
+
   def constraints(self):
     """Returns the `Tensor` of constraint functions.
 
@@ -208,9 +228,11 @@ class RateMinimizationProblem(
     Returns:
       A rank-1 `Tensor` of constraint functions.
     """
-    return self._constraints
+    constraint_values = []
+    for constraint in self._constraints:
+      constraint_values.append(constraint(self._memoizer))
+    return tf.stack(constraint_values)
 
-  @property
   def proxy_constraints(self):
     """Returns the optional `Tensor` of proxy constraint functions.
 
@@ -221,30 +243,41 @@ class RateMinimizationProblem(
     Returns:
       A rank-1 `Tensor` of proxy constraint functions.
     """
-    return self._proxy_constraints
+    proxy_constraint_values = []
+    for proxy_constraint in self._proxy_constraints:
+      proxy_constraint_values.append(proxy_constraint(self._memoizer))
+    return tf.stack(proxy_constraint_values)
 
   @property
-  def pre_train_ops(self):
-    """Returns a list of `tf.Operation`s to run at the start of train_op.
+  def variables(self):
+    """Returns a list of variables owned by this problem.
+
+    The returned variables will only be those that are owned by the rate
+    minimization problem itself, e.g. implicit slack variables and denominator
+    accumulators. The model variables will *not* be included.
+
+    Returns:
+      A list of variables.
+    """
+    return [variable(self._memoizer) for variable in self._variables
+           ] + [self._global_step]
+
+  def update_ops(self):
+    """Creates and returns a list of ops to run at the start of train_op.
 
     When a constrained optimizer creates a train_op, it will include these ops
     before the main training step. These ops update internal state that is used
     to estimate the denominators of rates.
 
     Returns:
-      A list of `tf.Operation`s.
+      A list of ops.
     """
-    return self._pre_train_ops[:]
+    update_ops = []
+    for variable in self._variables:
+      update_ops += variable.update_ops(self._memoizer)
 
-  @property
-  def restart_ops(self):
-    """Returns a list of `tf.Operation`s that restart the pre_train_ops.
+    # Increment our internal global_step after all of the other update_ops.
+    with tf.control_dependencies(update_ops):
+      update_ops = [self._global_step.assign_add(1)]
 
-    Executing the pre_train_ops updates the internal state used to keep track of
-    the denominators of the rates. The restart_ops returned by this method can
-    be executed to re-initialize this state, if you want to "start over".
-
-    Returns:
-      A list of `tf.Operation`s.
-    """
-    return self._restart_ops[:]
+    return update_ops

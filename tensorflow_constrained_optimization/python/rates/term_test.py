@@ -23,12 +23,16 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-from tensorflow_constrained_optimization.python.rates import helpers
+from tensorflow_constrained_optimization.python import graph_and_eager_test_case
+from tensorflow_constrained_optimization.python.rates import defaults
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import loss
+from tensorflow_constrained_optimization.python.rates import predicate
 from tensorflow_constrained_optimization.python.rates import term
 
 
-class TermTest(tf.test.TestCase):
+# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `_RatioWeights` and `Term` classes."""
 
   def __init__(self, *args, **kwargs):
@@ -42,8 +46,8 @@ class TermTest(tf.test.TestCase):
     #
     #   self._predictions = np.random.randn(size)
     #   self._weights = np.random.rand(size, 3)  # These weights must be >= 0.
-    #   self._positive_weights = np.random.randn(size, 3)
-    #   self._negative_weights = np.random.randn(size, 3)
+    #   self._positive_weights = np.abs(np.random.randn(size, 3))
+    #   self._negative_weights = np.abs(np.random.randn(size, 3))
     #
     #   numerator_count = int(size / 3)
     #   numerator_indices = set(random.sample(range(size), numerator_count))
@@ -94,48 +98,48 @@ class TermTest(tf.test.TestCase):
         [0.140311759457, 0.157850262752, 0.370491094206],
     ])
     self._positive_weights = np.array([
-        [0.368879241431, 0.776283778201, -0.922791023591],
-        [-0.479167701857, -0.346558378353, 0.710694447574],
-        [-1.43551507315, 0.908609260426, -1.2048088488],
-        [-0.566753206511, -1.99042543647, -1.18133627163],
+        [0.368879241431, 0.776283778201, 0.922791023591],
+        [0.479167701857, 0.346558378353, 0.710694447574],
+        [1.43551507315, 0.908609260426, 1.2048088488],
+        [0.566753206511, 1.99042543647, 1.18133627163],
         [0.453050286383, 1.42491505353, 0.470967482097],
-        [2.03454082335, -0.377569624532, 0.833301377769],
-        [-1.16157676163, 0.497598685605, -0.288470160892],
-        [-2.27255332987, -0.350871636523, -0.592990995235],
-        [0.715961282376, 0.74996983227, -0.625752113108],
-        [-1.79041415884, 1.38971438305, 1.00465078918],
-        [1.96777275689, -2.04654802919, 0.147776670171],
-        [-0.15385256971, -0.977058328072, 0.106955594983],
+        [2.03454082335, 0.377569624532, 0.833301377769],
+        [1.16157676163, 0.497598685605, 0.288470160892],
+        [2.27255332987, 0.350871636523, 0.592990995235],
+        [0.715961282376, 0.74996983227, 0.625752113108],
+        [1.79041415884, 1.38971438305, 1.00465078918],
+        [1.96777275689, 2.04654802919, 0.147776670171],
+        [0.15385256971, 0.977058328072, 0.106955594983],
         [0.303448743856, 0.232478561899, 1.4492977573],
-        [-1.72497915945, -1.11767175531, 0.591949244909],
-        [0.484786597662, -0.0477333948402, 1.02891263901],
-        [1.11440680359, -0.0711480171322, -2.06228440953],
-        [0.242549467822, -0.758649745143, -0.11736812012],
-        [0.842942238643, 0.83167306903, -0.852899753813],
-        [-0.841449544315, 0.662098892203, -0.69720901344],
-        [-0.730600225006, -1.55963637073, 0.395150457709],
+        [1.72497915945, 1.11767175531, 0.591949244909],
+        [0.484786597662, 0.0477333948402, 1.02891263901],
+        [1.11440680359, 0.0711480171322, 2.06228440953],
+        [0.242549467822, 0.758649745143, 0.11736812012],
+        [0.842942238643, 0.83167306903, 0.852899753813],
+        [0.841449544315, 0.662098892203, 0.69720901344],
+        [0.730600225006, 1.55963637073, 0.395150457709],
     ])
     self._negative_weights = np.array([
         [0.94119137969, 0.457577723139, 1.35379028598],
-        [1.94403888363, -0.109948295025, -0.855261861779],
-        [-0.519643638412, 1.17592742071, -0.771248449529],
-        [2.11864153683, 2.02543613619, -0.645954942694],
+        [1.94403888363, 0.109948295025, 0.855261861779],
+        [0.519643638412, 1.17592742071, 0.771248449529],
+        [2.11864153683, 2.02543613619, 0.645954942694],
         [0.0482497767808, 1.28632126984, 0.00924264320825],
-        [-1.05315451703, -0.718584385367, 0.185098145457],
-        [0.110022539127, -2.12282472908, -0.767980152035],
-        [-1.01391368028, 1.46060647161, 0.172538114564],
-        [-1.14967160138, 0.382091947887, -0.359917609479],
+        [1.05315451703, 0.718584385367, 0.185098145457],
+        [0.110022539127, 2.12282472908, 0.767980152035],
+        [1.01391368028, 1.46060647161, 0.172538114564],
+        [1.14967160138, 0.382091947887, 0.359917609479],
         [0.755304203266, 0.484833554786, 1.45780607174],
-        [0.871276472033, -0.143186753181, -0.391562221716],
-        [1.4504998766, -1.46002538742, 0.176054388245],
-        [0.0475175253581, -0.0124053824983, 0.839016925593],
-        [-1.49997568438, -0.424100741707, 0.873922164513],
-        [-0.469077055039, -0.222382249017, 1.05446101882],
-        [-0.250843812691, 1.70255685948, 0.367081938199],
-        [0.779788091612, -0.534183374808, 0.845266167632],
-        [1.96668468564, 1.21420194107, -0.679016878896],
-        [-1.14222874548, 1.60752422957, -0.759153421009],
-        [2.71462022507, 0.0845003688757, -2.11593571334],
+        [0.871276472033, 0.143186753181, 0.391562221716],
+        [1.4504998766, 1.46002538742, 0.176054388245],
+        [0.0475175253581, 0.0124053824983, 0.839016925593],
+        [1.49997568438, 0.424100741707, 0.873922164513],
+        [0.469077055039, 0.222382249017, 1.05446101882],
+        [0.250843812691, 1.70255685948, 0.367081938199],
+        [0.779788091612, 0.534183374808, 0.845266167632],
+        [1.96668468564, 1.21420194107, 0.679016878896],
+        [1.14222874548, 1.60752422957, 0.759153421009],
+        [2.71462022507, 0.0845003688757, 2.11593571334],
     ])
     self._numerator_predicate = np.array([
         False, True, True, True, False, False, False, True, False, True, False,
@@ -149,43 +153,51 @@ class TermTest(tf.test.TestCase):
 
   def test_ratio_weights_zero(self):
     """Tests `_RatioWeights` with all-zero weights class method."""
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = term._RatioWeights.EvaluationContext(
-        denominator_lower_bound, global_step)
+    memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+    }
 
-    ratio_weights = term._RatioWeights(tf.float32, {})
-    actual_weights_tensor, pre_train_ops, restart_ops = ratio_weights.evaluate(
-        evaluation_context)
-    self.assertEqual(0, len(pre_train_ops))
-    self.assertEqual(0, len(restart_ops))
+    ratio_weights = term._RatioWeights({})
+    actual_weights, variables = ratio_weights.evaluate(memoizer)
+    self.assertEqual(0, len(variables))
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
-
-      actual_weights = session.run(actual_weights_tensor)
-      self.assertAllEqual([0], actual_weights)
+    # We don't need to run this in a session, since the expected weights are a
+    # constant (zero).
+    self.assertAllEqual([0], actual_weights(memoizer))
 
   def test_ratio_weights_ratio(self):
     """Tests `_RatioWeights`'s ratio() class method."""
-    weights_placeholder = tf.placeholder(tf.float32, shape=(None,))
-    numerator_predicate_placeholder = tf.placeholder(tf.bool, shape=(None,))
-    denominator_predicate_placeholder = tf.placeholder(tf.bool, shape=(None,))
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = term._RatioWeights.EvaluationContext(
-        denominator_lower_bound, global_step)
+    weights_placeholder = self.wrapped_placeholder(tf.float32, shape=(None,))
+    numerator_predicate_placeholder = self.wrapped_placeholder(
+        tf.bool, shape=(None,))
+    denominator_predicate_placeholder = self.wrapped_placeholder(
+        tf.bool, shape=(None,))
+    memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+    }
 
-    numerator_predicate = helpers.Predicate(numerator_predicate_placeholder)
-    denominator_predicate = helpers.Predicate(denominator_predicate_placeholder)
+    numerator_predicate = predicate.Predicate(numerator_predicate_placeholder)
+    denominator_predicate = predicate.Predicate(
+        denominator_predicate_placeholder)
     ratio_weights = term._RatioWeights.ratio(
-        weights_placeholder, numerator_predicate, denominator_predicate)
-    actual_weights_tensor, pre_train_ops, _ = ratio_weights.evaluate(
-        evaluation_context)
+        deferred_tensor.DeferredTensor(weights_placeholder),
+        numerator_predicate, denominator_predicate)
+    actual_weights, variables = ratio_weights.evaluate(memoizer)
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
+    # We need to explicitly create the variables before creating the wrapped
+    # session.
+    for variable in variables:
+      variable.create(memoizer)
 
+    def update_ops_fn():
+      update_ops = []
+      for variable in variables:
+        update_ops += variable.update_ops(memoizer)
+      return update_ops
+
+    with self.wrapped_session() as session:
       running_count = 0.0
       running_sum = 0.0
       for ii in xrange(len(self._splits) - 1):
@@ -194,8 +206,8 @@ class TermTest(tf.test.TestCase):
         size = end_index - begin_index
 
         weights_subarray = self._weights[begin_index:end_index, 0]
-        numerator_predicate_subarray = self._numerator_predicate[begin_index:
-                                                                 end_index]
+        numerator_predicate_subarray = self._numerator_predicate[
+            begin_index:end_index]
         denominator_predicate_subarray = self._denominator_predicate[
             begin_index:end_index]
 
@@ -206,10 +218,10 @@ class TermTest(tf.test.TestCase):
         expected_weights = (weights_subarray * numerator_predicate_subarray)
         expected_weights /= average_denominator
 
-        # Running these side ops will update the running denominator count/sum
+        # Running the update_ops will update the running denominator count/sum
         # calculated by the _RatioWeights object.
-        session.run(
-            list(pre_train_ops),
+        session.run_ops(
+            update_ops_fn,
             feed_dict={
                 weights_placeholder:
                     weights_subarray,
@@ -219,8 +231,8 @@ class TermTest(tf.test.TestCase):
                     denominator_predicate_subarray
             })
         # Now we can calculate the weights.
-        actual_weights = session.run(
-            actual_weights_tensor,
+        actual_weights_value = session.run(
+            lambda: actual_weights(memoizer),
             feed_dict={
                 weights_placeholder:
                     weights_subarray,
@@ -230,20 +242,23 @@ class TermTest(tf.test.TestCase):
                     denominator_predicate_subarray
             })
 
-        self.assertAllClose(expected_weights, actual_weights, rtol=0, atol=1e-6)
+        self.assertAllClose(
+            expected_weights, actual_weights_value, rtol=0, atol=1e-6)
 
-        session.run(tf.assign(global_step, global_step + 1))
+        session.run_ops(
+            lambda: memoizer[defaults.GLOBAL_STEP_KEY].assign_add(1))
 
   def test_ratio_weights_arithmetic(self):
     """Tests `_RatioWeights`'s arithmetic operators."""
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = term._RatioWeights.EvaluationContext(
-        denominator_lower_bound, global_step)
+    memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+    }
 
     def create_ratio_weights(weights_tensor):
-      return term._RatioWeights.ratio(weights_tensor, helpers.Predicate(True),
-                                      helpers.Predicate(True))
+      return term._RatioWeights.ratio(
+          deferred_tensor.DeferredTensor(weights_tensor),
+          predicate.Predicate(True), predicate.Predicate(True))
 
     weights_tensors = [
         tf.constant(self._weights[:, ii], dtype=tf.float32) for ii in xrange(3)
@@ -259,52 +274,59 @@ class TermTest(tf.test.TestCase):
     expected_weights = (-self._weights[:, 0] + 0.3 * self._weights[:, 1] -
                         self._weights[:, 2] / 3.1 + self._weights[:, 0] * 0.5)
 
-    actual_weights_tensor, _, _ = ratio_weights.evaluate(evaluation_context)
+    actual_weights, variables = ratio_weights.evaluate(memoizer)
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
+    # We need to explicitly create the variables before creating the wrapped
+    # session.
+    for variable in variables:
+      variable.create(memoizer)
 
-      actual_weights = session.run(actual_weights_tensor)
-      self.assertAllClose(expected_weights, actual_weights, rtol=0, atol=1e-6)
+    with self.wrapped_session() as session:
+      actual_weights_value = session.run(actual_weights(memoizer))
+      self.assertAllClose(
+          expected_weights, actual_weights_value, rtol=0, atol=1e-6)
 
-  def test_ratio_weights_evaluation_context(self):
-    """Tests `_RatioWeights.EvaluationContext`'s caching."""
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = term._RatioWeights.EvaluationContext(
-        denominator_lower_bound, global_step)
+  def test_ratio_weights_memoizer(self):
+    """Tests memoization."""
+    memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+    }
 
-    weights_tensor = tf.constant([0.5, 0.1, 1.0], dtype=tf.float32)
-    numerator1_tensor = tf.constant([True, False, True], dtype=tf.bool)
-    numerator2_tensor = tf.constant([True, True, False], dtype=tf.bool)
-    numerator1_predicate = helpers.Predicate(numerator1_tensor)
-    numerator2_predicate = helpers.Predicate(numerator2_tensor)
-    denominator_predicate = helpers.Predicate(True)
+    weights_tensor = deferred_tensor.DeferredTensor(
+        tf.constant([0.5, 0.1, 1.0], dtype=tf.float32))
+    numerator1_tensor = deferred_tensor.DeferredTensor(
+        tf.constant([True, False, True], dtype=tf.bool))
+    numerator2_tensor = deferred_tensor.DeferredTensor(
+        tf.constant([True, True, False], dtype=tf.bool))
+    numerator1_predicate = predicate.Predicate(numerator1_tensor)
+    numerator2_predicate = predicate.Predicate(numerator2_tensor)
+    denominator_predicate = predicate.Predicate(True)
 
-    ratio_weights1 = term._RatioWeights.ratio(
-        weights_tensor, numerator1_predicate, denominator_predicate)
-    ratio_weights2 = term._RatioWeights.ratio(
-        weights_tensor, numerator2_predicate, denominator_predicate)
-    result1, pre_train_ops1, restart_ops1 = ratio_weights1.evaluate(
-        evaluation_context)
-    result2, pre_train_ops2, restart_ops2 = ratio_weights2.evaluate(
-        evaluation_context)
+    ratio_weights1 = term._RatioWeights.ratio(weights_tensor,
+                                              numerator1_predicate,
+                                              denominator_predicate)
+    ratio_weights2 = term._RatioWeights.ratio(weights_tensor,
+                                              numerator2_predicate,
+                                              denominator_predicate)
+    result1, variables1 = ratio_weights1.evaluate(memoizer)
+    result2, variables2 = ratio_weights2.evaluate(memoizer)
 
     # The numerators differ, so the results should be different, but the
-    # weights and denominators match, so the ops should be the same.
+    # weights and denominators match, so the variables should be the same.
     self.assertIsNot(result1, result2)
-    self.assertEqual(pre_train_ops1, pre_train_ops2)
-    self.assertEqual(restart_ops1, restart_ops2)
+    self.assertEqual(variables1, variables2)
 
   def test_binary_classification_term(self):
     """Tests `BinaryClassificationTerm`."""
-    denominator_lower_bound = 0.0
-    global_step = tf.Variable(0, dtype=tf.int32)
-    evaluation_context = term.Term.EvaluationContext(denominator_lower_bound,
-                                                     global_step)
+    memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+    }
 
-    def numpy_binary_classification_loss(
-        positive_weights_array, negative_weights_array, predictions_array):
+    def numpy_binary_classification_loss(positive_weights_array,
+                                         negative_weights_array,
+                                         predictions_array):
       constant_weights = np.minimum(positive_weights_array,
                                     negative_weights_array)
       positive_weights = positive_weights_array - constant_weights
@@ -314,17 +336,18 @@ class TermTest(tf.test.TestCase):
       return np.mean(constant_weights + positive_weights * positive_losses +
                      negative_weights * negative_losses)
 
-    def create_binary_classification_term(
-        predictions_tensor, positive_weights_tensor, negative_weights_tensor):
-      positive_ratio_weights = term._RatioWeights.ratio(positive_weights_tensor,
-                                                        helpers.Predicate(True),
-                                                        helpers.Predicate(True))
-      negative_ratio_weights = term._RatioWeights.ratio(negative_weights_tensor,
-                                                        helpers.Predicate(True),
-                                                        helpers.Predicate(True))
+    def create_binary_classification_term(predictions_tensor,
+                                          positive_weights_tensor,
+                                          negative_weights_tensor):
+      positive_ratio_weights = term._RatioWeights.ratio(
+          deferred_tensor.DeferredTensor(positive_weights_tensor),
+          predicate.Predicate(True), predicate.Predicate(True))
+      negative_ratio_weights = term._RatioWeights.ratio(
+          deferred_tensor.DeferredTensor(negative_weights_tensor),
+          predicate.Predicate(True), predicate.Predicate(True))
       return term.BinaryClassificationTerm(
-          predictions_tensor, positive_ratio_weights, negative_ratio_weights,
-          loss.HingeLoss())
+          deferred_tensor.DeferredTensor(predictions_tensor),
+          positive_ratio_weights, negative_ratio_weights, loss.HingeLoss())
 
     # Randomly construct arrays of predictions and weights.
     predictions_tensor = tf.constant(self._predictions, dtype=tf.float32)
@@ -340,30 +363,37 @@ class TermTest(tf.test.TestCase):
     term_objects = []
     for positive_weights_tensor, negative_weights_tensor in zip(
         positive_weights_tensors, negative_weights_tensors):
-      term_object = create_binary_classification_term(
-          predictions_tensor, positive_weights_tensor, negative_weights_tensor)
+      term_object = create_binary_classification_term(predictions_tensor,
+                                                      positive_weights_tensor,
+                                                      negative_weights_tensor)
       term_objects.append(term_object)
 
     # We only check one particular expression, but all operations are exercised.
     term_object = (-term_objects[0] + 0.3 * term_objects[1] -
                    term_objects[2] / 3.1 + term_objects[0] * 0.5)
-    expected_positive_weights = (
-        -self._positive_weights[:, 0] + 0.3 * self._positive_weights[:, 1] -
-        self._positive_weights[:, 2] / 3.1 + self._positive_weights[:, 0] * 0.5)
-    expected_negative_weights = (
-        -self._negative_weights[:, 0] + 0.3 * self._negative_weights[:, 1] -
-        self._negative_weights[:, 2] / 3.1 + self._negative_weights[:, 0] * 0.5)
-    expected_value = numpy_binary_classification_loss(
-        expected_positive_weights, expected_negative_weights, self._predictions)
+    expected_positive_weights = (-self._positive_weights[:, 0] +
+                                 0.3 * self._positive_weights[:, 1] -
+                                 self._positive_weights[:, 2] / 3.1 +
+                                 self._positive_weights[:, 0] * 0.5)
+    expected_negative_weights = (-self._negative_weights[:, 0] +
+                                 0.3 * self._negative_weights[:, 1] -
+                                 self._negative_weights[:, 2] / 3.1 +
+                                 self._negative_weights[:, 0] * 0.5)
+    expected_term = numpy_binary_classification_loss(expected_positive_weights,
+                                                     expected_negative_weights,
+                                                     self._predictions)
 
-    actual_value_tensor, _, _ = term_object.evaluate(evaluation_context)
+    actual_term, variables = term_object.evaluate(memoizer)
 
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
+    # We need to explicitly create the variables before creating the wrapped
+    # session.
+    for variable in variables:
+      variable.create(memoizer)
 
-      actual_value = session.run(actual_value_tensor)
-      self.assertAllClose(expected_value, actual_value, rtol=0, atol=1e-6)
+    with self.wrapped_session() as session:
+      actual_term_value = session.run(actual_term(memoizer))
+      self.assertAllClose(expected_term, actual_term_value, rtol=0, atol=1e-6)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   tf.test.main()

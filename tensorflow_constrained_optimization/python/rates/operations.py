@@ -22,7 +22,9 @@ from __future__ import print_function
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import basic_expression
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import expression
+from tensorflow_constrained_optimization.python.rates import helpers
 
 
 def wrap_rate(penalty_tensor, constraint_tensor=None):
@@ -47,63 +49,27 @@ def wrap_rate(penalty_tensor, constraint_tensor=None):
     TypeError: if wrap_rate() is called on an `Expression`.
   """
   # Ideally, we'd check that "penalty_tensor" and "constraint_tensor" are scalar
-  # Tensors, or are types that can be converted to scalar Tensors.
+  # Tensors, or are types that can be converted to a scalar Tensor.
   # Unfortunately, this includes a lot of possible types, so the easiest
   # solution would be to actually perform the conversion, and then check that
   # the resulting Tensor has only one element. This, however, would add a dummy
   # element to the Tensorflow graph, and wouldn't work for a Tensor with an
-  # unknown size. Hence, we check only the most common failure case (trying to
-  # wrap an Expression).
-  if (isinstance(penalty_tensor, expression.Expression) or
-      isinstance(constraint_tensor, expression.Expression)):
+  # unknown size. Hence, we only check that "penalty_tensor" and
+  # "constraint_tensor" are not types that we know for certain are disallowed:
+  # objects internal to this library.
+  if (isinstance(penalty_tensor, helpers.RateObject) or
+      isinstance(constraint_tensor, helpers.RateObject)):
     raise TypeError("you cannot wrap an object that has already been wrapped")
 
-  penalty_expression = basic_expression.BasicExpression(
-      terms=[], tensor=penalty_tensor)
+  penalty_basic_expression = basic_expression.BasicExpression(
+      terms=[], tensor=deferred_tensor.DeferredTensor(penalty_tensor))
   if constraint_tensor is None:
-    constraint_expression = penalty_expression
+    constraint_basic_expression = penalty_basic_expression
   else:
-    constraint_expression = basic_expression.BasicExpression(
-        terms=[], tensor=constraint_tensor)
-  return expression.Expression(penalty_expression, constraint_expression)
-
-
-def _create_slack_variable(expressions, name):
-  """Creates a slack variable for upper_bound() or lower_bound().
-
-  Args:
-    expressions: list of `Expression`s, the quantities to lower-bound.
-    name: name of the function (either "upper_bound" or "lower_bound") calling
-      this function. Will also be used to name the resulting TensorFlow
-      variable.
-
-  Returns:
-    A TensorFlow variable to use as the slack variable in upper_bound() or
-      lower_bound().
-
-  Raises:
-    ValueError: if the expressions list is empty.
-    TypeError: if the expressions list contains a non-`Expression`, or if any
-      `Expression` has a different dtype.
-  """
-  if not expressions:
-    raise ValueError("%s cannot be given an empty expression list" % name)
-  if not all(isinstance(ee, expression.Expression) for ee in expressions):
-    raise TypeError(
-        "%s expects a list of rate Expressions (perhaps you need to call "
-        "wrap_rate() to create an Expression from a Tensor?)" % name)
-
-  # The dtype of the slack variable will be the same as the dtypes of the
-  # Expressions it's bounding. If the expressions don't have the same dtypes,
-  # then we don't know what dtype the slack variable should be, so we raise an
-  # error.
-  dtypes = set(ee.penalty_expression.dtype for ee in expressions)
-  dtypes.update(ee.constraint_expression.dtype for ee in expressions)
-  if len(dtypes) != 1:
-    raise TypeError(
-        "all Expressions passed to %s must have the same dtype" % name)
-  dtype = dtypes.pop()
-  return tf.Variable(0.0, dtype=dtype, name=name)
+    constraint_basic_expression = basic_expression.BasicExpression(
+        terms=[], tensor=deferred_tensor.DeferredTensor(constraint_tensor))
+  return expression.Expression(penalty_basic_expression,
+                               constraint_basic_expression)
 
 
 def upper_bound(expressions):
@@ -114,10 +80,10 @@ def upper_bound(expressions):
   returns the slack variable.
 
   If you're going to be upper-bounding or minimizing the result of this
-  function, then you can think of it as taking the `max` of its arguments. It's
-  different from `max` if you're going to be lower-bounding or maximizing the
-  result, however, since the consequence would be to increase the value of the
-  slack variable, without affecting the contents of the expressions list.
+  function, then you can think of it as taking the `max` of its arguments. You
+  should *never* lower-bound or maximize the result, however, since the
+  consequence would be to increase the value of the slack variable, without
+  affecting the contents of the expressions list.
 
   Args:
     expressions: list of `Expression`s, the quantities to upper-bound.
@@ -127,16 +93,32 @@ def upper_bound(expressions):
 
   Raises:
     ValueError: if the expressions list is empty.
-    TypeError: if the expressions list contains a non-`Expression`, or if any
-      `Expression` has a different dtype.
+    TypeError: if the expressions list contains a non-`Expression`.
   """
-  bound = _create_slack_variable(expressions, "upper_bound")
+  if not expressions:
+    raise ValueError("upper_bound cannot be given an empty expression list")
+  if not all(isinstance(ee, expression.Expression) for ee in expressions):
+    raise TypeError(
+        "upper_bound expects a list of rate Expressions (perhaps you need to "
+        "call wrap_rate() to create an Expression from a Tensor?)")
 
-  bound_expression = basic_expression.BasicExpression(terms=[], tensor=bound)
-  extra_constraints = set(ee <= bound for ee in set(expressions))
+  # Ideally the slack variable would have the same dtype as the predictions, but
+  # we might not know their dtype (e.g. in eager mode), so instead we always use
+  # float32 with auto_cast=True.
+  bound = deferred_tensor.DeferredVariable(
+      0.0, trainable=True, name="upper_bound", dtype=tf.float32, auto_cast=True)
+
+  bound_basic_expression = basic_expression.BasicExpression(
+      terms=[], tensor=bound)
+  bound_expression = expression.Expression(
+      penalty_expression=bound_basic_expression,
+      constraint_expression=bound_basic_expression,
+      extra_variables=[bound])
+  extra_constraints = set(ee <= bound_expression for ee in set(expressions))
   return expression.Expression(
-      penalty_expression=bound_expression,
-      constraint_expression=bound_expression,
+      penalty_expression=bound_basic_expression,
+      constraint_expression=bound_basic_expression,
+      extra_variables=[bound],
       extra_constraints=extra_constraints)
 
 
@@ -148,10 +130,10 @@ def lower_bound(expressions):
   returns the slack variable.
 
   If you're going to be lower-bounding or maximizing the result of this
-  function, then you can think of it as taking the `min` of its arguments. It's
-  different from `min` if you're going to be upper-bounding or minimizing the
-  result, however, since the consequence would be to decrease the value of the
-  slack variable, without affecting the contents of the expressions list.
+  function, then you can think of it as taking the `min` of its arguments. You
+  should *never* upper-bound or minimize the result, however, since the
+  consequence would be to decrease the value of the slack variable, without
+  affecting the contents of the expressions list.
 
   Args:
     expressions: list of `Expression`s, the quantities to lower-bound.
@@ -161,14 +143,30 @@ def lower_bound(expressions):
 
   Raises:
     ValueError: if the expressions list is empty.
-    TypeError: if the expressions list contains a non-`Expression`, or if any
-      `Expression` has a different dtype.
+    TypeError: if the expressions list contains a non-`Expression`.
   """
-  bound = _create_slack_variable(expressions, "lower_bound")
+  if not expressions:
+    raise ValueError("lower_bound cannot be given an empty expression list")
+  if not all(isinstance(ee, expression.Expression) for ee in expressions):
+    raise TypeError(
+        "lower_bound expects a list of rate Expressions (perhaps you need to "
+        "call wrap_rate() to create an Expression from a Tensor?)")
 
-  bound_expression = basic_expression.BasicExpression(terms=[], tensor=bound)
-  extra_constraints = set(ee >= bound for ee in set(expressions))
+  # Ideally the slack variable would have the same dtype as the predictions, but
+  # we might not know their dtype (e.g. in eager mode), so instead we always use
+  # float32 with auto_cast=True.
+  bound = deferred_tensor.DeferredVariable(
+      0.0, trainable=True, name="lower_bound", dtype=tf.float32, auto_cast=True)
+
+  bound_basic_expression = basic_expression.BasicExpression(
+      terms=[], tensor=bound)
+  bound_expression = expression.Expression(
+      penalty_expression=bound_basic_expression,
+      constraint_expression=bound_basic_expression,
+      extra_variables=[bound])
+  extra_constraints = set(ee >= bound_expression for ee in set(expressions))
   return expression.Expression(
-      penalty_expression=bound_expression,
-      constraint_expression=bound_expression,
+      penalty_expression=bound_basic_expression,
+      constraint_expression=bound_basic_expression,
+      extra_variables=[bound],
       extra_constraints=extra_constraints)

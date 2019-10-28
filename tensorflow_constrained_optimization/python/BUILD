@@ -40,6 +40,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "graph_and_eager_test_case",
+    testonly = 1,
+    srcs = ["graph_and_eager_test_case.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        # six dep,
+        # tensorflow dep,
+    ],
+)
+
 py_test(
     name = "candidates_test",
     size = "small",

@@ -47,12 +47,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow as tf
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
+from tensorflow_constrained_optimization.python.rates import helpers
 
-from tensorflow_constrained_optimization.python.rates import term
 
-
-class BasicExpression(object):
+class BasicExpression(helpers.RateObject):
   """Object representing a linear combination of `Term`s and `Tensor`s.
 
   The `BasicExpression` object is, along with `Expression`, one of the two core
@@ -67,28 +66,6 @@ class BasicExpression(object):
   that, unlike `Tensor`s, two `Term`s can only be added or subtracted if they're
   "compatible" (which is a notion defined by the `Term` itself).
   """
-
-  # In the future, we might want BasicExpression to have its own
-  # EvaluationContexts, so that BasicExpressions can perform their own
-  # memoization. At the moment, however, only _RatioWeights creates variables
-  # and operations, and therefore needs an EvaluationContext, so BasicExpression
-  # just grabs its EvaluationContext from Term.
-  class EvaluationContext(term.Term.EvaluationContext):
-    """Evaluation context for `BasicExpression` class.
-
-    A rate constraints problem is constructed as an objective function and set
-    of constraints, all of which are represented as `Expression`s, each of which
-    contains two `BasicExpression`s, each of which is a linear combination of
-    `Term`s. Often, the same `Term` will be included in multiple
-    `BasicExpression`s, which normally would result in the construction of a
-    TensorFlow graph with a lot of redundant calculations.
-
-    We would prefer the more expensive parts of the graph to be shared when they
-    occur multiple times. To accomplish this, we use an `EvaluationContext`,
-    which remembers (some) `Variable`s and `Operation`s that have already been
-    created, and re-uses them, instead of recreating them each time they're
-    needed.
-    """
 
   def _add_terms(self, source):
     """Adds a list of `Term`s to this `BasicExpression` (in place).
@@ -126,13 +103,18 @@ class BasicExpression(object):
 
     Args:
       terms: list of `Term`s to sum in the `BasicExpression`.
-      tensor: optional scalar `Tensor` to add to the sum of `Term`s.
+      tensor: optional scalar `DeferredTensor` or `Tensor`-like object to add to
+        the sum of `Term`s.
+
+    Raises:
+      TypeError: if "tensor" is not a `DeferredTensor` or `Tensor`-like object.
     """
     # This object contains two member variables: "_terms", representing a linear
     # combination of `Term` objects, and "_tensor", representing an additional
-    # `Tensor` object to include in the sum. The "_tensor" variable is capable
-    # of representing a linear combination of `Tensor`s, since `Tensor`s support
-    # negation, addition, subtraction, scalar multiplication and division.
+    # `Tensor`-like object to include in the sum. The "_tensor" variable is
+    # capable of representing a linear combination of `Tensor`s, since `Tensor`s
+    # support negation, addition, subtraction, scalar multiplication and
+    # division.
     #
     # It isn't so simple for `Term`s. Like `Tensor`s, they support negation,
     # scalar multiplication and division without restriction. Unlike `Tensor`s,
@@ -144,7 +126,13 @@ class BasicExpression(object):
     # entries.
     self._terms = {}
     self._add_terms(terms)
-    self._tensor = tensor
+    if isinstance(tensor, deferred_tensor.DeferredTensor):
+      self._tensor = tensor
+    elif not isinstance(tensor, helpers.RateObject):
+      self._tensor = deferred_tensor.DeferredTensor(tensor)
+    else:
+      raise TypeError("tensor argument to BasicExpression's constructor "
+                      "should be a DeferredTensor or a Tensor-like object")
 
   @property
   def terms(self):
@@ -155,43 +143,8 @@ class BasicExpression(object):
 
   @property
   def tensor(self):
-    """Returns the `Tensor` contained in this `BasicExpression`."""
+    """Returns the `DeferredTensor` contained in this `BasicExpression`."""
     return self._tensor
-
-  @property
-  def dtype(self):
-    """Returns the `tf.DType` of this `BasicExpression`.
-
-    Returns:
-      The dtype of this `BasicExpression`, i.e. the dtype of the `Tensor` that
-      will be returned by evaluate().
-
-    Raises:
-      TypeError: if we are unable to determine the dtype (most likely because
-        the `BasicExpression` contains terms with different dtypes).
-    """
-    result = None
-
-    # If the tensor is actually a Tensor (and not a python float), then its
-    # dtype must match those of the Terms.
-    if tf.contrib.framework.is_tensor(self._tensor):
-      result = self._tensor.dtype.base_dtype
-
-    # Make sure that all terms have the same dtype.
-    for tt in self._terms.values():
-      tt_dtype = tt.dtype
-      if result is None:
-        result = tt_dtype
-      elif tt_dtype != result:
-        raise TypeError("all terms in an expression must have the same dtype")
-
-    # Raise an error if the entire BasicExpression is just a python float (which
-    # would be completely useless, since it would be a constant, hence couldn't
-    # be minimized or constrained).
-    if result is None:
-      raise TypeError("unable to determine dtype of expression")
-
-    return result
 
   @property
   def is_differentiable(self):
@@ -217,12 +170,12 @@ class BasicExpression(object):
     # possible types, so the easiest solution would be to actually perform the
     # conversion, and then check that the resulting Tensor has only one element.
     # This, however, would add a dummy element to the Tensorflow graph, and
-    # wouldn't work for a Tensor with an unknown size. Hence, we check only the
-    # most common failure case (multiplication of two BasicExpressions).
-    if isinstance(scalar, BasicExpression):
-      raise TypeError(
-          "BasicExpression objects only support *scalar* "
-          "multiplication: you cannot multiply two BasicExpressions")
+    # wouldn't work for a Tensor with an unknown size. Hence, we only check that
+    # "scalar" is not a type that we know for certain is disallowed: an object
+    # internal to this library.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("BasicExpression objects only support *scalar* "
+                      "multiplication")
     terms = [tt * scalar for tt in self._terms.values()]
     return BasicExpression(terms, self._tensor * scalar)
 
@@ -232,11 +185,9 @@ class BasicExpression(object):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    # We check that "scalar" is not a BasicExpression, instead of checking that
-    # it is a scalar, for the same reason as in __mul__.
-    if isinstance(scalar, BasicExpression):
-      raise TypeError("BasicExpression objects only support *scalar* "
-                      "division: you cannot divide two BasicExpressions")
+    # See comment in __mul__.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("BasicExpression objects only support *scalar* division")
     terms = [tt / scalar for tt in self._terms.values()]
     return BasicExpression(terms, self._tensor / scalar)
 
@@ -258,8 +209,11 @@ class BasicExpression(object):
       result._add_terms(other.terms)
       # pylint: enable=protected-access
       return result
-    else:
+    elif not isinstance(other, helpers.RateObject):
       return BasicExpression(self._terms.values(), self._tensor + other)
+    else:
+      raise TypeError("BasicExpression objects can only be added to each "
+                      "other, or scalars")
 
   def __radd__(self, other):
     """Returns the result of adding two `BasicExpression`s."""
@@ -274,36 +228,40 @@ class BasicExpression(object):
       result._sub_terms(other.terms)
       # pylint: enable=protected-access
       return result
-    else:
+    elif not isinstance(other, helpers.RateObject):
       return BasicExpression(self._terms.values(), self._tensor - other)
+    else:
+      raise TypeError("BasicExpression objects can only be subtracted from "
+                      "each other, or scalars")
 
   def __rsub__(self, other):
     """Returns the result of subtracting two `BasicExpression`s."""
     return self.__neg__().__add__(other)
 
-  def evaluate(self, evaluation_context):
+  def evaluate(self, memoizer):
     """Computes and returns the value of this `BasicExpression`.
 
     Args:
-      evaluation_context: `BasicExpression.EvaluationContext`, which memoizes
-        portions of the calculation to simplify the resulting TensorFlow graph.
+      memoizer: dict, which memoizes portions of the calculation to simplify the
+        resulting TensorFlow graph. It must contain the keys
+        "denominator_lower_bound" and "global_step", with the corresponding
+        values being the minimum allowed value of a rate denominator (a python
+        float), and the current iterate (starting at zero), respectively.
 
     Returns:
-      A (`Tensor`, set, set) tuple containing the value of this
-      `BasicExpression`, a set of `Operation`s that should be executed before
-      each training step (to update the internal state upon which the
-      `BasicExpression` evaluation depends), and a set of `Operation`s that can
-      be executed to re-initialize this state.
+      A (`DeferredTensor`, set) pair containing (i) the value of this
+      `BasicExpression`, and (ii) a set of `DeferredVariable`s containing the
+      internal state upon which the `BasicExpression` evaluation depends.
     """
-    value = self._tensor
-    pre_train_ops = set()
-    restart_ops = set()
+    values = [self._tensor]
+    variables = set()
     for tt in self._terms.values():
-      tt_value, tt_pre_train_ops, tt_restart_ops = tt.evaluate(
-          evaluation_context)
-      value += tt_value
-      pre_train_ops.update(tt_pre_train_ops)
-      restart_ops.update(tt_restart_ops)
-    # The value should already be the correct dtype--this cast just makes extra
-    # sure.
-    return tf.cast(value, dtype=self.dtype), pre_train_ops, restart_ops
+      term_value, term_variables = tt.evaluate(memoizer)
+      values.append(term_value)
+      variables.update(term_variables)
+
+    # We create a list of values, and sum them all-at-once (instead of adding
+    # them one-by-one inside the above loop) to limit how deeply the closures
+    # inside the DeferredTensor will be nested.
+    return deferred_tensor.DeferredTensor.apply(lambda *args: sum(args),
+                                                *values), variables

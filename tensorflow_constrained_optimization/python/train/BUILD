@@ -27,6 +27,7 @@ py_library(
     deps = [
         # six dep,
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:constrained_minimization_problem",
     ],
 )
 
@@ -65,7 +66,6 @@ py_library(
 
 py_test(
     name = "lagrangian_optimizer_test",
-    size = "small",
     srcs = ["lagrangian_optimizer_test.py"],
     srcs_version = "PY2AND3",
     deps = [
@@ -73,6 +73,7 @@ py_test(
         ":test_util",
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )
 
@@ -86,5 +87,6 @@ py_test(
         ":test_util",
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )

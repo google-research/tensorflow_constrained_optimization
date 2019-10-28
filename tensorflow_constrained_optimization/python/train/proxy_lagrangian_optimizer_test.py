@@ -22,83 +22,178 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
+from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.train import proxy_lagrangian_optimizer
 from tensorflow_constrained_optimization.python.train import test_util
 
 
-class ProxyLagrangianOptimizerWrapper(
-    proxy_lagrangian_optimizer.ProxyLagrangianOptimizer):
-  """Testing wrapper class around ProxyLagrangianOptimizer.
+# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+class ProxyLagrangianOptimizerTest(
+    graph_and_eager_test_case.GraphAndEagerTestCase):
+  """Tests proxy-Lagrangian formulation and associated helper functions."""
 
-  This class is identical to ProxyLagrangianOptimizer, except that it caches the
-  internal optimization state when _create_state() is called, so that we can
-  test that the stochastic matrices take on their expected values.
-  """
+  def _loss_test_helper(self,
+                        minimization_problem,
+                        expected_states,
+                        regret_type,
+                        update_type,
+                        minimum_multiplier_radius=None,
+                        initial_multiplier_radius=None):
+    """Tests create_proxy_lagrangian_loss on the given minimization_problem."""
+    loss_fn, update_ops_fn, state_variable = (
+        proxy_lagrangian_optimizer.create_proxy_lagrangian_loss(
+            minimization_problem,
+            regret_type=regret_type,
+            update_type=update_type,
+            minimum_multiplier_radius=minimum_multiplier_radius,
+            initial_multiplier_radius=initial_multiplier_radius))
+    optimizer = tf.keras.optimizers.SGD(1.0)
+    var_list = minimization_problem.trainable_variables + [state_variable]
 
-  def __init__(self,
-               optimizer,
-               constraint_optimizer=None,
-               regret_type="swap",
-               update_type="multiplicative",
-               minimum_multiplier_radius=None,
-               initial_multiplier_radius=None):
-    """Same as ProxyLagrangianOptimizer.__init__()."""
-    super(ProxyLagrangianOptimizerWrapper, self).__init__(
-        optimizer=optimizer,
-        constraint_optimizer=constraint_optimizer,
-        regret_type=regret_type,
-        update_type=update_type,
-        minimum_multiplier_radius=minimum_multiplier_radius,
-        initial_multiplier_radius=initial_multiplier_radius)
-    self._cached_state = None
+    if tf.executing_eagerly():
+      train_op_fn = lambda: optimizer.minimize(loss_fn, var_list)
+    else:
+      # If we're in graph mode, then we need to create the train_op before the
+      # session, so that we know which variables need to be initialized.
+      train_op = optimizer.minimize(loss_fn, var_list)
+      train_op_fn = lambda: train_op
 
-  @property
-  def state(self):
-    """Returns the cached state."""
-    return self._cached_state
-
-  def _create_state(self, num_constraints):
-    """Caches the internal state for testing."""
-    self._cached_state = super(ProxyLagrangianOptimizerWrapper,
-                               self)._create_state(num_constraints)
-    return self._cached_state
-
-
-class ProxyLagrangianOptimizerTest(tf.test.TestCase):
-  """Tests the `ProxyLagrangianOptimizer` and associated helper functions."""
-
-  def _optimizer_test_helper(self,
-                             minimization_problem,
-                             expected_states,
-                             regret_type,
-                             update_type,
-                             minimum_multiplier_radius=None,
-                             initial_multiplier_radius=None):
-    """Tests that the states at each iteration match the expected states."""
-    optimizer = ProxyLagrangianOptimizerWrapper(
-        tf.train.GradientDescentOptimizer(1.0),
-        regret_type=regret_type,
-        update_type=update_type,
-        minimum_multiplier_radius=minimum_multiplier_radius,
-        initial_multiplier_radius=initial_multiplier_radius)
-    train_op = optimizer.minimize_constrained(minimization_problem)
-
+    # Perform a few steps of training, and record the proxy-Lagrangian state.
     states = []
-    with self.session() as session:
-      session.run(tf.global_variables_initializer())
+    with self.wrapped_session() as session:
       while len(states) < len(expected_states):
-        states.append(session.run(optimizer.state))
-        session.run(train_op)
+        session.run_ops(update_ops_fn)
+        states.append(session.run(state_variable))
+        session.run_ops(train_op_fn)
 
+    # Compare the observed sequence of proxy-Lagrangian states to the expected
+    # one.
     for expected, actual in zip(expected_states, states):
       self.assertAllClose(expected, actual, rtol=0, atol=1e-6)
+
+  def _optimizer_v1_test_helper(self,
+                                minimization_problem,
+                                expected_states,
+                                regret_type,
+                                update_type,
+                                minimum_multiplier_radius=None,
+                                initial_multiplier_radius=None):
+    """Tests ProxyLagrangianOptimizerV1 on the given minimization_problem."""
+    # The "optimizer" argument won't actually be used, here, but we provide two
+    # different optimizers to make sure that proxy-Lagrangian state updates are
+    # correctly dispatched to the "constraint_optimizer".
+    #
+    # Also notice that we force the internal state to be created here by
+    # providing the "num_constraints" argument, so that (1) in graph mode, it
+    # will be initialized correctly and (2) in eager mode, we'll be able to
+    # check its initial value.
+    optimizer = proxy_lagrangian_optimizer.ProxyLagrangianOptimizerV1(
+        optimizer=tf.compat.v1.train.GradientDescentOptimizer(0.1),
+        num_constraints=minimization_problem.num_constraints,
+        constraint_optimizer=tf.compat.v1.train.GradientDescentOptimizer(1.0),
+        regret_type=regret_type,
+        update_type=update_type,
+        minimum_multiplier_radius=minimum_multiplier_radius,
+        initial_multiplier_radius=initial_multiplier_radius)
+
+    if tf.executing_eagerly():
+      train_op_fn = lambda: optimizer.minimize(minimization_problem)
+    else:
+      # If we're in graph mode, then we need to create the train_op before the
+      # session, so that we know which variables need to be initialized.
+      train_op = optimizer.minimize(minimization_problem)
+      train_op_fn = lambda: train_op
+
+    # Perform a few steps of training, and record the proxy-Lagrangian state.
+    states = []
+    with self.wrapped_session() as session:
+      while len(states) < len(expected_states):
+        states.append(session.run(optimizer._formulation.state))
+        session.run_ops(train_op_fn)
+
+    # Compare the observed sequence of proxy-Lagrangian states to the expected
+    # one.
+    for expected, actual in zip(expected_states, states):
+      self.assertAllClose(expected, actual, rtol=0, atol=1e-6)
+
+  def _optimizer_v2_test_helper(self,
+                                minimization_problem,
+                                expected_states,
+                                regret_type,
+                                update_type,
+                                minimum_multiplier_radius=None,
+                                initial_multiplier_radius=None):
+    """Tests ProxyLagrangianOptimizerV2 on the given minimization_problem."""
+    # The "optimizer" argument won't actually be used, here, but we provide two
+    # different optimizers to make sure that proxy-Lagrangian state updates are
+    # correctly dispatched to the "constraint_optimizer".
+    optimizer = proxy_lagrangian_optimizer.ProxyLagrangianOptimizerV2(
+        optimizer=tf.keras.optimizers.SGD(0.1),
+        num_constraints=minimization_problem.num_constraints,
+        constraint_optimizer=tf.keras.optimizers.SGD(1.0),
+        regret_type=regret_type,
+        update_type=update_type,
+        minimum_multiplier_radius=minimum_multiplier_radius,
+        initial_multiplier_radius=initial_multiplier_radius)
+    var_list = (
+        minimization_problem.trainable_variables +
+        optimizer.trainable_variables())
+
+    if tf.executing_eagerly():
+      train_op_fn = lambda: optimizer.minimize(minimization_problem, var_list)
+    else:
+      # If we're in graph mode, then we need to create the train_op before the
+      # session, so that we know which variables need to be initialized.
+      train_op = optimizer.minimize(minimization_problem, var_list)
+      train_op_fn = lambda: train_op
+
+    # Perform a few steps of training, and record the proxy-Lagrangian state.
+    states = []
+    with self.wrapped_session() as session:
+      while len(states) < len(expected_states):
+        states.append(session.run(optimizer._formulation.state))
+        session.run_ops(train_op_fn)
+
+    # Compare the observed sequence of proxy-Lagrangian states to the expected
+    # one.
+    for expected, actual in zip(expected_states, states):
+      self.assertAllClose(expected, actual, rtol=0, atol=1e-6)
+
+  def _test_helper(self,
+                   minimization_problem,
+                   expected_states,
+                   regret_type,
+                   update_type,
+                   minimum_multiplier_radius=None,
+                   initial_multiplier_radius=None):
+    self._loss_test_helper(
+        minimization_problem,
+        expected_states,
+        regret_type=regret_type,
+        update_type=update_type,
+        minimum_multiplier_radius=minimum_multiplier_radius,
+        initial_multiplier_radius=initial_multiplier_radius)
+    self._optimizer_v1_test_helper(
+        minimization_problem,
+        expected_states,
+        regret_type=regret_type,
+        update_type=update_type,
+        minimum_multiplier_radius=minimum_multiplier_radius,
+        initial_multiplier_radius=initial_multiplier_radius)
+    self._optimizer_v2_test_helper(
+        minimization_problem,
+        expected_states,
+        regret_type=regret_type,
+        update_type=update_type,
+        minimum_multiplier_radius=minimum_multiplier_radius,
+        initial_multiplier_radius=initial_multiplier_radius)
 
   def test_maximum_eigenvector_power_method(self):
     """Tests power method routine on some known left-stochastic matrices."""
     matrix1 = np.matrix([[0.6, 0.1, 0.1], [0.0, 0.6, 0.9], [0.4, 0.3, 0.0]])
     matrix2 = np.matrix([[0.4, 0.4, 0.2], [0.2, 0.1, 0.5], [0.4, 0.5, 0.3]])
 
-    with self.session() as session:
+    with self.wrapped_session() as session:
       eigenvector1 = session.run(
           proxy_lagrangian_optimizer._maximal_eigenvector_power_method(
               tf.constant(matrix1)))
@@ -127,7 +222,7 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
     ]
 
     projected_distributions = []
-    with self.session() as session:
+    with self.wrapped_session() as session:
       for distribution in distributions:
         projected_distributions.append(
             session.run(
@@ -147,7 +242,7 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
     expected_projected_matrix = np.array([[0.6, 0.1, 0.1], [0.0, 0.6, 0.9],
                                           [0.4, 0.3, 0.0]])
 
-    with self.session() as session:
+    with self.wrapped_session() as session:
       projected_matrix = session.run(
           proxy_lagrangian_optimizer._project_distribution_wrt_euclidean_norm(
               matrix))
@@ -169,14 +264,14 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
     ]
 
     projected_distributions = []
-    with self.session() as session:
+    with self.wrapped_session() as session:
       for distribution in distributions:
         projected_distributions.append(
             session.run(
                 tf.exp(
                     proxy_lagrangian_optimizer
                     ._project_log_distribution_wrt_kl_divergence(
-                        tf.log(distribution)))))
+                        tf.math.log(distribution)))))
 
     self.assertAllClose(
         expected_projected_distributions,
@@ -190,11 +285,12 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
     expected_projected_matrix = np.array([[0.4, 0.4, 0.2], [0.2, 0.1, 0.5],
                                           [0.4, 0.5, 0.3]])
 
-    with self.session() as session:
+    with self.wrapped_session() as session:
       projected_matrix = session.run(
           tf.exp(
               proxy_lagrangian_optimizer
-              ._project_log_distribution_wrt_kl_divergence(tf.log(matrix))))
+              ._project_log_distribution_wrt_kl_divergence(
+                  tf.math.log(matrix))))
 
     self.assertAllClose(
         expected_projected_matrix, projected_matrix, rtol=0, atol=1e-6)
@@ -210,7 +306,7 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
         np.array([0.33333333, 0.53333333, 0.0, 0.13333333]),
     ]
 
-    self._optimizer_test_helper(
+    self._test_helper(
         minimization_problem,
         expected_states,
         regret_type="external",
@@ -227,7 +323,7 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
         np.log(np.array([0.23910893, 0.3969348, 0.09788292, 0.26607335])),
     ]
 
-    self._optimizer_test_helper(
+    self._test_helper(
         minimization_problem,
         expected_states,
         regret_type="external",
@@ -250,7 +346,7 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
                   [0.11666667, 0.01333333, 0.0, 0.00333333]]),
     ]
 
-    self._optimizer_test_helper(
+    self._test_helper(
         minimization_problem,
         expected_states,
         regret_type="swap",
@@ -277,7 +373,7 @@ class ProxyLagrangianOptimizerTest(tf.test.TestCase):
                       [0.23200752, 0.21808115, 0.21645886, 0.21758255]])),
     ]
 
-    self._optimizer_test_helper(
+    self._test_helper(
         minimization_problem,
         expected_states,
         regret_type="swap",

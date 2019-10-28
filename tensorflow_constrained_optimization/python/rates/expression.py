@@ -47,8 +47,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
+from tensorflow_constrained_optimization.python.rates import helpers
 
-class Constraint(object):
+
+class Constraint(helpers.RateObject):
   """Represents an inequality constraint.
 
   This class is nothing but a thin wrapper around an `Expression`, and
@@ -65,14 +68,14 @@ class Constraint(object):
     return self._expression
 
 
-class Expression(object):
+class Expression(helpers.RateObject):
   """Represents an expression that can be penalized or constrained.
 
   An `Expression`, like a `BasicExpression`, represents a linear combination of
   `Term`s and `Tensor`s. Internally, it's actually represented as *two*
-  `BasicExpression`s, one of which---the "penalty" portion---is used when the
+  `BasicExpression`s, one of which--the "penalty" portion--is used when the
   expression is being minimized (in the objective function) or penalized (to
-  satisfy a constraint), and the second of which---the "constraint" portion---is
+  satisfy a constraint), and the second of which--the "constraint" portion--is
   used when the expression is being constrained.
 
   Typically, the "penalty" and "constraint" portions will be different
@@ -96,18 +99,23 @@ class Expression(object):
   def __init__(self,
                penalty_expression,
                constraint_expression,
+               extra_variables=None,
                extra_constraints=None):
     """Creates a new `Expression`.
 
     An `Expression` represents a quantity that will be minimized/maximized or
     constrained. Internally, it's actually represented as *two*
-    `BasicExpression`s, one of which---the "penalty" portion---is used when the
+    `BasicExpression`s, one of which--the "penalty" portion--is used when the
     expression is being minimized (in the objective function) or penalized (to
-    satisfy a constraint), and the second of which---the "constraint"
-    portion---is used when the expression is being constrained. These two
-    `BasicExpression`s are the first two parameters of this function.
+    satisfy a constraint), and the second of which--the "constraint" portion--is
+    used when the expression is being constrained. These two `BasicExpression`s
+    are the first two parameters of this function.
 
-    The third parameter---"extra_constraints"---is used to specify additional
+    The third parameter--"extra_variables"--should contain any
+    `DeferredVariable`s that are used (perhaps even indirectly) by this
+    `Expression`. This is most commonly used for slack variables.
+
+    The fourth parameter--"extra_constraints"--is used to specify additional
     constraints that should be added to any optimization problem involving this
     `Expression`. Technically, these can be anything: they're simply additional
     constraints, which may or may not have anything to do with the `Expression`
@@ -128,24 +136,42 @@ class Expression(object):
       constraint_expression: `BasicExpression` that will be used for the
         "constraint" portion of the optimization (i.e. when optimizing the
         constraints). It does not need to be {sub,semi}differentiable.
-      extra_constraints: collection of `Constraints` required by this
-        Expression.
+      extra_variables: optional collection of `DeferredVariable`s upon which
+        this `Expression` depends.
+      extra_constraints: optional collection of `Constraint`s required by this
+        `Expression`.
     """
     self._penalty_expression = penalty_expression
     self._constraint_expression = constraint_expression
+
+    if extra_variables is None:
+      self._extra_variables = set()
+    else:
+      self._extra_variables = set(extra_variables)
+    if not all(
+        isinstance(extra_variable, deferred_tensor.DeferredVariable)
+        for extra_variable in self._extra_variables):
+      raise TypeError("all elements of extra_variables must be "
+                      "DeferredVariable objects")
+
     if extra_constraints is None:
       self._extra_constraints = set()
     else:
       self._extra_constraints = set(extra_constraints)
+    if not all(
+        isinstance(extra_constraint, Constraint)
+        for extra_constraint in self._extra_constraints):
+      raise TypeError("all elements of extra_constraints must be Constraint "
+                      "objects")
 
   @property
   def penalty_expression(self):
     """Returns the `BasicExpression` used for the "penalty" portion.
 
-    An `Expression` contains *two* `BasicExpression`s, one of which---the
-    "penalty" portion---is used when the expression is being minimized (in the
+    An `Expression` contains *two* `BasicExpression`s, one of which--the
+    "penalty" portion--is used when the expression is being minimized (in the
     objective function) or penalized (to satisfy a constraint), while the
-    second---the "constraint" portion---is used when the expression is being
+    second--the "constraint" portion--is used when the expression is being
     constrained.
     """
     return self._penalty_expression
@@ -154,18 +180,64 @@ class Expression(object):
   def constraint_expression(self):
     """Returns the `BasicExpression` used for the "constraint" portion.
 
-    An `Expression` contains *two* `BasicExpression`s, one of which---the
-    "penalty" portion---is used when the expression is being minimized (in the
+    An `Expression` contains *two* `BasicExpression`s, one of which--the
+    "penalty" portion--is used when the expression is being minimized (in the
     objective function) or penalized (to satisfy a constraint), while the
-    second---the "constraint" portion---is used when the expression is being
+    second--the "constraint" portion--is used when the expression is being
     constrained.
     """
     return self._constraint_expression
 
   @property
+  def extra_variables(self):
+    """Returns the set of extra `DeferredVariable`s."""
+    return self._extra_variables
+
+  @property
   def extra_constraints(self):
-    """Returns the set of extra `Constraints`."""
+    """Returns the set of extra `Constraint`s."""
     return self._extra_constraints
+
+  def add_dependencies(self, extra_variables=None, extra_constraints=None):
+    """Returns a new `Expression` with extra dependencies.
+
+    The resulting `Expression` will depend on the same variables and constraints
+    as this `Expression`, but will *also* depend on those included in the
+    extra_variables and extra_constraints parameters to this method. Notice that
+    this method does *not* change `self`: instead, it returns a *new*
+    `Expression` that includes the extra dependencies.
+
+    Args:
+      extra_variables: optional collection of `DeferredVariable`s to add to the
+        list of variables upon which the resulting `Expression` depends.
+      extra_constraints: optional collection of `Constraint`s to add to the list
+        of constraints required by the resulting `Expression`.
+    """
+    if extra_variables is None:
+      extra_variables = set()
+    else:
+      extra_variables = set(extra_variables)
+    if not all(
+        isinstance(extra_variable, deferred_tensor.DeferredVariable)
+        for extra_variable in extra_variables):
+      raise TypeError("all elements of extra_variables must be "
+                      "DeferredVariable objects")
+
+    if extra_constraints is None:
+      extra_constraints = set()
+    else:
+      extra_constraints = set(extra_constraints)
+    if not all(
+        isinstance(extra_constraint, Constraint)
+        for extra_constraint in extra_constraints):
+      raise TypeError("all elements of extra_constraints must be Constraint "
+                      "objects")
+
+    return Expression(
+        self._penalty_expression,
+        self._constraint_expression,
+        extra_variables=self._extra_variables | extra_variables,
+        extra_constraints=self._extra_constraints | extra_constraints)
 
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
@@ -174,14 +246,16 @@ class Expression(object):
     # possible types, so the easiest solution would be to actually perform the
     # conversion, and then check that the resulting Tensor has only one element.
     # This, however, would add a dummy element to the Tensorflow graph, and
-    # wouldn't work for a Tensor with an unknown size. Hence, we check only the
-    # most common failure case (multiplication of two Expressions).
-    if isinstance(scalar, Expression):
-      raise TypeError("Expression objects only support *scalar* "
-                      "multiplication: you cannot multiply two Expressions")
-    return Expression(self._penalty_expression * scalar,
-                      self._constraint_expression * scalar,
-                      self._extra_constraints)
+    # wouldn't work for a Tensor with an unknown size. Hence, we only check that
+    # "scalar" is not a type that we know for certain is disallowed: an object
+    # internal to this library.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("Expression objects only support *scalar* multiplication")
+    return Expression(
+        self._penalty_expression * scalar,
+        self._constraint_expression * scalar,
+        extra_variables=self._extra_variables,
+        extra_constraints=self._extra_constraints)
 
   def __rmul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
@@ -189,14 +263,14 @@ class Expression(object):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    # We check that "scalar" is not an Expression, instead of checking that it
-    # is a scalar, for the same reason as in __mul__.
-    if isinstance(scalar, Expression):
-      raise TypeError("Expression objects only support *scalar* division: you "
-                      "cannot divide two Expressions")
-    return Expression(self._penalty_expression / scalar,
-                      self._constraint_expression / scalar,
-                      self._extra_constraints)
+    # See comment in __mul__.
+    if isinstance(scalar, helpers.RateObject):
+      raise TypeError("Expression objects only support *scalar* division")
+    return Expression(
+        self._penalty_expression / scalar,
+        self._constraint_expression / scalar,
+        extra_variables=self._extra_variables,
+        extra_constraints=self._extra_constraints)
 
   # __rtruediv__ is not implemented since we only allow *scalar* division, i.e.
   # (Expression / scalar) is allowed, but (scalar / Expression) is not.
@@ -225,8 +299,11 @@ class Expression(object):
     #   positive rate is at most 90%"
     #
     # But this wouldn't make sense.
-    return Expression(-self._penalty_expression, -self._constraint_expression,
-                      self._extra_constraints)
+    return Expression(
+        -self._penalty_expression,
+        -self._constraint_expression,
+        extra_variables=self._extra_variables,
+        extra_constraints=self._extra_constraints)
 
   def __add__(self, other):
     """Returns the result of adding two `Expression`s."""
@@ -234,11 +311,17 @@ class Expression(object):
       return Expression(
           self._penalty_expression + other.penalty_expression,
           self._constraint_expression + other.constraint_expression,
-          self._extra_constraints | other.extra_constraints)
+          extra_variables=self._extra_variables | other.extra_variables,
+          extra_constraints=self._extra_constraints | other.extra_constraints)
+    elif not isinstance(other, helpers.RateObject):
+      return Expression(
+          self._penalty_expression + other,
+          self._constraint_expression + other,
+          extra_variables=self._extra_variables,
+          extra_constraints=self._extra_constraints)
     else:
-      return Expression(self._penalty_expression + other,
-                        self._constraint_expression + other,
-                        self._extra_constraints)
+      raise TypeError("Expression objects can only be added to each other, "
+                      "or scalars")
 
   def __radd__(self, other):
     """Returns the result of adding two `Expression`s."""
@@ -250,19 +333,32 @@ class Expression(object):
       return Expression(
           self._penalty_expression - other.penalty_expression,
           self._constraint_expression - other.constraint_expression,
-          self._extra_constraints | other.extra_constraints)
+          extra_variables=self._extra_variables | other.extra_variables,
+          extra_constraints=self._extra_constraints | other.extra_constraints)
+    elif not isinstance(other, helpers.RateObject):
+      return Expression(
+          self._penalty_expression - other,
+          self._constraint_expression - other,
+          extra_variables=self._extra_variables,
+          extra_constraints=self._extra_constraints)
     else:
-      return Expression(self._penalty_expression - other,
-                        self._constraint_expression - other,
-                        self._extra_constraints)
+      raise TypeError("Expression objects can only be subtracted from each "
+                      "other, or scalars")
 
   def __rsub__(self, other):
     """Returns the result of subtracting two `Expression`s."""
-    # We don't need to check if "other" is an Expression, since if it was, then
-    # __sub__ would have been called instead of __rsub__.
-    return Expression(other - self._penalty_expression,
-                      other - self._constraint_expression,
-                      self._extra_constraints)
+    # We assert if "other" is an Expression, since if it was, then __sub__ would
+    # have been called instead of __rsub__.
+    assert not isinstance(other, Expression)
+    if not isinstance(other, helpers.RateObject):
+      return Expression(
+          other - self._penalty_expression,
+          other - self._constraint_expression,
+          extra_variables=self._extra_variables,
+          extra_constraints=self._extra_constraints)
+    else:
+      raise TypeError("Expression objects can only be subtracted from each "
+                      "other, or scalars")
 
   def __le__(self, other):
     """Returns a `Constraint` representing self <= other."""

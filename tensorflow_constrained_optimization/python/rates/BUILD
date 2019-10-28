@@ -25,7 +25,6 @@ py_library(
     srcs = ["helpers.py"],
     srcs_version = "PY2AND3",
     deps = [
-        # numpy dep,
         # tensorflow dep,
     ],
 )
@@ -42,11 +41,46 @@ py_library(
 )
 
 py_library(
+    name = "defaults",
+    srcs = ["defaults.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":loss",
+    ],
+)
+
+py_library(
+    name = "deferred_tensor",
+    srcs = ["deferred_tensor.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":helpers",
+        # numpy dep,
+        # six dep,
+        # tensorflow dep,
+    ],
+)
+
+py_library(
+    name = "predicate",
+    srcs = ["predicate.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":deferred_tensor",
+        ":helpers",
+        # tensorflow dep,
+    ],
+)
+
+py_library(
     name = "subsettable_context",
     srcs = ["subsettable_context.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":deferred_tensor",
         ":helpers",
+        ":predicate",
+        # tensorflow dep,
     ],
 )
 
@@ -55,7 +89,10 @@ py_library(
     srcs = ["term.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":defaults",
+        ":deferred_tensor",
         ":helpers",
+        ":predicate",
         # six dep,
         # tensorflow dep,
     ],
@@ -66,8 +103,8 @@ py_library(
     srcs = ["basic_expression.py"],
     srcs_version = "PY2AND3",
     deps = [
-        ":term",
-        # tensorflow dep,
+        ":deferred_tensor",
+        ":helpers",
     ],
 )
 
@@ -76,21 +113,8 @@ py_library(
     srcs = ["expression.py"],
     srcs_version = "PY2AND3",
     deps = [
-        # tensorflow dep,
-    ],
-)
-
-py_library(
-    name = "binary_rates",
-    srcs = ["binary_rates.py"],
-    srcs_version = "PY2AND3",
-    deps = [
-        ":basic_expression",
-        ":expression",
-        ":loss",
-        ":subsettable_context",
-        ":term",
-        # six dep,
+        ":deferred_tensor",
+        ":helpers",
         # tensorflow dep,
     ],
 )
@@ -101,7 +125,26 @@ py_library(
     srcs_version = "PY2AND3",
     deps = [
         ":basic_expression",
+        ":deferred_tensor",
         ":expression",
+        ":helpers",
+        # tensorflow dep,
+    ],
+)
+
+py_library(
+    name = "binary_rates",
+    srcs = ["binary_rates.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":basic_expression",
+        ":defaults",
+        ":deferred_tensor",
+        ":expression",
+        ":loss",
+        ":subsettable_context",
+        ":term",
+        # six dep,
         # tensorflow dep,
     ],
 )
@@ -111,7 +154,7 @@ py_library(
     srcs = ["rate_minimization_problem.py"],
     srcs_version = "PY2AND3",
     deps = [
-        ":basic_expression",
+        ":defaults",
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:constrained_minimization_problem",
     ],
@@ -135,6 +178,31 @@ py_test(
         ":loss",
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+    ],
+)
+
+py_test(
+    name = "deferred_tensor_test",
+    srcs = ["deferred_tensor_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":defaults",
+        ":deferred_tensor",
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+    ],
+)
+
+py_test(
+    name = "predicate_test",
+    srcs = ["predicate_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":defaults",
+        ":predicate",
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )
 
@@ -143,9 +211,11 @@ py_test(
     srcs = ["subsettable_context_test.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":defaults",
         ":subsettable_context",
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )
 
@@ -154,12 +224,15 @@ py_test(
     srcs = ["term_test.py"],
     srcs_version = "PY2AND3",
     deps = [
-        ":helpers",
+        ":defaults",
+        ":deferred_tensor",
         ":loss",
+        ":predicate",
         ":term",
         # numpy dep,
         # six dep,
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )
 
@@ -169,12 +242,15 @@ py_test(
     srcs_version = "PY2AND3",
     deps = [
         ":basic_expression",
-        ":helpers",
+        ":defaults",
+        ":deferred_tensor",
         ":loss",
+        ":predicate",
         ":term",
         # numpy dep,
         # six dep,
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )
 
@@ -184,23 +260,12 @@ py_test(
     srcs_version = "PY2AND3",
     deps = [
         ":basic_expression",
+        ":defaults",
+        ":deferred_tensor",
         ":expression",
         # numpy dep,
         # tensorflow dep,
-    ],
-)
-
-py_test(
-    name = "binary_rates_test",
-    srcs = ["binary_rates_test.py"],
-    srcs_version = "PY2AND3",
-    deps = [
-        ":basic_expression",
-        ":binary_rates",
-        ":subsettable_context",
-        # numpy dep,
-        # six dep,
-        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )
 
@@ -209,9 +274,28 @@ py_test(
     srcs = ["operations_test.py"],
     srcs_version = "PY2AND3",
     deps = [
-        ":basic_expression",
+        ":defaults",
         ":operations",
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+    ],
+)
+
+py_test(
+    name = "binary_rates_test",
+    size = "large",
+    srcs = ["binary_rates_test.py"],
+    # shard_count = 3,
+    srcs_version = "PY2AND3",
+    deps = [
+        ":binary_rates",
+        ":defaults",
+        ":deferred_tensor",
+        ":subsettable_context",
+        # numpy dep,
+        # six dep,
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )
 
@@ -221,10 +305,12 @@ py_test(
     srcs_version = "PY2AND3",
     deps = [
         ":binary_rates",
+        ":deferred_tensor",
         ":rate_minimization_problem",
         ":subsettable_context",
         # numpy dep,
         # six dep,
         # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
     ],
 )

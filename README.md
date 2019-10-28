@@ -29,8 +29,8 @@ this library, please refer to:
 
 > Cotter, Jiang and Sridharan. "Two-Player Games for Efficient Non-Convex
 > Constrained Optimization".
-> [ALT'19](http://alt2019.algorithmiclearningtheory.org/).
-> [https://arxiv.org/abs/1804.06500](https://arxiv.org/abs/1804.06500)
+> [ALT'19](http://proceedings.mlr.press/v98/cotter19a.html),
+> [arXiv](https://arxiv.org/abs/1804.06500)
 
 which will be referred to as [CoJiSr19] throughout the remainder of this
 document, and:
@@ -38,9 +38,10 @@ document, and:
 > Cotter, Gupta, Jiang, Srebro, Sridharan, Wang, Woodworth and You. "Training
 > Well-Generalizing Classifiers for Fairness Metrics and Other Data-Dependent
 > Constraints".
-> [https://arxiv.org/abs/1807.00028](https://arxiv.org/abs/1807.00028)
+> [ICML'19](http://proceedings.mlr.press/v97/cotter19b/cotter19b.pdf),
+> [arXiv](https://arxiv.org/abs/1807.00028)
 
-which will be referred to as [CotterEtAl18].
+which will be referred to as [CotterEtAl19].
 
 ### Proxy constraints
 
@@ -56,12 +57,6 @@ original constraints. For example, one could create a proxy recall function by
 replacing the indicator functions with sigmoids. During optimization, each proxy
 constraint function will be penalized, with the magnitude of the penalty being
 chosen to satisfy the corresponding *original* (non-proxy) constraint.
-
-On a problem including proxy constraints&mdash;even a convex problem&mdash;the
-Lagrangian approach discussed above isn't guaranteed to work. However, a
-different algorithm, based on minimizing *swap regret* on a slightly *different*
-formulation&mdash;which we call the "proxy-Lagrangian" formulation&mdash;does
-work.
 
 ### Shrinking
 
@@ -90,8 +85,8 @@ than the (much larger) uniform distribution described above. If you're unable or
 unwilling to use a stochastic model at all, then you can instead use a heuristic
 to choose the single best snapshot.
 
-In many cases, these issues can be ignored. However, if you experience issues
-with oscillation during training, or if you want to squeeze every last drop of
+In many cases, these issues can be ignored. However, if you experience
+oscillation during training, or if you want to squeeze every last drop of
 performance out of your model, consider using the "shrinking" procedure of
 [CoJiSr19], which is implemented in the "candidates.py" file.
 
@@ -122,50 +117,56 @@ performance out of your model, consider using the "shrinking" procedure of
 *   [Optimizing general inequality-constrained problems](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/)
 
     *   [constrained_optimizer.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/constrained_optimizer.py):
-        contains the `ConstrainedOptimizer` interface, which is similar to (but
-        different from) `tf.train.Optimizer`, with the main difference being
-        that `ConstrainedOptimizer`s are given `ConstrainedMinimizationProblem`s
-        to optimize, and perform constrained optimization.
+        contains `ConstrainedOptimizerV1` and `ConstrainedOptimizerV2`, which
+        inherit from `tf.compat.v1.train.Optimizer` and
+        `tf.keras.optimizers.Optimizer`, respectively, and are the base classes
+        for our constrained optimizers. The main difference between our
+        constrained optimizers, and normal TensorFlow optimizers, is that ours
+        can optimize `ConstrainedMinimizationProblem`s in addition to loss
+        functions.
 
     *   [lagrangian_optimizer.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/lagrangian_optimizer.py):
-        contains the `LagrangianOptimizer` implementation, which is a
-        `ConstrainedOptimizer` implementing the Lagrangian approach discussed
-        above (with additive updates to the Lagrange multipliers). You should
-        use this optimizer for problems *without* proxy constraints. It may also
-        work for problems with proxy constraints, but we recommend using a
-        proxy-Lagrangian optimizer, instead.
+        contains the `LagrangianOptimizerV1` and `LagrangianOptimizerV2`
+        implementations, which are constrained optimizers implementing the
+        Lagrangian approach discussed above (with additive updates to the
+        Lagrange multipliers). You recommend these optimizers for problems
+        *without* proxy constraints. They may also work well on problems *with*
+        proxy constraints, but we recommend using a proxy-Lagrangian optimizer,
+        instead.
 
-        This optimizer is most similar to Algorithm 3 in Appendix C.3 of
-        [CoJiSr19], and is discussed in Section 3. The two differences are that
-        it uses proxy constraints (if they're provided) in the update of the
-        model parameters, and uses `tf.train.Optimizer`s, instead of SGD, for
+        These optimizers are most similar to Algorithm 3 in Appendix C.3 of
+        [CoJiSr19], which is discussed in Section 3. The two differences are
+        that they use proxy constraints (if they're provided) in the update of
+        the model parameters, and use wrapped `Optimizer`s, instead of SGD, for
         the "inner" updates.
 
     *   [proxy_lagrangian_optimizer.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/train/proxy_lagrangian_optimizer.py):
-        contains the `ProxyLagrangianOptimizer` implementation, which is a
-        `ConstrainedOptimizer` implementing the proxy-Lagrangian approach
-        mentioned above. We recommend using this optimizer for problems *with*
-        proxy constraints.
+        contains the `ProxyLagrangianOptimizerV1` and
+        `ProxyLagrangianOptimizerV2` implementations, which are constrained
+        optimizers implementing the proxy-Lagrangian approach mentioned above.
+        We recommend using these optimizers for problems *with* proxy
+        constraints.
 
-        The `ProxyLagrangianOptimizer` with multiplicative swap-regret updates
-        is most similar to Algorithm 2 in Section 4 of [CoJiSr19], with the
-        difference being that it uses `tf.train.Optimizer`s, instead of SGD, for
-        the "inner" updates.
+        A `ProxyLagrangianOptimizerVx` optimizer with multiplicative swap-regret
+        updates is most similar to Algorithm 2 in Section 4 of [CoJiSr19], with
+        the difference being that it uses wrapped `Optimizer`s, instead of SGD,
+        for the "inner" updates.
 
 *   [Helpers for constructing rate-based optimization problems](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/)
 
     *   [subsettable_context.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/subsettable_context.py):
         contains the `rate_context` function, which takes a `Tensor` of
-        predictions (i.e. the output of a TensorFlow model, through which
-        gradients can be propagated), and optionally `Tensor`s of labels and
-        weights, and returns an object representing a (subset of a) minibatch on
-        which one may calculate rates.
+        predictions (or, in eager mode, a nullary function returning a `Tensor`,
+        i.e. the output of a TensorFlow model, through which gradients can be
+        propagated), and optionally `Tensor`s of labels and weights, and returns
+        an object representing a (subset of a) minibatch on which one may
+        calculate rates.
 
         The related `split_rate_context` function takes *two* `Tensor`s of
         predictions, labels and weights, the first for the "penalty" portion of
         the objective, and the second for the "constraint" portion. The purpose
         of splitting the context is to improve generalization performance: see
-        [CotterEtAl18] for full details.
+        [CotterEtAl19] for full details.
 
         The most important property of these objects is that they are
         subsettable: if you want to calculate a rate on e.g. only the
@@ -176,14 +177,14 @@ performance out of your model, consider using the "shrinking" procedure of
         (e.g. a protected class that's an extreme minority), then the resulting
         stochastic gradients will be noisy, and during training your model will
         converge very slowly. Instead, it is usually better (but less
-        convenient) to create an entirely separate dataset for each rare subset
-        (e.g. using the "filter" method of a `tf.train.Dataset`), and to
-        construct each subset context directly from each such dataset.
+        convenient) to create an entirely separate dataset for each rare subset,
+        and to construct each subset context directly from each such dataset.
 
     *   [binary_rates.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/binary_rates.py):
-        contains functions for constructing rates from contexts. These rates can
-        then be combined into more complicated expressions using python
-        arithmetic operators, or into constraints using comparison operators.
+        contains functions for constructing rates from contexts. These rates are
+        the "heart" of this library, and can be combined into more complicated
+        expressions using python arithmetic operators, or into constraints using
+        comparison operators.
 
     *   [operations.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/operations.py):
         contains functions for manipulating rate expressions, including
@@ -262,8 +263,15 @@ threshold = tf.Variable(0.0, dtype=tf.float32, name="threshold")
 # Create the optimization problem.
 constant_labels = tf.constant(labels, dtype=tf.float32)
 constant_features = tf.constant(features, dtype=tf.float32)
-predictions = tf.tensordot(constant_features, weights, axes=(1, 0)) - threshold
+def predictions():
+  return tf.tensordot(constant_features, weights, axes=(1, 0)) - threshold
 ```
+
+Notice that `predictions` is a nullary function returning a `Tensor`. This is
+needed to support eager mode, but in graph mode, it's fine for it to simply be a
+`Tensor`. To see how this example could work in graph mode, please see the
+Jupyter notebook containing a more-comprehensive version of this example
+([Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb)).
 
 Now that we have the output of our linear model (in the `predictions` variable),
 we can move on to constructing the optimization problem. At this point, there
@@ -277,9 +285,11 @@ are two ways to proceed:
     approach. In particular, it is not limited to problems expressed in terms of
     rates.
 
-We'll now consider each of these two options in turn.
+Here, we'll only consider the first of these options. To see how to use the
+second option, please refer to
+[Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb).
 
-### Option 1: rate helpers
+### Rate helpers
 
 The main motivation of TFCO is to make it easy to create and optimize
 constrained problems written in terms of linear combinations of *rates*, where a
@@ -316,74 +326,6 @@ python arithmetic operators (e.g. "`0.5 * tfco.error_rate(context1) -
 tfco.true_positive_rate(context2)`"), or converted into a constraint using a
 comparison operator.
 
-### Option 2: explicit ConstrainedMinimizationProblem
-
-For problems that cannot be easily expressed using the rate helpers, one could
-instead an explicit implementation of the `ConstrainedMinimizationProblem`
-interface. The current task (minimizing the average hinge loss subject to a
-recall constraint) is a rate-based problem, but for illustrative reasons we will
-show how to create a `ConstrainedMinimizationProblem` for this task.
-
-The constructor will takes three parameters: a `Tensor` containing the
-classification labels (0 or 1) for every training example, another `Tensor`
-containing the model's predictions on every training example (sometimes called
-the "logits"), and the lower bound on recall that will be enforced using a
-constraint.
-
-As before, this implementation will contain both constraints *and* proxy
-constraints: the former represents the constraint that the true recall (defined
-in terms of the *number* of true positives) be at least `recall_lower_bound`,
-while the latter represents the same constraint, but on a hinge approximation of
-the recall.
-
-```python
-class ExampleProblem(tfco.ConstrainedMinimizationProblem):
-
-  def __init__(self, labels, predictions, recall_lower_bound):
-    self._labels = labels
-    self._predictions = predictions
-    self._recall_lower_bound = recall_lower_bound
-    # The number of positively-labeled examples.
-    self._positive_count = tf.reduce_sum(self._labels)
-
-  @property
-  def objective(self):
-    return tf.losses.hinge_loss(labels=self._labels, logits=self._predictions)
-
-  @property
-  def constraints(self):
-    # Recall that the labels are binary (0 or 1).
-    true_positives = self._labels * tf.to_float(self._predictions > 0)
-    true_positive_count = tf.reduce_sum(true_positives)
-    recall = true_positive_count / self._positive_count
-    # The constraint is (recall >= self._recall_lower_bound), which we convert
-    # to (self._recall_lower_bound - recall <= 0) because
-    # ConstrainedMinimizationProblems must always provide their constraints in
-    # the form (tensor <= 0).
-    #
-    # The result of this function should be a tensor, with each element being
-    # a quantity that is constrained to be nonpositive. We only have one
-    # constraint, so we return a one-element tensor.
-    return self._recall_lower_bound - recall
-
-  @property
-  def proxy_constraints(self):
-    # Use 1 - hinge since we're SUBTRACTING recall in the constraint function,
-    # and we want the proxy constraint function to be convex. Recall that the
-    # labels are binary (0 or 1).
-    true_positives = self._labels * tf.minimum(1.0, self._predictions)
-    true_positive_count = tf.reduce_sum(true_positives)
-    recall = true_positive_count / self._positive_count
-    # Please see the corresponding comment in the constraints property.
-    return self._recall_lower_bound - recall
-
-problem = ExampleProblem(
-    labels=constant_labels,
-    predictions=predictions,
-    recall_lower_bound=recall_lower_bound,
-)
-```
-
 ### Wrapping up
 
 We're almost ready to train our model, but first we'll create a couple of
@@ -405,20 +347,20 @@ def recall(labels, predictions):
   return true_positive_count / positive_count
 ```
 
-As was mentioned earlier, the Lagrangian optimizer often suffices for problems
-without proxy constraints, but proxy-Lagrangian optimizers are recommended for
+As was mentioned earlier, a Lagrangian optimizer often suffices for problems
+without proxy constraints, but a proxy-Lagrangian optimizer is recommended for
 problems *with* proxy constraints. Since this problem contains proxy
-constraints, we use the `ProxyLagrangianOptimizer`.
+constraints, we use the `ProxyLagrangianOptimizerV2`.
 
 For this problem, the constraint is fairly easy to satisfy, so we can use the
-same "inner" optimizer (an `AdagradOptimizer` with a learning rate of 1) for
+same "inner" optimizer (an Adagrad optimizer with a learning rate of 1) for
 optimization of both the model parameters (`weights` and `threshold`), and the
 internal parameters associated with the constraints (these are the analogues of
-the Lagrange multipliers used by the `ProxyLagrangianOptimizer`). For more
+the Lagrange multipliers used by the proxy-Lagrangian formulation). For more
 difficult problems, it will often be necessary to use different optimizers, with
 different learning rates (presumably found via a hyperparameter search): to
 accomplish this, pass *both* the `optimizer` and `constraint_optimizer`
-parameters to `ProxyLagrangianOptimizer`'s constructor.
+parameters to `ProxyLagrangianOptimizerV2`'s constructor.
 
 Since this is a convex problem (both the objective and proxy constraint
 functions are convex), we can just take the last iterate. Periodic snapshotting,
@@ -427,16 +369,26 @@ and the use of the `find_best_candidate_distribution` or
 non-convex problems (and even then, it isn't *always* necessary).
 
 ```python
-with tf.Session() as session:
-  optimizer = tfco.ProxyLagrangianOptimizer(
-      optimizer=tf.train.AdagradOptimizer(learning_rate=1.0))
-  train_op = optimizer.minimize(problem)
+# ProxyLagrangianOptimizerV2 is based on tf.keras.optimizers.Optimizer.
+# ProxyLagrangianOptimizerV1 (which we do not use here) would work equally well,
+# but is based on the older tf.compat.v1.train.Optimizer.
+optimizer = tfco.ProxyLagrangianOptimizerV2(
+    optimizer=tf.keras.optimizers.Adagrad(learning_rate=1.0),
+    num_constraints=problem.num_constraints)
 
-  session.run(tf.global_variables_initializer())
-  for ii in xrange(1000):
-    session.run(train_op)
+# In addition to the model parameters (weights and threshold), we also need to
+# optimize over any trainable variables associated with the problem (e.g.
+# implicit slack variables and weight denominators), and those associated with
+# the optimizer (the analogues of the Lagrange multipliers used by the
+# proxy-Lagrangian formulation).
+var_list = ([weights, threshold] + problem.trainable_variables +
+            optimizer.trainable_variables())
 
-  trained_weights, trained_threshold = session.run((weights, threshold))
+for ii in xrange(1000):
+  optimizer.minimize(problem, var_list=var_list)
+
+trained_weights = weights.numpy()
+trained_threshold = threshold.numpy()
 
 trained_predictions = np.matmul(features, trained_weights) - trained_threshold
 print("Constrained average hinge loss = %f" % average_hinge_loss(
@@ -444,8 +396,11 @@ print("Constrained average hinge loss = %f" % average_hinge_loss(
 print("Constrained recall = %f" % recall(labels, trained_predictions))
 ```
 
-Running the above code gives the following output (due to the randomness of the
-dataset, you'll get a different result when you run it):
+Notice that this code is intended to run in eager mode (there is no session): in
+[Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb),
+we also show how to train in graph mode. Running this code results in the
+following output (due to the randomness of the dataset, you'll get a different
+result when you run it):
 
 ```none
 Constrained average hinge loss = 0.683846
@@ -461,18 +416,16 @@ For comparison, let's try optimizing the same problem *without* the recall
 constraint:
 
 ```python
-with tf.Session() as session:
-  optimizer = tf.train.AdagradOptimizer(learning_rate=1.0)
+optimizer = tf.keras.optimizers.Adagrad(learning_rate=1.0)
+var_list = [weights, threshold]
+
+for ii in xrange(1000):
   # For optimizing the unconstrained problem, we just minimize the "objective"
-  # portion of the minimization problem. We could instead have used the
-  # "minimize_unconstrained" method of a ConstrainedOptimizer.
-  train_op = optimizer.minimize(problem.objective)
+  # portion of the minimization problem.
+  optimizer.minimize(problem.objective, var_list=var_list)
 
-  session.run(tf.global_variables_initializer())
-  for ii in xrange(1000):
-    session.run(train_op)
-
-  trained_weights, trained_threshold = session.run((weights, threshold))
+trained_weights = weights.numpy()
+trained_threshold = threshold.numpy()
 
 trained_predictions = np.matmul(features, trained_weights) - trained_threshold
 print("Unconstrained average hinge loss = %f" % average_hinge_loss(
@@ -499,7 +452,10 @@ directory contains several [Jupyter](https://jupyter.org/) notebooks
 illustrating how to use this library:
 
 *   [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb):
-    **Start here!** This is the above simple example.
+    **Start here!** This is a more-comprehensive version of the above simple
+    example. In particular, it can run in either graph or eager modes, shows how
+    to manually create a `ConstrainedMinimizationProblem` instead of using the
+    rate helpers, and illustrates the use of both V1 and V2 optimizers.
 
 *   [Fairness_adult.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Fairness_adult.ipynb):
     This notebook shows how to train classifiers for fairness constraints on the
@@ -531,7 +487,7 @@ illustrating how to use this library:
 *   [Generalization_communities.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Generalization_communities.ipynb):
     This notebook shows how to improve fairness generalization performance on
     the UCI Communities and Crime dataset with the split dataset approach of
-    [CotterEtAl18], using the `split_rate_context` helper.
+    [CotterEtAl19], using the `split_rate_context` helper.
 
 *   [Churn.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Churn.ipynb):
     This notebook describes how to use rate constraints for low-churn
