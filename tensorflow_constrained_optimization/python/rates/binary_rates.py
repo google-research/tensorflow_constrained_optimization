@@ -526,11 +526,6 @@ def true_positive_rate(context,
       constraint_loss=constraint_loss)
 
 
-# The "true positive rate" is the same thing as the "recall", so we allow it to
-# be accessed by either name.
-recall = true_positive_rate
-
-
 def false_negative_rate(context,
                         penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                         constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
@@ -1470,7 +1465,8 @@ def _recall_at_precision(context, precision_target, include_threshold,
         precision_numerator_expression <= precision_target *
         precision_denominator_expression)
 
-  return recall(
+  # True positive rate = true positives / labeled positives = recall.
+  return true_positive_rate(
       context, penalty_loss=penalty_loss,
       constraint_loss=constraint_loss).add_dependencies(
           extra_variables=extra_variables, extra_constraints=extra_constraints)

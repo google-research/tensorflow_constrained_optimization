@@ -40,7 +40,6 @@ from tensorflow_constrained_optimization.python.rates.binary_rates import precis
 from tensorflow_constrained_optimization.python.rates.binary_rates import precision_lower_bound
 from tensorflow_constrained_optimization.python.rates.binary_rates import precision_ratio
 from tensorflow_constrained_optimization.python.rates.binary_rates import precision_upper_bound
-from tensorflow_constrained_optimization.python.rates.binary_rates import recall
 from tensorflow_constrained_optimization.python.rates.binary_rates import recall_at_precision_lower_bound
 from tensorflow_constrained_optimization.python.rates.binary_rates import recall_at_precision_upper_bound
 from tensorflow_constrained_optimization.python.rates.binary_rates import roc_auc_lower_bound
@@ -67,8 +66,13 @@ from tensorflow_constrained_optimization.python.train.proxy_lagrangian_optimizer
 from tensorflow_constrained_optimization.python.train.proxy_lagrangian_optimizer import ProxyLagrangianOptimizerV1
 from tensorflow_constrained_optimization.python.train.proxy_lagrangian_optimizer import ProxyLagrangianOptimizerV2
 
-# Temporary aliases for backwards compatibility. We'll remove these at some
-# point.
-ConstrainedOptimizer = ConstrainedOptimizerV1
-LagrangianOptimizer = LagrangianOptimizerV1
-ProxyLagrangianOptimizer = ProxyLagrangianOptimizerV1
+# The "true positive rate" is the same thing as the "recall", so we allow it to
+# be accessed by either name.
+recall = true_positive_rate
+
+# By default, we use V2 optimizers. These aliases are purely for convenience: in
+# general, you should prefer to explicitly specify either a V1 or a V2 optimizer
+# (in case there's ever a V3, in which case we'll update these aliases).
+ConstrainedOptimizer = ConstrainedOptimizerV2
+LagrangianOptimizer = LagrangianOptimizerV2
+ProxyLagrangianOptimizer = ProxyLagrangianOptimizerV2

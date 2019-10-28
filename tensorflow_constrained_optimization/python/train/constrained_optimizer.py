@@ -212,11 +212,28 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
         optimize the Lagrange multipliers (or their analogues).
       name: a non-empty string, which will be passed on to the parent
         `tf.compat.v1.train.Optimizer`'s constructor.
+
+    Raises:
+      TypeError: if optimizer or constraint_optimizer are implementations of
+        `tf.keras.optimizers.Optimizer` instead of
+        `tf.compat.v1.train.Optimizer`.
     """
     # The use_locking parameter does nothing here (the locking behavior will be
     # based on the use_locking parameters that were passed to the constructor(s)
     # of the wrapped optimizer and constraint_optimizer).
     super(ConstrainedOptimizerV1, self).__init__(use_locking=False, name=name)
+
+    # Instead of checking that optimizer and (optionally) constraint_optimizer
+    # are instances of tf.compat.v1.train.Optimizer, we check that they are
+    # *not* instances of tf.keras.optimizers.Optimizer. The reason for this is
+    # that we want to support duck typing, but at the same time, want to provide
+    # the user with an early error message if what they're trying to do is
+    # definitely wrong.
+    if (isinstance(optimizer, tf.keras.optimizers.Optimizer) or
+        isinstance(constraint_optimizer, tf.keras.optimizers.Optimizer)):
+      raise TypeError("a V1 constrained optimizer must be constructed from a "
+                      "V1 optimizer and (optionally) constraint_optimizer "
+                      "(i.e. implementations of tf.compat.v1.train.Optimizer)")
 
     self._formulation = formulation
     self._optimizer = optimizer
@@ -463,8 +480,25 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
         optimize the Lagrange multipliers (or their analogues).
       name: a non-empty string, which will be passed on to the parent
         `tf.keras.optimizers.Optimizer`'s  constructor.
+
+    Raises:
+      TypeError: if optimizer or constraint_optimizer are implementations of
+        `tf.compat.v1.train.Optimizer` instead of
+        `tf.keras.optimizers.Optimizer`.
     """
     super(ConstrainedOptimizerV2, self).__init__(name=name)
+
+    # Instead of checking that optimizer and (optionally) constraint_optimizer
+    # are instances of tf.keras.optimizers.Optimizer, we check that they are
+    # *not* instances of tf.compat.v1.train.Optimizer. The reason for this is
+    # that we want to support duck typing, but at the same time, want to provide
+    # the user with an early error message if what they're trying to do is
+    # definitely wrong.
+    if (isinstance(optimizer, tf.compat.v1.train.Optimizer) or
+        isinstance(constraint_optimizer, tf.compat.v1.train.Optimizer)):
+      raise TypeError("a V2 constrained optimizer must be constructed from a "
+                      "V2 optimizer and (optionally) constraint_optimizer "
+                      "(i.e. implementations of tf.keras.optimizers.Optimizer)")
 
     self._formulation = formulation
     self._optimizer = optimizer

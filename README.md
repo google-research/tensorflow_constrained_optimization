@@ -85,8 +85,8 @@ than the (much larger) uniform distribution described above. If you're unable or
 unwilling to use a stochastic model at all, then you can instead use a heuristic
 to choose the single best snapshot.
 
-In many cases, these issues can be ignored. However, if you experience issues
-with oscillation during training, or if you want to squeeze every last drop of
+In many cases, these issues can be ignored. However, if you experience
+oscillation during training, or if you want to squeeze every last drop of
 performance out of your model, consider using the "shrinking" procedure of
 [CoJiSr19], which is implemented in the "candidates.py" file.
 
@@ -129,12 +129,12 @@ performance out of your model, consider using the "shrinking" procedure of
         contains the `LagrangianOptimizerV1` and `LagrangianOptimizerV2`
         implementations, which are constrained optimizers implementing the
         Lagrangian approach discussed above (with additive updates to the
-        Lagrange multipliers). You should use these optimizer for problems
-        *without* proxy constraints. It may also work well on problems *with*
+        Lagrange multipliers). You recommend these optimizers for problems
+        *without* proxy constraints. They may also work well on problems *with*
         proxy constraints, but we recommend using a proxy-Lagrangian optimizer,
         instead.
 
-        These optimizers is most similar to Algorithm 3 in Appendix C.3 of
+        These optimizers are most similar to Algorithm 3 in Appendix C.3 of
         [CoJiSr19], which is discussed in Section 3. The two differences are
         that they use proxy constraints (if they're provided) in the update of
         the model parameters, and use wrapped `Optimizer`s, instead of SGD, for
@@ -156,10 +156,11 @@ performance out of your model, consider using the "shrinking" procedure of
 
     *   [subsettable_context.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/subsettable_context.py):
         contains the `rate_context` function, which takes a `Tensor` of
-        predictions (i.e. the output of a TensorFlow model, through which
-        gradients can be propagated), and optionally `Tensor`s of labels and
-        weights, and returns an object representing a (subset of a) minibatch on
-        which one may calculate rates.
+        predictions (or, in eager mode, a nullary function returning a `Tensor`,
+        i.e. the output of a TensorFlow model, through which gradients can be
+        propagated), and optionally `Tensor`s of labels and weights, and returns
+        an object representing a (subset of a) minibatch on which one may
+        calculate rates.
 
         The related `split_rate_context` function takes *two* `Tensor`s of
         predictions, labels and weights, the first for the "penalty" portion of
@@ -181,9 +182,9 @@ performance out of your model, consider using the "shrinking" procedure of
 
     *   [binary_rates.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/binary_rates.py):
         contains functions for constructing rates from contexts. These rates are
-        the "heart" of this library, and can then be combined into more
-        complicated expressions using python arithmetic operators, or into
-        constraints using comparison operators.
+        the "heart" of this library, and can be combined into more complicated
+        expressions using python arithmetic operators, or into constraints using
+        comparison operators.
 
     *   [operations.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/operations.py):
         contains functions for manipulating rate expressions, including
@@ -285,7 +286,7 @@ are two ways to proceed:
     rates.
 
 Here, we'll only consider the first of these options. To see how to use the
-second option, please see
+second option, please refer to
 [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb).
 
 ### Rate helpers
@@ -352,10 +353,10 @@ problems *with* proxy constraints. Since this problem contains proxy
 constraints, we use the `ProxyLagrangianOptimizerV2`.
 
 For this problem, the constraint is fairly easy to satisfy, so we can use the
-same "inner" optimizer (an `AdagradOptimizer` with a learning rate of 1) for
+same "inner" optimizer (an Adagrad optimizer with a learning rate of 1) for
 optimization of both the model parameters (`weights` and `threshold`), and the
 internal parameters associated with the constraints (these are the analogues of
-the Lagrange multipliers used by the `ProxyLagrangianOptimizerV2`). For more
+the Lagrange multipliers used by the proxy-Lagrangian formulation). For more
 difficult problems, it will often be necessary to use different optimizers, with
 different learning rates (presumably found via a hyperparameter search): to
 accomplish this, pass *both* the `optimizer` and `constraint_optimizer`
