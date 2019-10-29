@@ -41,7 +41,7 @@ def binary_cross_entropy_loss(predictions):
   return np.log(1 + np.exp(predictions))
 
 
-# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+# @run_all_tests_in_graph_and_eager_modes
 class LossTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `Loss` classes."""
 

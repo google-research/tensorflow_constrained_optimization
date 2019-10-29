@@ -31,7 +31,7 @@ from tensorflow_constrained_optimization.python.rates import predicate
 from tensorflow_constrained_optimization.python.rates import term
 
 
-# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+# @run_all_tests_in_graph_and_eager_modes
 class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `_RatioWeights` and `Term` classes."""
 

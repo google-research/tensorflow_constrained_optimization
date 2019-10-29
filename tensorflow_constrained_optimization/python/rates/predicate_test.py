@@ -26,7 +26,7 @@ from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import predicate
 
 
-# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+# @run_all_tests_in_graph_and_eager_modes
 class PredicateTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for helper functions in predicate.py."""
 

@@ -30,7 +30,7 @@ from tensorflow_constrained_optimization.python.rates import rate_minimization_p
 from tensorflow_constrained_optimization.python.rates import subsettable_context
 
 
-# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+# @run_all_tests_in_graph_and_eager_modes
 class RateMinimizationProblemTest(
     graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `RateMinimizationProblem` class."""

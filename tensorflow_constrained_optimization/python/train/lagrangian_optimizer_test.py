@@ -27,7 +27,7 @@ from tensorflow_constrained_optimization.python.train import lagrangian_optimize
 from tensorflow_constrained_optimization.python.train import test_util
 
 
-# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+# @run_all_tests_in_graph_and_eager_modes
 class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests the Lagrangian formulation and associated helper functions."""
 

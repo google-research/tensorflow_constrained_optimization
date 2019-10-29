@@ -184,7 +184,7 @@ def find_zeros_of_functions(size, evaluate_fn, epsilon=1e-6):
   return 0.5 * (lower_bounds + upper_bounds)
 
 
-# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+# @run_all_tests_in_graph_and_eager_modes
 class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for rate-constructing functions."""
 

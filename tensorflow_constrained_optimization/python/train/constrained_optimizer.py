@@ -396,37 +396,43 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
     if self._constraint_optimizer is not None:
       self._constraint_optimizer._prepare()
 
-  def _apply_dense(self, gradient, variable):
+  def _apply_dense(self, gradient, variable, *args, **kwargs):
     assert variable is not None
     if (self._constraint_optimizer is not None and
         variable == self._formulation.state):
-      return self._constraint_optimizer._apply_dense(gradient, variable)
-    return self._optimizer._apply_dense(gradient, variable)
+      return self._constraint_optimizer._apply_dense(gradient, variable, *args,
+                                                     **kwargs)
+    return self._optimizer._apply_dense(gradient, variable, *args, **kwargs)
 
-  def _apply_sparse(self, gradient, variable):
+  def _apply_sparse(self, gradient, variable, *args, **kwargs):
     assert variable is not None
     if (self._constraint_optimizer is not None and
         variable == self._formulation.state):
-      return self._constraint_optimizer._apply_sparse(gradient, variable)
-    return self._optimizer._apply_sparse(gradient, variable)
+      return self._constraint_optimizer._apply_sparse(gradient, variable, *args,
+                                                      **kwargs)
+    return self._optimizer._apply_sparse(gradient, variable, *args, **kwargs)
 
-  def _resource_apply_dense(self, gradient, handle):
+  def _resource_apply_dense(self, gradient, handle, *args, **kwargs):
     assert handle is not None
     # TODO: is it safe to compare variables and handles? It works in
     # the tests, but will it *always* work?
     if (self._constraint_optimizer is not None and
         handle == self._formulation.state):
-      return self._constraint_optimizer._resource_apply_dense(gradient, handle)
-    return self._optimizer._resource_apply_dense(gradient, handle)
+      return self._constraint_optimizer._resource_apply_dense(
+          gradient, handle, *args, **kwargs)
+    return self._optimizer._resource_apply_dense(gradient, handle, *args,
+                                                 **kwargs)
 
-  def _resource_apply_sparse(self, gradient, handle):
+  def _resource_apply_sparse(self, gradient, handle, *args, **kwargs):
     assert handle is not None
     # TODO: is it safe to compare variables and handles? It works in
     # the tests, but will it *always* work?
     if (self._constraint_optimizer is not None and
         handle == self._formulation.state):
-      return self._constraint_optimizer._resource_apply_sparse(gradient, handle)
-    return self._optimizer._resource_apply_sparse(gradient, handle)
+      return self._constraint_optimizer._resource_apply_sparse(
+          gradient, handle, *args, **kwargs)
+    return self._optimizer._resource_apply_sparse(gradient, handle, *args,
+                                                  **kwargs)
 
   # pylint: enable=protected-access
 
