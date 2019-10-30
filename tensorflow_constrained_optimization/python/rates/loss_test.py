@@ -36,8 +36,14 @@ def binary_hinge_loss(margin):
   return lambda predictions: np.maximum(0.0, margin + predictions)
 
 
-def binary_cross_entropy_loss(predictions):
-  """Expected binary classification cross_entropy loss."""
+def binary_softmax_loss(predictions):
+  """Expected binary classification softmax loss."""
+  numerator = np.exp(predictions)
+  return numerator / (1 + numerator)
+
+
+def binary_softmax_cross_entropy_loss(predictions):
+  """Expected binary classification softmax cross-entropy loss."""
   return np.log(1 + np.exp(predictions))
 
 
@@ -139,8 +145,12 @@ class LossTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       self._binary_loss_helper(
           binary_hinge_loss(margin), loss.HingeLoss(margin))
 
-  def test_binary_cross_entropy_loss(self):
-    self._binary_loss_helper(binary_cross_entropy_loss, loss.CrossEntropyLoss())
+  def test_binary_softmax_loss(self):
+    self._binary_loss_helper(binary_softmax_loss, loss.SoftmaxLoss())
+
+  def test_binary_softmax_cross_entropy_loss(self):
+    self._binary_loss_helper(binary_softmax_cross_entropy_loss,
+                             loss.SoftmaxCrossEntropyLoss())
 
 
 if __name__ == "__main__":
