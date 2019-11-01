@@ -362,7 +362,7 @@ class _RatioWeights(helpers.RateObject):
       running_averages = deferred_tensor.DeferredVariable(
           [1.0, 1.0],
           trainable=False,
-          name="running_average_sum_and_count",
+          name="tfco_running_average_sum_and_count",
           dtype=running_dtype,
           update_ops_fn=update_ops_fn)
 

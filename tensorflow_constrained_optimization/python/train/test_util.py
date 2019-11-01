@@ -54,15 +54,15 @@ class ConstantMinimizationProblem(
 
   @property
   def num_constraints(self):
-    constraints_shape = self._constraints.shape.dims
-    assert constraints_shape is not None
-    assert all([dim.value is not None for dim in constraints_shape])
+    constraints_dims = self._constraints.shape.dims
+    assert constraints_dims is not None
+    assert all([dim.value is not None for dim in constraints_dims])
 
-    if not constraints_shape:
+    if not constraints_dims:
       return 0
 
     size = 1
-    for ii in constraints_shape:
+    for ii in constraints_dims:
       size *= ii.value
     return int(size)
 

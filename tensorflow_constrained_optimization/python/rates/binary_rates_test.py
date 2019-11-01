@@ -619,7 +619,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     ratio_bounds = None
     for variable in variables:
       tensor = variable(memoizer)
-      if tensor.name.startswith("ratio_bounds"):
+      if tensor.name.startswith("tfco_ratio_bounds"):
         self.assertIsNone(ratio_bounds)
         ratio_bounds = tensor
     self.assertIsNotNone(ratio_bounds)
@@ -784,7 +784,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     ratio_bounds = None
     for variable in variables:
       tensor = variable(memoizer)
-      if tensor.name.startswith("ratio_bounds"):
+      if tensor.name.startswith("tfco_ratio_bounds"):
         self.assertIsNone(ratio_bounds)
         ratio_bounds = tensor
     self.assertIsNotNone(ratio_bounds)
@@ -903,7 +903,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     roc_auc_thresholds = None
     for variable in variables:
       tensor = variable(memoizer)
-      if tensor.name.startswith("roc_auc_thresholds"):
+      if tensor.name.startswith("tfco_roc_auc_thresholds"):
         self.assertIsNone(roc_auc_thresholds)
         roc_auc_thresholds = tensor
     self.assertIsNotNone(roc_auc_thresholds)

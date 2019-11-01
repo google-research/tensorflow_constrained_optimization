@@ -69,16 +69,15 @@ def _project_multipliers_wrt_euclidean_norm(multipliers, radius):
   """
   if not multipliers.dtype.is_floating:
     raise TypeError("multipliers must have a floating-point dtype")
-  multipliers_shape = multipliers.shape.dims
-  if multipliers_shape is None:
-    raise ValueError("multipliers must have known shape")
-  if len(multipliers_shape) != 1:
-    raise ValueError(
-        "multipliers must be one dimensional (instead is %d-dimensional)" %
-        len(multipliers_shape))
-  dimension = multipliers_shape[0].value
+  multipliers_dims = multipliers.shape.dims
+  if multipliers_dims is None:
+    raise ValueError("multipliers must have a known rank")
+  if len(multipliers_dims) != 1:
+    raise ValueError("multipliers must be rank 1 (it is rank %d)" %
+                     len(multipliers_dims))
+  dimension = multipliers_dims[0].value
   if dimension is None:
-    raise ValueError("multipliers must have fully-known shape")
+    raise ValueError("multipliers must have a fully-known shape")
 
   def while_loop_condition(iteration, multipliers, inactive, old_inactive):
     """Returns false if the while loop should terminate."""
@@ -172,18 +171,17 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
     #
     # FUTURE WORK: make the dtype a parameter.
     if self._multipliers is not None:
-      dims = self._multipliers.shape.dims
-
       # We created the internal state below, and it should be impossible for it
       # to have an unknown or non-one-dimensional shape.
-      assert dims is not None
-      assert len(dims) == 1
+      multipliers_dims = self._multipliers.shape.dims
+      assert multipliers_dims is not None
+      assert len(multipliers_dims) == 1
 
       # You can use this optimizer on multiple different problems (sharing the
       # Lagrange multipliers between them), but only if they have the same
       # number of constraints, and therefore the same number of Lagrange
       # multipliers.
-      if dims[0].value != num_constraints:
+      if multipliers_dims[0].value != num_constraints:
         raise RuntimeError(
             "if you use the same Lagrangian optimizer on multiple problems, "
             "then they must have the same number of constraints, so that the "
@@ -194,7 +192,7 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
       self._multipliers = tf.compat.v2.Variable(
           initial_multipliers,
           trainable=True,
-          name="lagrange_multipliers",
+          name="tfco_lagrange_multipliers",
           dtype=tf.float32,
           constraint=self._project_multipliers)
 
@@ -213,7 +211,7 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
         minimize.
 
     Returns:
-      The proxy-Lagrangian loss function.
+      The Lagrangian loss function.
     """
     # This function returns both the value of the Lagrangian, and its gradients
     # w.r.t. the contents of the constrained minimization problem (objective,

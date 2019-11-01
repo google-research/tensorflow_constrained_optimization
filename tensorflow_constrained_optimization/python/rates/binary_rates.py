@@ -251,7 +251,7 @@ def _ratio(numerator_expression, denominator_expression, lower_bound,
   # use float32 with auto_cast=True.
   ratio_bounds = deferred_tensor.DeferredVariable([0.0, 1.0],
                                                   trainable=True,
-                                                  name="ratio_bounds",
+                                                  name="tfco_ratio_bounds",
                                                   dtype=tf.float32,
                                                   update_ops_fn=update_ops_fn,
                                                   auto_cast=True)
@@ -1195,7 +1195,7 @@ def _roc_auc(context, bins, include_threshold, lower_bound, upper_bound,
   thresholds = deferred_tensor.DeferredVariable(
       np.zeros((bins,)),
       trainable=True,
-      name="roc_auc_thresholds",
+      name="tfco_roc_auc_thresholds",
       dtype=tf.float32,
       constraint=constraint,
       auto_cast=True)
@@ -1437,7 +1437,7 @@ def _recall_at_precision(context, precision_target, include_threshold,
     threshold = deferred_tensor.DeferredVariable(
         0.0,
         trainable=True,
-        name="recall_at_precision_threshold",
+        name="tfco_recall_at_precision_threshold",
         dtype=tf.float32,
         auto_cast=True)
     extra_variables = [threshold]
@@ -1727,7 +1727,7 @@ def _inverse_precision_at_recall(context, recall_target, include_threshold,
     threshold = deferred_tensor.DeferredVariable(
         0.0,
         trainable=True,
-        name="inverse_precision_at_recall_threshold",
+        name="tfco_inverse_precision_at_recall_threshold",
         dtype=tf.float32,
         auto_cast=True)
     extra_variables = [threshold]
@@ -2160,14 +2160,14 @@ def precision_at_recall_lower_bound(
     threshold = deferred_tensor.DeferredVariable(
         0.0,
         trainable=True,
-        name="precision_at_recall_threshold",
+        name="tfco_precision_at_recall_threshold",
         dtype=tf.float32,
         auto_cast=True)
     extra_variables.append(threshold)
   slack = deferred_tensor.DeferredVariable(
       0.0,
       trainable=True,
-      name="precision_at_recall_slack",
+      name="tfco_precision_at_recall_slack",
       dtype=tf.float32,
       constraint=lambda tensor: tf.maximum(0.0, tensor),
       auto_cast=True)
@@ -2251,14 +2251,14 @@ def precision_at_recall_upper_bound(
     threshold = deferred_tensor.DeferredVariable(
         0.0,
         trainable=True,
-        name="precision_at_recall_threshold",
+        name="tfco_precision_at_recall_threshold",
         dtype=tf.float32,
         auto_cast=True)
     extra_variables.append(threshold)
   slack = deferred_tensor.DeferredVariable(
       0.0,
       trainable=True,
-      name="precision_at_recall_slack",
+      name="tfco_precision_at_recall_slack",
       dtype=tf.float32,
       constraint=lambda tensor: tf.maximum(0.0, tensor),
       auto_cast=True)
@@ -2344,14 +2344,14 @@ def _pr_auc(context, bins, include_threshold, lower_bound, upper_bound,
   thresholds = deferred_tensor.DeferredVariable(
       np.zeros((bins,)),
       trainable=True,
-      name="pr_auc_thresholds",
+      name="tfco_pr_auc_thresholds",
       dtype=tf.float32,
       constraint=constraint,
       auto_cast=True)
   slacks = deferred_tensor.DeferredVariable(
       np.zeros((bins,)),
       trainable=True,
-      name="pr_auc_slacks",
+      name="tfco_pr_auc_slacks",
       dtype=tf.float32,
       constraint=lambda tensor: tf.maximum(0.0, tensor),
       auto_cast=True)
