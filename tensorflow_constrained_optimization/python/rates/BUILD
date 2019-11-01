@@ -179,6 +179,7 @@ py_test(
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )
 
@@ -191,6 +192,7 @@ py_test(
         ":deferred_tensor",
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )
 
@@ -203,6 +205,7 @@ py_test(
         ":predicate",
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )
 
@@ -216,6 +219,7 @@ py_test(
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )
 
@@ -233,6 +237,7 @@ py_test(
         # six dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )
 
@@ -251,6 +256,7 @@ py_test(
         # six dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )
 
@@ -266,6 +272,7 @@ py_test(
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )
 
@@ -278,6 +285,7 @@ py_test(
         ":operations",
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )
 
@@ -296,6 +304,7 @@ py_test(
         # six dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )
 
@@ -312,5 +321,6 @@ py_test(
         # six dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )

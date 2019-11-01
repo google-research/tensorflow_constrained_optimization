@@ -30,6 +30,7 @@ from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import loss
 from tensorflow_constrained_optimization.python.rates import predicate
 from tensorflow_constrained_optimization.python.rates import term
+# Placeholder for internal import.
 
 
 # @run_all_tests_in_graph_and_eager_modes

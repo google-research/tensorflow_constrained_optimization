@@ -30,6 +30,7 @@ from tensorflow_constrained_optimization.python.rates import binary_rates
 from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import subsettable_context
+# Placeholder for internal import.
 
 
 def associate_functions_with_variables(size, evaluate_fn):

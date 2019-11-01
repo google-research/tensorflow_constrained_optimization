@@ -24,6 +24,7 @@ import tensorflow as tf
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
+# Placeholder for internal import.
 
 
 # @run_all_tests_in_graph_and_eager_modes

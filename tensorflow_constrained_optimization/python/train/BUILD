@@ -74,6 +74,7 @@ py_test(
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )
 
@@ -88,5 +89,6 @@ py_test(
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
     ],
 )

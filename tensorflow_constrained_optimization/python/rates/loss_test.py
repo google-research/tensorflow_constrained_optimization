@@ -24,6 +24,7 @@ import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import loss
+# Placeholder for internal import.
 
 
 def binary_zero_one_loss(predictions):
