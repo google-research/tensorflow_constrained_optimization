@@ -15,14 +15,14 @@ specific language governing permissions and limitations under the License.
 
 # TensorFlow Constrained Optimization (TFCO)
 
-TFCO is a library for optimizing inequality-constrained problems in TensorFlow.
-In the most general case, both the objective function and the constraints are
-represented as `Tensor`s, giving users the maximum amount of flexibility in
-specifying their optimization problems. Constructing these `Tensor`s can be
-cumbersome, so we also provide helper functions to make it easy to construct
-constrained optimization problems based on *rates*, i.e. proportions of the
-training data on which some event occurs (e.g. the error rate, true positive
-rate, recall, etc).
+TFCO is a library for optimizing inequality-constrained problems in TensorFlow
+1.14 and later (including TensorFlow 2). In the most general case, both the
+objective function and the constraints are represented as `Tensor`s, giving
+users the maximum amount of flexibility in specifying their optimization
+problems. Constructing these `Tensor`s can be cumbersome, so we also provide
+helper functions to make it easy to construct constrained optimization problems
+based on *rates*, i.e. proportions of the training data on which some event
+occurs (e.g. the error rate, true positive rate, recall, etc).
 
 For full details, motivation, and theoretical results on the approach taken by
 this library, please refer to:
@@ -65,8 +65,8 @@ problems, but this flexibility makes optimization considerably more difficult:
 on a non-convex problem, if one uses the "standard" approach of introducing a
 Lagrange multiplier for each constraint, and then jointly maximizing over the
 Lagrange multipliers and minimizing over the model parameters, then a stable
-stationary point might not even *exist*. Hence, in some cases, oscillation,
-instead of convergence, is inevitable.
+stationary point might not even *exist*. Hence, in such cases, one might
+experience oscillation, instead of convergence.
 
 Thankfully, it turns out that even if, over the course of optimization, no
 *particular* iterate does a good job of minimizing the objective while
