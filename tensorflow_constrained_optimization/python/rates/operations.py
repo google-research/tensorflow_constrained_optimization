@@ -106,7 +106,11 @@ def upper_bound(expressions):
   # we might not know their dtype (e.g. in eager mode), so instead we always use
   # float32 with auto_cast=True.
   bound = deferred_tensor.DeferredVariable(
-      0.0, trainable=True, name="upper_bound", dtype=tf.float32, auto_cast=True)
+      0.0,
+      trainable=True,
+      name="tfco_upper_bound",
+      dtype=tf.float32,
+      auto_cast=True)
 
   bound_basic_expression = basic_expression.BasicExpression(
       terms=[], tensor=bound)
@@ -156,7 +160,11 @@ def lower_bound(expressions):
   # we might not know their dtype (e.g. in eager mode), so instead we always use
   # float32 with auto_cast=True.
   bound = deferred_tensor.DeferredVariable(
-      0.0, trainable=True, name="lower_bound", dtype=tf.float32, auto_cast=True)
+      0.0,
+      trainable=True,
+      name="tfco_lower_bound",
+      dtype=tf.float32,
+      auto_cast=True)
 
   bound_basic_expression = basic_expression.BasicExpression(
       terms=[], tensor=bound)

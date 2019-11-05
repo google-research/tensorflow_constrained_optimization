@@ -59,7 +59,7 @@ def convert_to_1d_tensor(tensor, name=None):
 
   dims = tensor.shape.dims
   if dims is None:
-    raise ValueError("%s must have a known shape" % name)
+    raise ValueError("%s must have a known rank" % name)
 
   # If the Tensor is already rank-1, then return it without wrapping a
   # tf.reshape() around it.
@@ -93,7 +93,7 @@ def get_num_columns_of_2d_tensor(tensor, name="tensor"):
 
   dims = tensor.shape.dims
   if dims is None:
-    raise ValueError("%s must have known shape" % name)
+    raise ValueError("%s must have a known rank" % name)
   if len(dims) != 2:
     raise ValueError("%s must be rank 2 (it is rank %d)" % (name, len(dims)))
 

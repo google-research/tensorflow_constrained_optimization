@@ -24,6 +24,7 @@ import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import loss
+# Placeholder for internal import.
 
 
 def binary_zero_one_loss(predictions):
@@ -36,12 +37,18 @@ def binary_hinge_loss(margin):
   return lambda predictions: np.maximum(0.0, margin + predictions)
 
 
-def binary_cross_entropy_loss(predictions):
-  """Expected binary classification cross_entropy loss."""
+def binary_softmax_loss(predictions):
+  """Expected binary classification softmax loss."""
+  numerator = np.exp(predictions)
+  return numerator / (1 + numerator)
+
+
+def binary_softmax_cross_entropy_loss(predictions):
+  """Expected binary classification softmax cross-entropy loss."""
   return np.log(1 + np.exp(predictions))
 
 
-# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+# @run_all_tests_in_graph_and_eager_modes
 class LossTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `Loss` classes."""
 
@@ -139,8 +146,12 @@ class LossTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       self._binary_loss_helper(
           binary_hinge_loss(margin), loss.HingeLoss(margin))
 
-  def test_binary_cross_entropy_loss(self):
-    self._binary_loss_helper(binary_cross_entropy_loss, loss.CrossEntropyLoss())
+  def test_binary_softmax_loss(self):
+    self._binary_loss_helper(binary_softmax_loss, loss.SoftmaxLoss())
+
+  def test_binary_softmax_cross_entropy_loss(self):
+    self._binary_loss_helper(binary_softmax_cross_entropy_loss,
+                             loss.SoftmaxCrossEntropyLoss())
 
 
 if __name__ == "__main__":

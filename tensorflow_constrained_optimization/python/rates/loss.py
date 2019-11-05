@@ -141,9 +141,13 @@ class BinaryClassificationLoss(Loss):
     approximation. For convex losses, it will typically be a convex (in
     predictions) upper bound.
 
+    You can think of weights[:, 0] as being the per-example costs associated
+    with making a positive prediction, and weights[:, 1] as those for a negative
+    prediction.
+
     Args:
       predictions: a `Tensor` of shape (n,), where n is the number of examples.
-      weights: a `Tensor` of shape (m,2), where m is broadcastable to n. This
+      weights: a `Tensor` of shape (m, 2), where m is broadcastable to n. This
         `Tensor` is *not* necessarily nonnegative.
 
     Returns:
@@ -194,9 +198,13 @@ class ZeroOneLoss(BinaryClassificationLoss):
 
     where 1{} is an indicator function.
 
+    You can think of weights[:, 0] as being the per-example costs associated
+    with making a positive prediction, and weights[:, 1] as those for a negative
+    prediction.
+
     Args:
       predictions: a `Tensor` of shape (n,), where n is the number of examples.
-      weights: a `Tensor` of shape (m,2), where m is broadcastable to n. This
+      weights: a `Tensor` of shape (m, 2), where m is broadcastable to n. This
         `Tensor` is *not* necessarily nonnegative.
 
     Returns:
@@ -210,10 +218,10 @@ class ZeroOneLoss(BinaryClassificationLoss):
         `Tensor` with exactly two columns.
     """
     predictions = _convert_to_binary_classification_predictions(predictions)
-    dtype = predictions.dtype.base_dtype
     columns = helpers.get_num_columns_of_2d_tensor(weights, name="weights")
     if columns != 2:
       raise ValueError("weights must have two columns")
+    dtype = predictions.dtype.base_dtype
 
     positive_weights = tf.cast(weights[:, 0], dtype=dtype)
     negative_weights = tf.cast(weights[:, 1], dtype=dtype)
@@ -269,7 +277,7 @@ class HingeLoss(BinaryClassificationLoss):
     return (type(other) is type(self)) and (self._margin == other.margin)
 
   def evaluate_binary_classification(self, predictions, weights):
-    """Evaluates the zero-one loss on the given predictions.
+    """Evaluates the hinge loss on the given predictions.
 
     Given a rank-1 `Tensor` of predictions with shape (n,), where n is the
     number of examples, and a rank-2 `Tensor` of weights with shape (m, 2),
@@ -285,9 +293,13 @@ class HingeLoss(BinaryClassificationLoss):
     where constant_weights[i] = min{weights[i, 0], weights[i, 1]} contains the
     minimum weights.
 
+    You can think of weights[:, 0] as being the per-example costs associated
+    with making a positive prediction, and weights[:, 1] as those for a negative
+    prediction.
+
     Args:
       predictions: a `Tensor` of shape (n,), where n is the number of examples.
-      weights: a `Tensor` of shape (m,2), where m is broadcastable to n. This
+      weights: a `Tensor` of shape (m, 2), where m is broadcastable to n. This
         `Tensor` is *not* necessarily nonnegative.
 
     Returns:
@@ -301,10 +313,10 @@ class HingeLoss(BinaryClassificationLoss):
         `Tensor` with exactly two columns.
     """
     predictions = _convert_to_binary_classification_predictions(predictions)
-    dtype = predictions.dtype.base_dtype
     columns = helpers.get_num_columns_of_2d_tensor(weights, name="weights")
     if columns != 2:
       raise ValueError("weights must have two columns")
+    dtype = predictions.dtype.base_dtype
     zero = tf.zeros(1, dtype=dtype)
 
     positive_weights = tf.cast(weights[:, 0], dtype=dtype)
@@ -320,20 +332,93 @@ class HingeLoss(BinaryClassificationLoss):
         positive_weights * is_positive + negative_weights * is_negative)
 
 
-class CrossEntropyLoss(BinaryClassificationLoss):
-  """Cross entropy loss.
+class SoftmaxLoss(BinaryClassificationLoss):
+  """Softmax loss.
 
-  The cross entropy loss is subdifferentiable and non-normalized.
+  The softmax loss is subdifferentiable and normalized.
   """
 
   @property
   def is_differentiable(self):
-    """Returns True, since the cross entropy loss is differentiable."""
+    """Returns True, since the softmax loss is differentiable."""
     return True
 
   @property
   def is_normalized(self):
-    """Returns False, since the cross entropy loss is unbounded."""
+    """Returns True, since the softmax loss is an expected zero-one loss."""
+    return True
+
+  def __hash__(self):
+    return hash(type(self))
+
+  def __eq__(self, other):
+    return type(other) is type(self)
+
+  def evaluate_binary_classification(self, predictions, weights):
+    """Evaluates the softmax loss on the given predictions.
+
+    Given a rank-1 `Tensor` of predictions with shape (n,), where n is the
+    number of examples, and a rank-2 `Tensor` of weights with shape (m, 2),
+    where m is broadcastable to n, this method will return a `Tensor` of shape
+    (n,) where the ith element is:
+
+    ```python
+    softmax_loss[i] = (
+      weights[i, 0] * ( exp(predictions[i]) / ( 1 + exp(predictions[i]) ) ) +
+      weights[i, 1] * ( 1 / ( 1 + exp(predictions[i]) ) ) )
+    ```
+
+    where constant_weights[i] = min{weights[i, 0], weights[i, 1]} contains the
+    minimum weights.
+
+    You can think of weights[:, 0] as being the per-example costs associated
+    with making a positive prediction, and weights[:, 1] as those for a negative
+    prediction.
+
+    Args:
+      predictions: a `Tensor` of shape (n,), where n is the number of examples.
+      weights: a `Tensor` of shape (m, 2), where m is broadcastable to n. This
+        `Tensor` is *not* necessarily nonnegative.
+
+    Returns:
+      A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
+      softmax losses for each example.
+
+    Raises:
+      TypeError: if "predictions" is not a floating-point `Tensor`, or "weights"
+        is not a `Tensor`.
+      ValueError: if "predictions" is not rank-1, or "weights" is not a rank-2
+        `Tensor` with exactly two columns.
+    """
+    predictions = _convert_to_binary_classification_predictions(predictions)
+    columns = helpers.get_num_columns_of_2d_tensor(weights, name="weights")
+    if columns != 2:
+      raise ValueError("weights must have two columns")
+    dtype = predictions.dtype.base_dtype
+
+    positive_weights = tf.cast(weights[:, 0], dtype=dtype)
+    negative_weights = tf.cast(weights[:, 1], dtype=dtype)
+
+    is_positive = tf.sigmoid(predictions)
+    is_negative = tf.sigmoid(-predictions)
+
+    return positive_weights * is_positive + negative_weights * is_negative
+
+
+class SoftmaxCrossEntropyLoss(BinaryClassificationLoss):
+  """Softmax cross-entropy loss.
+
+  The softmax cross-entropy loss is subdifferentiable and non-normalized.
+  """
+
+  @property
+  def is_differentiable(self):
+    """Returns True, since the softmax cross-entropy loss is differentiable."""
+    return True
+
+  @property
+  def is_normalized(self):
+    """Returns False, since the softmax cross-entropy loss is unbounded."""
     return False
 
   def __hash__(self):
@@ -343,7 +428,7 @@ class CrossEntropyLoss(BinaryClassificationLoss):
     return type(other) is type(self)
 
   def evaluate_binary_classification(self, predictions, weights):
-    """Evaluates the zero-one loss on the given predictions.
+    """Evaluates the cross-entropy loss on the given predictions.
 
     Given a rank-1 `Tensor` of predictions with shape (n,), where n is the
     number of examples, and a rank-2 `Tensor` of weights with shape (m, 2),
@@ -351,22 +436,26 @@ class CrossEntropyLoss(BinaryClassificationLoss):
     (n,) where the ith element is:
 
     ```python
-    cross_entropy_loss[i] = constant_weights[i] +
+    softmax_cross_entropy_loss[i] = ( constant_weights[i] +
       (weights[i, 0] - constant_weights[i]) * log(1 + exp(predictions[i]) +
-      (weights[i, 1] - constant_weights[i]) * log(1 + exp(-predictions[i])
+      (weights[i, 1] - constant_weights[i]) * log(1 + exp(-predictions[i]) )
     ```
 
     where constant_weights[i] = min{weights[i, 0], weights[i, 1]} contains the
     minimum weights.
 
+    You can think of weights[:, 0] as being the per-example costs associated
+    with making a positive prediction, and weights[:, 1] as those for a negative
+    prediction.
+
     Args:
       predictions: a `Tensor` of shape (n,), where n is the number of examples.
-      weights: a `Tensor` of shape (m,2), where m is broadcastable to n. This
+      weights: a `Tensor` of shape (m, 2), where m is broadcastable to n. This
         `Tensor` is *not* necessarily nonnegative.
 
     Returns:
       A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
-      cross entropy losses for each example.
+      softmax cross-entropy losses for each example.
 
     Raises:
       TypeError: if "predictions" is not a floating-point `Tensor`, or "weights"
@@ -375,10 +464,10 @@ class CrossEntropyLoss(BinaryClassificationLoss):
         `Tensor` with exactly two columns.
     """
     predictions = _convert_to_binary_classification_predictions(predictions)
-    dtype = predictions.dtype.base_dtype
     columns = helpers.get_num_columns_of_2d_tensor(weights, name="weights")
     if columns != 2:
       raise ValueError("weights must have two columns")
+    dtype = predictions.dtype.base_dtype
     zeros = tf.zeros_like(predictions)
 
     positive_weights = tf.cast(weights[:, 0], dtype=dtype)

@@ -26,9 +26,10 @@ from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import expression
+# Placeholder for internal import.
 
 
-# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+# @run_all_tests_in_graph_and_eager_modes
 class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `Expression` class."""
 

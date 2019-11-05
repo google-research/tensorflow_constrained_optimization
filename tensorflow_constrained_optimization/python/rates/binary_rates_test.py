@@ -30,6 +30,7 @@ from tensorflow_constrained_optimization.python.rates import binary_rates
 from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import subsettable_context
+# Placeholder for internal import.
 
 
 def associate_functions_with_variables(size, evaluate_fn):
@@ -184,7 +185,7 @@ def find_zeros_of_functions(size, evaluate_fn, epsilon=1e-6):
   return 0.5 * (lower_bounds + upper_bounds)
 
 
-# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+# @run_all_tests_in_graph_and_eager_modes
 class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for rate-constructing functions."""
 
@@ -619,7 +620,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     ratio_bounds = None
     for variable in variables:
       tensor = variable(memoizer)
-      if tensor.name.startswith("ratio_bounds"):
+      if tensor.name.startswith("tfco_ratio_bounds"):
         self.assertIsNone(ratio_bounds)
         ratio_bounds = tensor
     self.assertIsNotNone(ratio_bounds)
@@ -784,7 +785,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     ratio_bounds = None
     for variable in variables:
       tensor = variable(memoizer)
-      if tensor.name.startswith("ratio_bounds"):
+      if tensor.name.startswith("tfco_ratio_bounds"):
         self.assertIsNone(ratio_bounds)
         ratio_bounds = tensor
     self.assertIsNotNone(ratio_bounds)
@@ -903,7 +904,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     roc_auc_thresholds = None
     for variable in variables:
       tensor = variable(memoizer)
-      if tensor.name.startswith("roc_auc_thresholds"):
+      if tensor.name.startswith("tfco_roc_auc_thresholds"):
         self.assertIsNone(roc_auc_thresholds)
         roc_auc_thresholds = tensor
     self.assertIsNotNone(roc_auc_thresholds)

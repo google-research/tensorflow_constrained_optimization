@@ -47,9 +47,10 @@ from tensorflow_constrained_optimization.python.rates.binary_rates import roc_au
 from tensorflow_constrained_optimization.python.rates.binary_rates import true_negative_rate
 from tensorflow_constrained_optimization.python.rates.binary_rates import true_positive_rate
 from tensorflow_constrained_optimization.python.rates.loss import BinaryClassificationLoss
-from tensorflow_constrained_optimization.python.rates.loss import CrossEntropyLoss
 from tensorflow_constrained_optimization.python.rates.loss import HingeLoss
 from tensorflow_constrained_optimization.python.rates.loss import Loss
+from tensorflow_constrained_optimization.python.rates.loss import SoftmaxCrossEntropyLoss
+from tensorflow_constrained_optimization.python.rates.loss import SoftmaxLoss
 from tensorflow_constrained_optimization.python.rates.loss import ZeroOneLoss
 from tensorflow_constrained_optimization.python.rates.operations import lower_bound
 from tensorflow_constrained_optimization.python.rates.operations import upper_bound

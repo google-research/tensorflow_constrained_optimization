@@ -144,7 +144,7 @@ class RateMinimizationProblem(
     self._global_step = tf.compat.v2.Variable(
         0,
         trainable=False,
-        name="global_step",
+        name="tfco_global_step",
         dtype=tf.int64,
         aggregation=tf.VariableAggregation.ONLY_FIRST_REPLICA)
 

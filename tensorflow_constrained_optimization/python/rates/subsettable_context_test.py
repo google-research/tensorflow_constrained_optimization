@@ -25,6 +25,7 @@ import tensorflow as tf
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import subsettable_context
+# Placeholder for internal import.
 
 
 def create_contexts():
@@ -78,7 +79,7 @@ def create_contexts():
   return context1, context2
 
 
-# @tf.contrib.eager.run_all_tests_in_graph_and_eager_modes
+# @run_all_tests_in_graph_and_eager_modes
 class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   """Tests for `SubsettableContext` class."""
 

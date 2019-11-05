@@ -146,12 +146,12 @@ def _project_distribution_wrt_euclidean_norm(distribution):
   """
   if not distribution.dtype.is_floating:
     raise TypeError("distribution must have a floating-point dtype")
-  distribution_shape = distribution.shape.dims
-  if distribution_shape is None:
-    raise ValueError("distribution must have known shape")
-  dimension = distribution_shape[0].value
+  distribution_dims = distribution.shape.dims
+  if distribution_dims is None:
+    raise ValueError("distribution must have a known rank")
+  dimension = distribution_dims[0].value
   if dimension is None:
-    raise ValueError("distribution must have fully-known shape")
+    raise ValueError("distribution must have a known first dimension")
 
   def while_loop_condition(iteration, distribution, inactive, old_inactive):
     """Returns false if the while loop should terminate."""
@@ -334,9 +334,9 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
 
       # Gets the dimension of the state (num_constraints + 1)--the assertions
       # are of things that cannot possibly fail.
-      state_shape = state.shape.dims
-      assert state_shape is not None
-      dimension = state_shape[0].value
+      state_dims = state.shape.dims
+      assert state_dims is not None
+      dimension = state_dims[0].value
       assert dimension is not None
 
       minimum_log_multiplier = math.log(self._minimum_multiplier_radius /
@@ -361,20 +361,19 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
     dimension = num_constraints + 1
 
     if self._state is not None:
-      dims = self._state.shape.dims
-
       # We created the internal state below, and it should be impossible for it
       # to have an unknown shape or the wrong rank.
-      assert dims is not None
+      state_dims = self._state.shape.dims
+      assert state_dims is not None
       if self._regret_type == _EXTERNAL_REGRET_TYPE:
-        assert len(dims) == 1
+        assert len(state_dims) == 1
       else:
-        assert len(dims) == 2
+        assert len(state_dims) == 2
 
       # You can use this optimizer on multiple different problems (sharing the
       # internal state between them), but only if they have the same number of
       # constraints, and therefore the same internal state shape.
-      if any(dim.value != dimension for dim in dims):
+      if any(dim.value != dimension for dim in state_dims):
         raise RuntimeError(
             "if you use the same proxy-Lagrangian optimizer on multiple "
             "problems, then they must have the same number of constraints, so "
@@ -429,7 +428,7 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
       self._state = tf.compat.v2.Variable(
           initial_state,
           trainable=True,
-          name="proxy_lagrangian_state",
+          name="tfco_proxy_lagrangian_state",
           dtype=tf.float32,
           constraint=self._project_state)
 
@@ -491,9 +490,10 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
       # constructor.
       assert self._regret_type == _SWAP_REGRET_TYPE
 
-      return tf.matmul(
-          tf.expand_dims(tf.cast(zero_and_constraints, distribution.dtype), 1),
-          tf.expand_dims(distribution, 0))
+      return tf.tensordot(
+          tf.cast(zero_and_constraints, distribution.dtype),
+          distribution,
+          axes=0)
 
   def get_loss_fn(self, minimization_problem):
     """Returns the proxy-Lagrangian loss function.
@@ -535,7 +535,8 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
           tf.cast(
               distribution,
               dtype=objective_and_proxy_constraints.dtype.base_dtype),
-          objective_and_proxy_constraints, 1)
+          objective_and_proxy_constraints,
+          axes=1)
 
       wrt_objective = tf.cast(distribution[0], dtype=objective.dtype.base_dtype)
       wrt_proxy_constraints = tf.cast(
