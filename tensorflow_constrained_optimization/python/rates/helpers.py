@@ -89,7 +89,7 @@ def get_num_columns_of_2d_tensor(tensor, name="tensor"):
       columns.
   """
   if not tf.is_tensor(tensor):
-    raise TypeError("%s must be a tensor" % name)
+    raise TypeError("%s must be a Tensor" % name)
 
   dims = tensor.shape.dims
   if dims is None:
