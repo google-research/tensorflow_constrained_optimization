@@ -144,6 +144,7 @@ py_library(
         ":loss",
         ":subsettable_context",
         ":term",
+        # numpy dep,
         # six dep,
         # tensorflow dep,
     ],

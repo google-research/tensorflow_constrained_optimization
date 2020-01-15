@@ -346,7 +346,7 @@ class SubsettableContext(helpers.RateObject):
 
     Args:
       penalty_predicate: boolean `Tensor` with the size as the underlying
-        predictions tensor (or broadcastable to it), each element of which
+        predictions `Tensor` (or broadcastable to it), each element of which
         indicates whether the corresponding example should be included in the
         subset.
       constraint_predicate: optional boolean `Tensor`, playing the same role as
