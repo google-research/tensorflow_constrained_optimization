@@ -493,6 +493,11 @@ def true_positive_rate(context,
   weights, and $$c_i$$ is an indicator for which examples to include in the rate
   (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
 
+  Unlike the "true_positive_proportion", which is the number of
+  positively-labeled examples on which we make a positive prediction, divided by
+  the total number of examples, this function instead divides only by the number
+  of *positively-labeled* examples.
+
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
       rate. This context *must* contain labels.
@@ -540,6 +545,11 @@ def false_negative_rate(context,
   where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
   weights, and $$c_i$$ is an indicator for which examples to include in the rate
   (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
+
+  Unlike the "false_negative_proportion", which is the number of
+  positively-labeled examples on which we make a negative prediction, divided by
+  the total number of examples, this function instead divides only by the number
+  of *positively-labeled* examples.
 
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
@@ -589,6 +599,11 @@ def false_positive_rate(context,
   weights, and $$c_i$$ is an indicator for which examples to include in the rate
   (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
 
+  Unlike the "false_positive_proportion", which is the number of
+  negatively-labeled examples on which we make a positive prediction, divided by
+  the total number of examples, this function instead divides only by the number
+  of *negatively-labeled* examples.
+
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
       rate. This context *must* contain labels.
@@ -637,6 +652,11 @@ def true_negative_rate(context,
   weights, and $$c_i$$ is an indicator for which examples to include in the rate
   (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
 
+  Unlike the "true_negative_proportion", which is the number of
+  negatively-labeled examples on which we make a negative prediction, divided by
+  the total number of examples, this function instead divides only by the number
+  of *negatively-labeled* examples.
+
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
       rate. This context *must* contain labels.
@@ -666,6 +686,218 @@ def true_negative_rate(context,
       negative_coefficient=1.0,
       numerator_context=negative_context,
       denominator_context=negative_context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def true_positive_proportion(context,
+                             penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                             constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing a true positive proportion.
+
+  The result of this function represents:
+
+  $$\\mathrm{true\_positive\_proportion} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
+  }{ \sum_i w_i c_i }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
+
+  Unlike the "true_positive_rate", which is the number of positively-labeled
+  examples on which we make a positive prediction, divided by the number of
+  positively-labeled examples, this function instead divides by the total number
+  of examples.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing true_positive_proportion (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("true_positive_proportion requires a context with labels")
+
+  positive_context = context.subset(raw_context.penalty_labels > 0,
+                                    raw_context.constraint_labels > 0)
+
+  return _binary_classification_rate(
+      positive_coefficient=1.0,
+      numerator_context=positive_context,
+      denominator_context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def false_negative_proportion(context,
+                              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing a false negative proportion.
+
+  The result of this function represents:
+
+  $$\\mathrm{false\_negative\_proportion} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i \le 0\}
+  }{ \sum_i w_i c_i }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
+
+  Unlike the "false_negative_rate", which is the number of positively-labeled
+  examples on which we make a negative prediction, divided by the number of
+  positively-labeled examples, this function instead divides by the total number
+  of examples.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing false_negative_proportion (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("false_negative_proportion requires a context with labels")
+
+  positive_context = context.subset(raw_context.penalty_labels > 0,
+                                    raw_context.constraint_labels > 0)
+
+  return _binary_classification_rate(
+      negative_coefficient=1.0,
+      numerator_context=positive_context,
+      denominator_context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def false_positive_proportion(context,
+                              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing a false positive proportion.
+
+  The result of this function represents:
+
+  $$\\mathrm{false\_positive\_proportion} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i \le 0 \\wedge z_i > 0\}
+  }{ \sum_i w_i c_i }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
+
+  Unlike the "false_positive_rate", which is the number of negatively-labeled
+  examples on which we make a positive prediction, divided by the number of
+  negatively-labeled examples, this function instead divides by the total number
+  of examples.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing false_positive_proportion (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("false_positive_proportion requires a context with labels")
+
+  negative_context = context.subset(raw_context.penalty_labels <= 0,
+                                    raw_context.constraint_labels <= 0)
+
+  return _binary_classification_rate(
+      positive_coefficient=1.0,
+      numerator_context=negative_context,
+      denominator_context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def true_negative_proportion(context,
+                             penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                             constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  r"""Creates an `Expression` representing a true negative proportion.
+
+  The result of this function represents:
+
+  $$\\mathrm{true\_negative\_proportion} = \\frac{
+    \sum_i w_i c_i \\mathbf{1}\{y_i \le 0 \\wedge z_i \le 0\}
+  }{ \sum_i w_i c_i }$$
+
+  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
+  weights, and $$c_i$$ is an indicator for which examples to include in the rate
+  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
+
+  Unlike the "true_negative_rate", which is the number of negatively-labeled
+  examples on which we make a negative prediction, divided by the number of
+  negatively-labeled examples, this function instead divides by the total number
+  of examples.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. This context *must* contain labels.
+    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
+      to use when calculating the "penalty" approximation to the rate.
+    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
+      differentiable) loss function to use when calculating the "constraint"
+      approximation to the rate.
+
+  Returns:
+    An `Expression` representing true_negative_proportion (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, or either loss is not
+      a BinaryClassificationLoss.
+    ValueError: if the context doesn't contain labels.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("true_negative_proportion requires a context with labels")
+
+  negative_context = context.subset(raw_context.penalty_labels <= 0,
+                                    raw_context.constraint_labels <= 0)
+
+  return _binary_classification_rate(
+      negative_coefficient=1.0,
+      numerator_context=negative_context,
+      denominator_context=context,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
