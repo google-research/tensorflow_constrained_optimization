@@ -118,7 +118,7 @@ def upper_bound(expressions):
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression,
       extra_variables=[bound])
-  extra_constraints = set(ee <= bound_expression for ee in set(expressions))
+  extra_constraints = [ee <= bound_expression for ee in expressions]
   return expression.Expression(
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression,
@@ -172,7 +172,7 @@ def lower_bound(expressions):
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression,
       extra_variables=[bound])
-  extra_constraints = set(ee >= bound_expression for ee in set(expressions))
+  extra_constraints = [ee >= bound_expression for ee in expressions]
   return expression.Expression(
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression,

@@ -17,7 +17,7 @@
 
 In its simplest form, a `ConstrainedMinimizationProblem` consists of an
 objective function to minimize, and a set of constraint functions that are
-constrained to be nonpositive, for example:
+constrained to be non-positive, for example:
 
   minimize f(x)
   subject to g_i(x) <= 0 for i in {1,2,...,m}
@@ -40,7 +40,7 @@ class ConstrainedMinimizationProblem(object):
 
   A `ConstrainedMinimizationProblem` consists of an objective function to
   minimize, and a set of constraint functions that are constrained to be
-  nonpositive.
+  non-positive.
 
   In addition to the constraint functions, there may (optionally) be proxy
   constraint functions: a constrained optimizer will attempt to penalize these

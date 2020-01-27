@@ -271,14 +271,14 @@ def _ratio(numerator_expression, denominator_expression, lower_bound,
       constraint_expression=denominator_bound_basic_expression,
       extra_variables=extra_variables)
 
-  extra_constraints = set()
+  extra_constraints = []
   if lower_bound:
-    extra_constraints.add(numerator_bound_expression <= numerator_expression)
-    extra_constraints.add(
+    extra_constraints.append(numerator_bound_expression <= numerator_expression)
+    extra_constraints.append(
         denominator_expression <= denominator_bound_expression)
   if upper_bound:
-    extra_constraints.add(numerator_expression <= numerator_bound_expression)
-    extra_constraints.add(
+    extra_constraints.append(numerator_expression <= numerator_bound_expression)
+    extra_constraints.append(
         denominator_bound_expression <= denominator_expression)
 
   ratio_basic_expression = basic_expression.BasicExpression(
@@ -1108,7 +1108,7 @@ def f_score_ratio(context,
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
       rate. This context *must* contain labels.
-    beta: nonnegative float, the beta parameter to the f-score. If beta=0, then
+    beta: non-negative float, the beta parameter to the f-score. If beta=0, then
       the result is precision, and if beta=1 (the default), then the result is
       the F1-score.
     penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
@@ -1132,7 +1132,7 @@ def f_score_ratio(context,
     raise ValueError("f_score requires a context with labels")
 
   if beta < 0.0:
-    raise ValueError("beta parameter to f_score must be nonnegative")
+    raise ValueError("beta parameter to f_score must be non-negative")
   if beta <= 0.0:
     # The F0-score is just the precision, and representing it as such results
     # in a slightly simpler expression.
@@ -1196,7 +1196,7 @@ def f_score_lower_bound(context,
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
       rate. This context *must* contain labels.
-    beta: nonnegative float, the beta parameter to the f-score. If beta=0, then
+    beta: non-negative float, the beta parameter to the f-score. If beta=0, then
       the result is precision, and if beta=1 (the default), then the result is
       the F1-score.
     penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
@@ -1252,7 +1252,7 @@ def f_score_upper_bound(context,
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
       rate. This context *must* contain labels.
-    beta: nonnegative float, the beta parameter to the f-score. If beta=0, then
+    beta: non-negative float, the beta parameter to the f-score. If beta=0, then
       the result is precision, and if beta=1 (the default), then the result is
       the F1-score.
     penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
@@ -1407,7 +1407,7 @@ def _roc_auc(context, bins, include_threshold, lower_bound, upper_bound,
     TypeError: if the context is not a SubsettableContext, the number of bins is
       not an integer, or either loss is not a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels, the number of bins is
-      nonpositive, both lower_bound and upper_bound are `False`, or the
+      non-positive, both lower_bound and upper_bound are `False`, or the
       constraint_loss is not normalized.
   """
   if not isinstance(bins, numbers.Integral):
@@ -1503,7 +1503,7 @@ def roc_auc_lower_bound(context,
     TypeError: if the context is not a SubsettableContext, the number of bins is
       not an integer, or either loss is not a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels, the number of bins is
-      nonpositive, or the constraint_loss is not normalized.
+      non-positive, or the constraint_loss is not normalized.
   """
   return _roc_auc(
       context,
@@ -1566,7 +1566,7 @@ def roc_auc_upper_bound(context,
     TypeError: if the context is not a SubsettableContext, the number of bins is
       not an integer, or either loss is not a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels, the number of bins is
-      nonpositive, or the constraint_loss is not normalized.
+      non-positive, or the constraint_loss is not normalized.
   """
   return _roc_auc(
       context,
@@ -2556,7 +2556,7 @@ def _pr_auc(context, bins, include_threshold, lower_bound, upper_bound,
     TypeError: if the context is not a SubsettableContext, the number of bins is
       not an integer, or either loss is not a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels, the number of bins is
-      nonpositive, both lower_bound and upper_bound are `False`, or the
+      non-positive, both lower_bound and upper_bound are `False`, or the
       constraint_loss is not normalized.
   """
   if not isinstance(bins, numbers.Integral):
@@ -2660,7 +2660,7 @@ def pr_auc_lower_bound(context,
     TypeError: if the context is not a SubsettableContext, the number of bins is
       not an integer, or either loss is not a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels, the number of bins is
-      nonpositive, or the constraint_loss is not normalized.
+      non-positive, or the constraint_loss is not normalized.
   """
   return _pr_auc(
       context,
@@ -2723,7 +2723,7 @@ def pr_auc_upper_bound(context,
     TypeError: if the context is not a SubsettableContext, the number of bins is
       not an integer, or either loss is not a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels, the number of bins is
-      nonpositive, or the constraint_loss is not normalized.
+      non-positive, or the constraint_loss is not normalized.
   """
   return _pr_auc(
       context,

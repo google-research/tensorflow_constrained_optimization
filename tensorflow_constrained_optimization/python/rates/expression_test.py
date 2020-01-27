@@ -145,12 +145,10 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     expression23 = expression2 - expression3 / 1.3
     expression123 = -expression12 + 0.6 * expression23
 
-    self.assertEqual(expression12.extra_constraints,
-                     set([constraint1, constraint2]))
-    self.assertEqual(expression23.extra_constraints,
-                     set([constraint2, constraint3]))
+    self.assertEqual(expression12.extra_constraints, [constraint1, constraint2])
+    self.assertEqual(expression23.extra_constraints, [constraint2, constraint3])
     self.assertEqual(expression123.extra_constraints,
-                     set([constraint1, constraint2, constraint3]))
+                     [constraint1, constraint2, constraint3])
 
 
 if __name__ == "__main__":

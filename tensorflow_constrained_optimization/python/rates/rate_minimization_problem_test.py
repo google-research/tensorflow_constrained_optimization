@@ -129,9 +129,9 @@ class RateMinimizationProblemTest(
     # Construct the objective and three constraints. These are as simple as
     # possible, since rates and constraints are tested elsewhere.
     objective = binary_rates.positive_prediction_rate(contexts[0])
-    constraint1 = binary_rates.positive_prediction_rate(contexts[1]) <= 0.0
-    constraint2 = binary_rates.positive_prediction_rate(contexts[2]) <= 0.0
-    constraint3 = binary_rates.positive_prediction_rate(contexts[3]) <= 0.0
+    constraint1 = binary_rates.positive_prediction_rate(contexts[1])
+    constraint2 = binary_rates.positive_prediction_rate(contexts[2])
+    constraint3 = binary_rates.positive_prediction_rate(contexts[3])
 
     # Make the objective and constraints include each other as:
     #   objective contains constraint2, which contains constraint3
@@ -140,9 +140,12 @@ class RateMinimizationProblemTest(
     # Notice that constraint3 is contained in both constraint1 and constraint2,
     # and indirectly in the objective. Despite this, we only want it to occur
     # once in the resulting optimization problem.
-    constraint1.expression.extra_constraints.add(constraint3)
-    constraint2.expression.extra_constraints.add(constraint3)
-    objective.extra_constraints.add(constraint2)
+    constraint3 = constraint3 <= 0
+    constraint1 = (
+        constraint1.add_dependencies(extra_constraints=[constraint3]) <= 0)
+    constraint2 = (
+        constraint2.add_dependencies(extra_constraints=[constraint3]) <= 0)
+    objective = objective.add_dependencies(extra_constraints=[constraint2])
 
     problem = rate_minimization_problem.RateMinimizationProblem(
         objective, [constraint1],

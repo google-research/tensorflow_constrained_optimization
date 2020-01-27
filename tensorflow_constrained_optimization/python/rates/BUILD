@@ -85,6 +85,15 @@ py_library(
 )
 
 py_library(
+    name = "constraint",
+    srcs = ["constraint.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":helpers",
+    ],
+)
+
+py_library(
     name = "term",
     srcs = ["term.py"],
     srcs_version = "PY2AND3",
@@ -113,6 +122,7 @@ py_library(
     srcs = ["expression.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":constraint",
         ":deferred_tensor",
         ":helpers",
         # tensorflow dep,
@@ -155,6 +165,7 @@ py_library(
     srcs = ["rate_minimization_problem.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":constraint",
         ":defaults",
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:constrained_minimization_problem",
@@ -221,6 +232,16 @@ py_test(
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,
+    ],
+)
+
+py_test(
+    name = "constraint_test",
+    srcs = ["constraint_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":constraint",
+        # tensorflow dep,
     ],
 )
 

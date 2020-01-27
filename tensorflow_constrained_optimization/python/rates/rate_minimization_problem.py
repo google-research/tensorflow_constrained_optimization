@@ -72,6 +72,7 @@ from __future__ import print_function
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import constrained_minimization_problem
+from tensorflow_constrained_optimization.python.rates import constraint
 from tensorflow_constrained_optimization.python.rates import defaults
 
 
@@ -125,17 +126,14 @@ class RateMinimizationProblem(
     # zero is possible, and it's the user's responsibility to ensure that it
     # doesn't happen.
     if denominator_lower_bound < 0.0:
-      raise ValueError("denominator lower bound must be nonnegative")
+      raise ValueError("denominator lower bound must be non-negative")
     # The objective needs to be differentiable. So do the penalty portions of
     # the constraints, but we'll check those later.
     if not objective.penalty_expression.is_differentiable:
       raise ValueError("non-differentiable losses (e.g. the zero-one loss) "
                        "cannot be optimized--they can only be constrained")
 
-    if constraints is None:
-      constraints = set()
-    else:
-      constraints = set(constraints)
+    constraints = constraint.ConstraintList(constraints)
 
     # We make our own global_step, for keeping track of the denominators. We
     # don't take one as a parameter since we want complete ownership, to avoid
@@ -163,34 +161,40 @@ class RateMinimizationProblem(
     self._objective, self._variables = (
         objective.penalty_expression.evaluate(self._memoizer))
     self._variables.update(objective.extra_variables)
-    constraints.update(objective.extra_constraints)
+    constraints += objective.extra_constraints
 
     # Evaluating expressions can result in extra constraints being introduced,
-    # so we keep track of constraints that we've already evaluated in
-    # "checked_constraints", add new constraints to "constraints", and
-    # repeatedly evaluate the contents of constraints - checked_constraints
-    # until none are left.
-    checked_constraints = set()
+    # so we keep track of the number of constraints that we've already evaluated
+    # in "checked_constraints", append new constraints to "constraints" (which
+    # will automatically ignore attempts to add duplicates, since it's a
+    # ConstraintList), and repeatedly check the newly-added constraints until
+    # none are left.
+    #
+    # In light of the fact that constraints can depend on other constraints, we
+    # can view the structure of constraints as a tree, in which case this code
+    # will enumerate over the constraints in breadth-first order.
     self._proxy_constraints = []
     self._constraints = []
-    while constraints != checked_constraints:
-      new_constraints = constraints - checked_constraints
-      for constraint in new_constraints:
-        if not constraint.expression.penalty_expression.is_differentiable:
+    checked_constraints = 0
+    while len(constraints) > checked_constraints:
+      new_constraints = constraints[checked_constraints:]
+      checked_constraints = len(constraints)
+      for new_constraint in new_constraints:
+        if not new_constraint.expression.penalty_expression.is_differentiable:
           raise ValueError("non-differentiable losses (e.g. the zero-one loss) "
                            "cannot be optimized--they can only be constrained")
         penalty_value, penalty_variables = (
-            constraint.expression.penalty_expression.evaluate(self._memoizer))
+            new_constraint.expression.penalty_expression.evaluate(
+                self._memoizer))
         constraint_value, constraint_variables = (
-            constraint.expression.constraint_expression.evaluate(
+            new_constraint.expression.constraint_expression.evaluate(
                 self._memoizer))
         self._proxy_constraints.append(penalty_value)
         self._constraints.append(constraint_value)
         self._variables.update(penalty_variables)
         self._variables.update(constraint_variables)
-        self._variables.update(constraint.expression.extra_variables)
-        constraints.update(constraint.expression.extra_constraints)
-      checked_constraints.update(new_constraints)
+        self._variables.update(new_constraint.expression.extra_variables)
+        constraints += new_constraint.expression.extra_constraints
 
     # Explicitly create all of the variables. This also functions as a sanity
     # check: before this point, no variable should have been accessed
@@ -228,10 +232,7 @@ class RateMinimizationProblem(
     Returns:
       A rank-1 `Tensor` of constraint functions.
     """
-    constraint_values = []
-    for constraint in self._constraints:
-      constraint_values.append(constraint(self._memoizer))
-    return tf.stack(constraint_values)
+    return tf.stack([cc(self._memoizer) for cc in self._constraints])
 
   def proxy_constraints(self):
     """Returns the optional `Tensor` of proxy constraint functions.
@@ -243,10 +244,7 @@ class RateMinimizationProblem(
     Returns:
       A rank-1 `Tensor` of proxy constraint functions.
     """
-    proxy_constraint_values = []
-    for proxy_constraint in self._proxy_constraints:
-      proxy_constraint_values.append(proxy_constraint(self._memoizer))
-    return tf.stack(proxy_constraint_values)
+    return tf.stack([cc(self._memoizer) for cc in self._proxy_constraints])
 
   @property
   def variables(self):
@@ -259,8 +257,7 @@ class RateMinimizationProblem(
     Returns:
       A list of variables.
     """
-    return [variable(self._memoizer) for variable in self._variables
-           ] + [self._global_step]
+    return [vv(self._memoizer) for vv in self._variables] + [self._global_step]
 
   def update_ops(self):
     """Creates and returns a list of ops to run at the start of train_op.
