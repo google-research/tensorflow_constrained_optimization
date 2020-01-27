@@ -447,36 +447,36 @@ minimizing the average hinge loss, but naturally doesn't approach 90% recall.
 ## More examples
 
 The
-[examples/jupyter_notebooks](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/)
-directory contains several [Jupyter](https://jupyter.org/) notebooks
-illustrating how to use this library:
+[examples/jupyter](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/)
+and the [examples/colab](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/)
+directories contain several [Jupyter](https://jupyter.org/) and [Colaboratory](https://colab.research.google.com/) notebooks illustrating how to use this library:
 
-*   [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb):
+*   [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Recall_constraint.ipynb):
     **Start here!** This is a more-comprehensive version of the above simple
     example. In particular, it can run in either graph or eager modes, shows how
     to manually create a `ConstrainedMinimizationProblem` instead of using the
     rate helpers, and illustrates the use of both V1 and V2 optimizers.
 
-*   [Fairness_adult.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Fairness_adult.ipynb):
+*   [Fairness_adult.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Fairness_adult.ipynb):
     This notebook shows how to train classifiers for fairness constraints on the
     UCI Adult dataset using the helpers for constructing rate-based optimization
     problems.
 
-*   [Minibatch_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Minibatch_training.ipynb):
+*   [Minibatch_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Minibatch_training.ipynb):
     This notebook describes how to solve a rate-constrained training problem
     using *minibatches*. The notebook focuses on problems where one wishes to
     impose a constraint on a group of examples constituting an extreme minority
     of the training set, and shows how one can speed up convergence by using
     separate streams of minibatches for each group.
 
-*   [Oscillation_compas.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Oscillation_compas.ipynb):
+*   [Oscillation_compas.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Oscillation_compas.ipynb):
     This notebook illustrates the oscillation issue raised in the "skrinking"
     section (above): it's possible that the individual iterates won't converge
     when using the Lagrangian approach to training with fairness constraints,
     even though they do converge *on average*. This motivate more careful
     selection of solutions or the use of a stochastic classifier.
 
-*   [Post_processing.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Post_processing.ipynb):
+*   [Post_processing.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Post_processing.ipynb):
     This notebook describes how to use the shrinking procedure of [CoJiSr19], as
     discussed in the "shrinking" section (above), to post-process the iterates
     of a constrained optimizer and construct a stochastic classifier from them.
@@ -484,12 +484,18 @@ illustrating how to use this library:
     how to use a heuristic to pick the best deterministic classifier from the
     iterates found by the optimizer.
 
-*   [Generalization_communities.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Generalization_communities.ipynb):
+*   [Generalization_communities.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Generalization_communities.ipynb):
     This notebook shows how to improve fairness generalization performance on
     the UCI Communities and Crime dataset with the split dataset approach of
     [CotterEtAl19], using the `split_rate_context` helper.
 
-*   [Churn.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Churn.ipynb):
+*   [Churn.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Churn.ipynb):
     This notebook describes how to use rate constraints for low-churn
     classification. That is, to train for accuracy while ensuring the
     predictions don't differ by much compared to a baseline model.
+    
+*   [Wiki_toxicity_fairness.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Wiki_toxicity_fairness.ipynb):
+    This notebook shows how to train a *fair* classifier to predict whether a 
+    comment posted on a Wiki Talk page contain toxic content. The notebook
+    discusses two criteria for fairness and shows how to enforce them
+    by constructing a rate-based optimization optimization problem.
