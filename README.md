@@ -271,7 +271,7 @@ Notice that `predictions` is a nullary function returning a `Tensor`. This is
 needed to support eager mode, but in graph mode, it's fine for it to simply be a
 `Tensor`. To see how this example could work in graph mode, please see the
 Jupyter notebook containing a more-comprehensive version of this example
-([Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb)).
+([Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Recall_constraint.ipynb)).
 
 Now that we have the output of our linear model (in the `predictions` variable),
 we can move on to constructing the optimization problem. At this point, there
@@ -287,7 +287,7 @@ are two ways to proceed:
 
 Here, we'll only consider the first of these options. To see how to use the
 second option, please refer to
-[Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb).
+[Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Recall_constraint.ipynb).
 
 ### Rate helpers
 
@@ -397,7 +397,7 @@ print("Constrained recall = %f" % recall(labels, trained_predictions))
 ```
 
 Notice that this code is intended to run in eager mode (there is no session): in
-[Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter_notebooks/Recall_constraint.ipynb),
+[Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Recall_constraint.ipynb),
 we also show how to train in graph mode. Running this code results in the
 following output (due to the randomness of the dataset, you'll get a different
 result when you run it):
@@ -448,8 +448,11 @@ minimizing the average hinge loss, but naturally doesn't approach 90% recall.
 
 The
 [examples/jupyter](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/)
-and the [examples/colab](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/)
-directories contain several [Jupyter](https://jupyter.org/) and [Colaboratory](https://colab.research.google.com/) notebooks illustrating how to use this library:
+and the
+[examples/colab](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/)
+directories contain several [Jupyter](https://jupyter.org/) and
+[Colaboratory](https://colab.research.google.com/) notebooks illustrating how to
+use this library:
 
 *   [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Recall_constraint.ipynb):
     **Start here!** This is a more-comprehensive version of the above simple
@@ -493,9 +496,9 @@ directories contain several [Jupyter](https://jupyter.org/) and [Colaboratory](h
     This notebook describes how to use rate constraints for low-churn
     classification. That is, to train for accuracy while ensuring the
     predictions don't differ by much compared to a baseline model.
-    
+
 *   [Wiki_toxicity_fairness.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Wiki_toxicity_fairness.ipynb):
-    This notebook shows how to train a *fair* classifier to predict whether a 
+    This notebook shows how to train a *fair* classifier to predict whether a
     comment posted on a Wiki Talk page contain toxic content. The notebook
-    discusses two criteria for fairness and shows how to enforce them
-    by constructing a rate-based optimization optimization problem.
+    discusses two criteria for fairness and shows how to enforce them by
+    constructing a rate-based optimization optimization problem.
