@@ -98,10 +98,9 @@ class _StaticDeferredTensorState(_DeferredTensorState):
     # If at least one of the objects is a Tensor, then we check that they're the
     # same object, instead of calling __eq__.
     #
-    # NOTE: in eager mode, we could potentially check for value-equality, using
-    # the np.array_equal() code below. However, when we did this, it didn't seem
-    # to necessarily work when the Tensors in question were actually
-    # tf.Variables (it worked in TensorFlow 2.0 and lower, but not 2.1).
+    # In eager mode, we could potentially check for value-equality, by using the
+    # np.array_equal() code below after *explicitly* casting the Tensors to
+    # numpy arrays by calling Tensor.numpy().
     if tf.is_tensor(self.value) or tf.is_tensor(other.value):
       return self.value is other.value
 
