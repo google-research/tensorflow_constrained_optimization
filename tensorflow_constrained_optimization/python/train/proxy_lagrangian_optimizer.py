@@ -70,11 +70,13 @@ def _maximal_eigenvector_power_method(matrix,
   Args:
     matrix: 2D Tensor, the matrix of which we will find a maximal
       right-eigenvector.
-    epsilon: nonnegative float, if two iterations of the power method differ (in
-      L2 norm) by no more than epsilon, we will terminate.
-    maximum_iterations: nonnegative int, if we perform this many iterations, we
+    epsilon: non-negative float, if two iterations of the power method differ
+      (in L2 norm) by no more than epsilon, we will terminate.
+    maximum_iterations: non-negative int, if we perform this many iterations, we
       will terminate.
-  Result: A maximal right-eigenvector of "matrix".
+
+  Returns:
+    A maximal right-eigenvector of "matrix".
 
   Raises:
     TypeError: if the "matrix" `Tensor` is not floating-point.
@@ -270,7 +272,7 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
     Raises:
       ValueError: if the "regret_type" or "update_type" parameters are invalid,
         if "minimum_multiplier_radius" or "initial_multiplier_radius" violate
-        the conditions described above, or if "dual_scale" is nonpositive.
+        the conditions described above, or if "dual_scale" is non-positive.
     """
     self._regret_type = regret_type.lower()
     if self._regret_type not in (_EXTERNAL_REGRET_TYPE, _SWAP_REGRET_TYPE):

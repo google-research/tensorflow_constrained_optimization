@@ -73,7 +73,7 @@ def _find_best_candidate_distribution_helper(objective_vector,
   numpy array with shape (n,m), for which constraints_matrix[i,j] = g_j(w_i).
 
   This function will return a distribution for which at most m+1 probabilities,
-  and often fewer, are nonzero.
+  and often fewer, are non-zero.
 
   Args:
     objective_vector: numpy array of shape (n,), where n is the number of
@@ -81,7 +81,7 @@ def _find_best_candidate_distribution_helper(objective_vector,
     constraints_matrix: numpy array of shape (n,m), where n is the number of
       "candidate solutions", and m is the number of constraints. Contains the
       constraint violation magnitudes.
-    maximum_violation: nonnegative float, the maximum amount by which any
+    maximum_violation: non-negative float, the maximum amount by which any
       constraint may be violated, in expectation.
     linprog_method: string, passed unchanged as the "method" parameter to
       scipy.linprog.
@@ -99,7 +99,7 @@ def _find_best_candidate_distribution_helper(objective_vector,
       shapes, or if "maximum_violation" is negative.
   """
   if maximum_violation < 0.0:
-    raise ValueError("maximum_violation must be nonnegative")
+    raise ValueError("maximum_violation must be non-negative")
 
   nn, mm = np.shape(constraints_matrix)
   if (nn,) != np.shape(objective_vector):
@@ -167,7 +167,7 @@ def find_best_candidate_distribution(objective_vector,
   numpy array with shape (n,m), for which constraints_matrix[i,j] = g_j(w_i).
 
   This function will return a distribution for which at most m+1 probabilities,
-  and often fewer, are nonzero.
+  and often fewer, are non-zero.
 
   For more specifics, please refer to:
 
@@ -183,7 +183,7 @@ def find_best_candidate_distribution(objective_vector,
     constraints_matrix: numpy array of shape (m,n), where n is the number of
       "candidate solutions", and m is the number of constraints. Contains the
       constraint violation magnitudes.
-    epsilon: nonnegative float, the threshold at which to terminate the binary
+    epsilon: non-negative float, the threshold at which to terminate the binary
       search while searching for the minimal expected constraint violation
       magnitude.
     linprog_method: string, passed unchanged as the "method" parameter to
@@ -199,7 +199,7 @@ def find_best_candidate_distribution(objective_vector,
       shapes, or if "epsilon" is negative.
   """
   if epsilon < 0.0:
-    raise ValueError("epsilon must be nonnegative")
+    raise ValueError("epsilon must be non-negative")
 
   # If there is a feasible solution (i.e. with maximum_violation=0), then that's
   # what we'll return.

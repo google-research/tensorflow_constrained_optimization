@@ -51,7 +51,7 @@ from tensorflow_constrained_optimization.python.train import constrained_optimiz
 def _project_multipliers_wrt_euclidean_norm(multipliers, radius):
   """Projects its argument onto the feasible region.
 
-  The feasible region is the set of all vectors with nonnegative elements that
+  The feasible region is the set of all vectors with non-negative elements that
   sum to at most "radius".
 
   Args:
@@ -133,7 +133,7 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
 
     Raises:
       ValueError: if "maximum_multiplier_radius" or "dual_scale" are
-        nonpositive.
+        non-positive.
     """
     if (maximum_multiplier_radius is not None and
         maximum_multiplier_radius <= 0.0):
@@ -418,7 +418,7 @@ class LagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):
       name: as in `ConstrainedOptimizerV1`.
 
     Raises:
-      ValueError: if the maximum_multiplier_radius parameter is nonpositive.
+      ValueError: if the maximum_multiplier_radius parameter is non-positive.
     """
     super(LagrangianOptimizerV1, self).__init__(
         _LagrangianFormulation(
@@ -484,7 +484,7 @@ class LagrangianOptimizerV2(constrained_optimizer.ConstrainedOptimizerV2):
       name: as in `ConstrainedOptimizerV2`.
 
     Raises:
-      ValueError: if the maximum_multiplier_radius parameter is nonpositive.
+      ValueError: if the maximum_multiplier_radius parameter is non-positive.
     """
     super(LagrangianOptimizerV2, self).__init__(
         _LagrangianFormulation(

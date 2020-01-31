@@ -47,15 +47,15 @@ class _DeferredTensorState(helpers.RateObject):
     pass
 
   @abc.abstractmethod
+  def __hash__(self):
+    pass
+
+  @abc.abstractmethod
   def __eq__(self, other):
     pass
 
   def __ne__(self, other):
     return not self.__eq__(other)
-
-  @abc.abstractmethod
-  def __hash__(self):
-    pass
 
 
 class _StaticDeferredTensorState(_DeferredTensorState):
@@ -86,28 +86,30 @@ class _StaticDeferredTensorState(_DeferredTensorState):
     del memoizer
     return self._value, self._auto_cast
 
+  def __hash__(self):
+    return hash((self._value, self._auto_cast))
+
   def __eq__(self, other):
     if not isinstance(other, _StaticDeferredTensorState):
       return False
     if self.auto_cast != other.auto_cast:
       return False
 
-    # Unless we're in eager mode, we can't compare the values of Tensors, so the
-    # best we can do is to check if they're the same object.
-    if (not tf.executing_eagerly()) and (tf.is_tensor(self.value) or
-                                         tf.is_tensor(other.value)):
+    # If at least one of the objects is a Tensor, then we check that they're the
+    # same object, instead of calling __eq__.
+    #
+    # In eager mode, we could potentially check for value-equality, by using the
+    # np.array_equal() code below after *explicitly* casting the Tensors to
+    # numpy arrays by calling Tensor.numpy().
+    if tf.is_tensor(self.value) or tf.is_tensor(other.value):
       return self.value is other.value
 
-    # Every other allowed type (including Tensors, in eager mode) can be
-    # handled by numpy.
+    # Every other allowed type can be handled by numpy.
     #
     # We can hope that in most cases, this will be quick (e.g. same object -->
     # equal, different shapes --> unequal), but if we're unlucky, this has the
     # potential to be slow.
     return np.array_equal(self.value, other.value)
-
-  def __hash__(self):
-    return hash((self._value, self._auto_cast))
 
 
 class _CallableDeferredTensorState(_DeferredTensorState):
@@ -144,6 +146,9 @@ class _CallableDeferredTensorState(_DeferredTensorState):
     del memoizer
     return self._callback(), self._auto_cast
 
+  def __hash__(self):
+    return hash((self._callback, self._auto_cast))
+
   def __eq__(self, other):
     if not isinstance(other, _CallableDeferredTensorState):
       return False
@@ -151,9 +156,6 @@ class _CallableDeferredTensorState(_DeferredTensorState):
     # we only consider the states equal if they have the same callbacks.
     return (self.callback is other.callback and
             self.auto_cast == other.auto_cast)
-
-  def __hash__(self):
-    return hash((self._callback, self._auto_cast))
 
 
 class _DerivedDeferredTensorState(_DeferredTensorState):
@@ -183,15 +185,15 @@ class _DerivedDeferredTensorState(_DeferredTensorState):
   def value_and_auto_cast(self, memoizer):
     return self._callback(memoizer)
 
+  def __hash__(self):
+    return hash(self._callback)
+
   def __eq__(self, other):
     if not isinstance(other, _DerivedDeferredTensorState):
       return False
     # We can't actually determine the values without calling the callbacks, so
     # we only consider the states equal if they have the same callbacks.
     return self.callback is other.callback
-
-  def __hash__(self):
-    return hash(self._callback)
 
 
 class DeferredTensor(helpers.RateObject):
@@ -442,6 +444,9 @@ class DeferredTensor(helpers.RateObject):
     # ignored, and we could just construct a new static DeferredTensor here.
     return DeferredTensor(_DerivedDeferredTensorState(value_and_auto_cast_fn))
 
+  def __hash__(self):
+    return self._state.__hash__()
+
   def __eq__(self, other):
     if not isinstance(other, helpers.RateObject):
       other = DeferredTensor(other)
@@ -451,9 +456,6 @@ class DeferredTensor(helpers.RateObject):
 
   def __ne__(self, other):
     return not self.__eq__(other)
-
-  def __hash__(self):
-    return self._state.__hash__()
 
   def __neg__(self):
     return DeferredTensor.apply(lambda arg: -arg, self)

@@ -532,6 +532,114 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     self._check_rates(expected_penalty_value, expected_constraint_value,
                       actual_expression)
 
+  def test_true_positive_proportion(self):
+    """Checks that `true_positive_proportion` calculates the right quantity."""
+    # For the penalty, the default loss is hinge.
+    expected_penalty_numerator = np.sum(
+        np.maximum(0.0, 1.0 + self._penalty_predictions) *
+        (self._penalty_labels > 0.0) * self._penalty_weights *
+        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    # For the constraint, the default loss is zero-one.
+    expected_constraint_numerator = np.sum(
+        (0.5 * (1.0 + np.sign(self._constraint_predictions))) *
+        (self._constraint_labels > 0.0) * self._constraint_weights *
+        self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = binary_rates.true_positive_proportion(
+        self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
+  def test_false_negative_proportion(self):
+    """Checks that `false_negative_proportion` calculates the right quantity."""
+    # For the penalty, the default loss is hinge.
+    expected_penalty_numerator = np.sum(
+        np.maximum(0.0, 1.0 - self._penalty_predictions) *
+        (self._penalty_labels > 0.0) * self._penalty_weights *
+        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    # For the constraint, the default loss is zero-one.
+    expected_constraint_numerator = np.sum(
+        (0.5 * (1.0 - np.sign(self._constraint_predictions))) *
+        (self._constraint_labels > 0.0) * self._constraint_weights *
+        self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = binary_rates.false_negative_proportion(
+        self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
+  def test_false_positive_proportion(self):
+    """Checks that `false_positive_proportion` calculates the right quantity."""
+    # For the penalty, the default loss is hinge.
+    expected_penalty_numerator = np.sum(
+        np.maximum(0.0, 1.0 + self._penalty_predictions) *
+        (self._penalty_labels <= 0.0) * self._penalty_weights *
+        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    # For the constraint, the default loss is zero-one.
+    expected_constraint_numerator = np.sum(
+        (0.5 * (1.0 + np.sign(self._constraint_predictions))) *
+        (self._constraint_labels <= 0.0) * self._constraint_weights *
+        self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = binary_rates.false_positive_proportion(
+        self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
+  def test_true_negative_proportion(self):
+    """Checks that `true_negative_proportion` calculates the right quantity."""
+    # For the penalty, the default loss is hinge.
+    expected_penalty_numerator = np.sum(
+        np.maximum(0.0, 1.0 - self._penalty_predictions) *
+        (self._penalty_labels <= 0.0) * self._penalty_weights *
+        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    # For the constraint, the default loss is zero-one.
+    expected_constraint_numerator = np.sum(
+        (0.5 * (1.0 - np.sign(self._constraint_predictions))) *
+        (self._constraint_labels <= 0.0) * self._constraint_weights *
+        self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = binary_rates.true_negative_proportion(
+        self._split_context)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
   def test_precision_ratio(self):
     """Checks that `precision_ratio` calculates the right quantities."""
     actual_numerator_expression, actual_denominator_expression = (

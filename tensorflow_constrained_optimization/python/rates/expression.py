@@ -13,7 +13,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 # ==============================================================================
-"""Contains the `Expression` and `Constraint` classes.
+"""Contains the `Expression` class.
 
 The purpose of this library is to make it easy to construct and optimize ML
 problems for which the goal is to minimize a linear combination of rates,
@@ -47,25 +47,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow_constrained_optimization.python.rates import constraint
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers
-
-
-class Constraint(helpers.RateObject):
-  """Represents an inequality constraint.
-
-  This class is nothing but a thin wrapper around an `Expression`, and
-  represents the constraint that the wrapped expression is non-positive.
-  """
-
-  def __init__(self, expression):
-    """Constructs a new `Constraint` object from an `Expression`."""
-    self._expression = expression
-
-  @property
-  def expression(self):
-    """Returns the `Expression` that is constrained to be nonpositive."""
-    return self._expression
 
 
 class Expression(helpers.RateObject):
@@ -154,15 +138,7 @@ class Expression(helpers.RateObject):
       raise TypeError("all elements of extra_variables must be "
                       "DeferredVariable objects")
 
-    if extra_constraints is None:
-      self._extra_constraints = set()
-    else:
-      self._extra_constraints = set(extra_constraints)
-    if not all(
-        isinstance(extra_constraint, Constraint)
-        for extra_constraint in self._extra_constraints):
-      raise TypeError("all elements of extra_constraints must be Constraint "
-                      "objects")
+    self._extra_constraints = constraint.ConstraintList(extra_constraints)
 
   @property
   def penalty_expression(self):
@@ -191,12 +167,15 @@ class Expression(helpers.RateObject):
   @property
   def extra_variables(self):
     """Returns the set of extra `DeferredVariable`s."""
-    return self._extra_variables
+    # Construct a new set so that the caller can't change the set owned by this
+    # class.
+    return set(self._extra_variables)
 
   @property
   def extra_constraints(self):
-    """Returns the set of extra `Constraint`s."""
-    return self._extra_constraints
+    """Returns the list of extra `Constraint`s."""
+    # The "list" property of a ConstraintList already returns a copy.
+    return self._extra_constraints.list
 
   def add_dependencies(self, extra_variables=None, extra_constraints=None):
     """Returns a new `Expression` with extra dependencies.
@@ -223,21 +202,13 @@ class Expression(helpers.RateObject):
       raise TypeError("all elements of extra_variables must be "
                       "DeferredVariable objects")
 
-    if extra_constraints is None:
-      extra_constraints = set()
-    else:
-      extra_constraints = set(extra_constraints)
-    if not all(
-        isinstance(extra_constraint, Constraint)
-        for extra_constraint in extra_constraints):
-      raise TypeError("all elements of extra_constraints must be Constraint "
-                      "objects")
+    extra_constraints = constraint.ConstraintList(extra_constraints)
 
     return Expression(
         self._penalty_expression,
         self._constraint_expression,
         extra_variables=self._extra_variables | extra_variables,
-        extra_constraints=self._extra_constraints | extra_constraints)
+        extra_constraints=self._extra_constraints + extra_constraints)
 
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
@@ -312,7 +283,7 @@ class Expression(helpers.RateObject):
           self._penalty_expression + other.penalty_expression,
           self._constraint_expression + other.constraint_expression,
           extra_variables=self._extra_variables | other.extra_variables,
-          extra_constraints=self._extra_constraints | other.extra_constraints)
+          extra_constraints=self._extra_constraints + other.extra_constraints)
     elif not isinstance(other, helpers.RateObject):
       return Expression(
           self._penalty_expression + other,
@@ -334,7 +305,7 @@ class Expression(helpers.RateObject):
           self._penalty_expression - other.penalty_expression,
           self._constraint_expression - other.constraint_expression,
           extra_variables=self._extra_variables | other.extra_variables,
-          extra_constraints=self._extra_constraints | other.extra_constraints)
+          extra_constraints=self._extra_constraints + other.extra_constraints)
     elif not isinstance(other, helpers.RateObject):
       return Expression(
           self._penalty_expression - other,
@@ -362,11 +333,11 @@ class Expression(helpers.RateObject):
 
   def __le__(self, other):
     """Returns a `Constraint` representing self <= other."""
-    return Constraint(self - other)
+    return constraint.Constraint(self - other)
 
   def __ge__(self, other):
     """Returns a `Constraint` representing self >= other."""
-    return Constraint(other - self)
+    return constraint.Constraint(other - self)
 
   # We don't make __eq__ create an equality constraint for two reasons:
   #   1) We might want to put Expressions into sets or something.

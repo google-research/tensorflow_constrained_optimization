@@ -148,7 +148,7 @@ class BinaryClassificationLoss(Loss):
     Args:
       predictions: a `Tensor` of shape (n,), where n is the number of examples.
       weights: a `Tensor` of shape (m, 2), where m is broadcastable to n. This
-        `Tensor` is *not* necessarily nonnegative.
+        `Tensor` is *not* necessarily non-negative.
 
     Returns:
       A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
@@ -205,7 +205,7 @@ class ZeroOneLoss(BinaryClassificationLoss):
     Args:
       predictions: a `Tensor` of shape (n,), where n is the number of examples.
       weights: a `Tensor` of shape (m, 2), where m is broadcastable to n. This
-        `Tensor` is *not* necessarily nonnegative.
+        `Tensor` is *not* necessarily non-negative.
 
     Returns:
       A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
@@ -300,7 +300,7 @@ class HingeLoss(BinaryClassificationLoss):
     Args:
       predictions: a `Tensor` of shape (n,), where n is the number of examples.
       weights: a `Tensor` of shape (m, 2), where m is broadcastable to n. This
-        `Tensor` is *not* necessarily nonnegative.
+        `Tensor` is *not* necessarily non-negative.
 
     Returns:
       A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
@@ -378,7 +378,7 @@ class SoftmaxLoss(BinaryClassificationLoss):
     Args:
       predictions: a `Tensor` of shape (n,), where n is the number of examples.
       weights: a `Tensor` of shape (m, 2), where m is broadcastable to n. This
-        `Tensor` is *not* necessarily nonnegative.
+        `Tensor` is *not* necessarily non-negative.
 
     Returns:
       A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
@@ -451,7 +451,7 @@ class SoftmaxCrossEntropyLoss(BinaryClassificationLoss):
     Args:
       predictions: a `Tensor` of shape (n,), where n is the number of examples.
       weights: a `Tensor` of shape (m, 2), where m is broadcastable to n. This
-        `Tensor` is *not* necessarily nonnegative.
+        `Tensor` is *not* necessarily non-negative.
 
     Returns:
       A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
