@@ -55,9 +55,10 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    variables = (
-        expression.extra_variables | penalty_variables | constraint_variables)
-    for variable in variables:
+    variables_set = (
+        set(expression.extra_variables) | set(penalty_variables)
+        | set(constraint_variables))
+    for variable in variables_set:
       variable.create(memoizer)
 
     def update_ops_fn():
@@ -65,7 +66,7 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         update_ops = []
       else:
         update_ops = extra_update_ops_fn(memoizer)
-      for variable in variables:
+      for variable in variables_set:
         update_ops += variable.update_ops(memoizer)
       return update_ops
 

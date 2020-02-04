@@ -94,5 +94,74 @@ class HelpersTest(tf.test.TestCase):
     self.assertEqual(3, helpers.get_num_columns_of_2d_tensor(tensor))
 
 
+class UniqueListTest(tf.test.TestCase):
+  """Tests for `UniqueList` classes."""
+
+  def test_construct(self):
+    """Tests the `UniqueList` constructor."""
+    element1 = 1
+    element2 = 2
+    element3 = element1
+    element4 = 4
+    element5 = element4
+    element6 = 6
+
+    unique_list = helpers.UniqueList(
+        [element1, element2, element3, element4, element5, element6])
+    self.assertEqual(4, len(unique_list))
+    self.assertEqual([element1, element2, element4, element6], unique_list.list)
+
+  def test_append_raises(self):
+    """Tests that "append" raises when given the wrong type."""
+    unique_list = helpers.UniqueList(element_type=list)
+    self.assertEqual(0, len(unique_list))
+    self.assertEqual([], unique_list.list)
+
+    with self.assertRaises(TypeError):
+      # Since we passed element_type=list to the UniqueList constructor,
+      # attempting to add any non-list should raise.
+      unique_list.append(42)
+
+  def test_add(self):
+    """Tests `UniqueList`'s "__add__" method."""
+    element1 = 1
+    element2 = 2
+    element3 = element1
+    element4 = 4
+    element5 = element4
+    element6 = 6
+
+    lhs = [element1, element2]
+    rhs = [element3, element4, element5, element6]
+
+    unique_list = helpers.UniqueList(lhs)
+    self.assertEqual(2, len(unique_list))
+    self.assertEqual([element1, element2], unique_list.list)
+
+    unique_list += rhs
+    self.assertEqual(4, len(unique_list))
+    self.assertEqual([element1, element2, element4, element6], unique_list.list)
+
+  def test_radd(self):
+    """Tests `UniqueList`'s "__radd__" method."""
+    element1 = 1
+    element2 = 2
+    element3 = element1
+    element4 = 4
+    element5 = element4
+    element6 = 6
+
+    lhs = [element1, element2]
+    rhs = [element3, element4, element5, element6]
+
+    unique_list = helpers.UniqueList(rhs)
+    self.assertEqual(3, len(unique_list))
+    self.assertEqual([element1, element4, element6], unique_list.list)
+
+    unique_list = lhs + unique_list
+    self.assertEqual(4, len(unique_list))
+    self.assertEqual([element1, element2, element4, element6], unique_list.list)
+
+
 if __name__ == "__main__":
   tf.test.main()

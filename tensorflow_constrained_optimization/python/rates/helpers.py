@@ -102,3 +102,87 @@ def get_num_columns_of_2d_tensor(tensor, name="tensor"):
     raise ValueError("%s must have a known number of columns" % name)
 
   return columns
+
+
+class UniqueList(RateObject):
+  """Represents a list of unique elements.
+
+  Aside from having a very stripped-down interface compared to a normal Python
+  list, this class also differs in that (i) if the "element_type" constructor
+  parameter is provided, it verifies that every element it contains is of the
+  given type, and (ii) duplicate elements are removed (but, unlike a set, order
+  is preserved).
+
+  Each duplicate-check is *linear* time, so overall, removing duplicates from a
+  list is *quadratic* time. Both subclasses of this class, ConstraintList and
+  DeferredVariableList, should contain a small number of elements, so we don't
+  expect this to be an issue.
+  """
+
+  def __init__(self, collection=None, element_type=None):
+    """Creates a new `UniqueList` from a collection."""
+    self._element_type = element_type
+    self._list = []
+    if collection is not None:
+      for element in collection:
+        self.append(element)
+
+  @property
+  def list(self):
+    """Returns the contents as a Python list."""
+    # We take a slice of the whole list to make a copy.
+    return self._list[:]
+
+  def append(self, element):
+    """Appends a new element to the list, ignoring duplicates."""
+    if (self._element_type is not None and
+        not isinstance(element, self._element_type)):
+      raise TypeError("every element added to a UniqueList must be of the "
+                      "given element_type")
+    # FUTURE WORK: this linear-time duplicate check is probably fine, since we
+    # expect that both subclasses of this class, ConstraintList and
+    # DeferredVariableList, will generally have very few elements, but it would
+    # be nice to use something that scales better. We need to be cautious,
+    # however! In eager mode, tf.Variables, and therefore static
+    # DeferredVariables, might not implement __hash__().
+    if element not in self._list:
+      self._list.append(element)
+
+  def __eq__(self, other):
+    # Two UniqueLists are equal iff they have the same element_type, and contain
+    # the same elements in the same order.
+    if self._element_type != other.element_type:
+      return False
+    return self._list.__eq__(other._list)  # pylint: disable=protected-access
+
+  def __ne__(self, other):
+    return not self.__eq__(other)
+
+  def __len__(self):
+    """Returns the length of this `UniqueList`."""
+    return self._list.__len__()
+
+  def __iter__(self):
+    """Returns an iterator over the wrapped list."""
+    return self._list.__iter__()
+
+  def __add__(self, other):
+    """Appends two `UniqueList`s."""
+    result = UniqueList(self)
+    for element in other:
+      result.append(element)
+    return result
+
+  def __radd__(self, other):
+    """Appends two `UniqueList`s."""
+    result = UniqueList(other)
+    for element in self:
+      result.append(element)
+    return result
+
+  def __getitem__(self, slice_spec):
+    """Returns a single element or a slice of this `UniqueList`."""
+    result = self._list[slice_spec]
+    if isinstance(result, list):
+      result = UniqueList(result)
+    return result

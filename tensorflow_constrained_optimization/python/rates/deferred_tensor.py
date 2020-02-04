@@ -589,3 +589,22 @@ class DeferredVariable(DeferredTensor):
     if self._update_ops_fn is None:
       return []
     return self._update_ops_fn(self.__call__(memoizer), memoizer)
+
+
+class DeferredVariableList(helpers.UniqueList):
+  """Represents a list of `DeferredVariable`s.
+
+  Aside from having a very stripped-down interface compared to a normal Python
+  list, this class also differs in that (i) it verifies that every element it
+  contains is a `DeferredVariable` object, and (ii) duplicate elements are
+  removed (but, unlike a set, order is preserved).
+
+  Each duplicate-check is *linear* time, so overall, removing duplicates from a
+  list is *quadratic* time. A DeferredVariableList should contain a small number
+  of DeferredVariables, so we don't expect this to be an issue.
+  """
+
+  def __init__(self, collection=None):
+    """Creates a new `DeferredVariableList` from a collection."""
+    super(DeferredVariableList, self).__init__(
+        collection=collection, element_type=DeferredVariable)

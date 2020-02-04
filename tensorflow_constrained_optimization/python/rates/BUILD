@@ -114,6 +114,7 @@ py_library(
     deps = [
         ":deferred_tensor",
         ":helpers",
+        # six dep,
     ],
 )
 
@@ -167,6 +168,7 @@ py_library(
     deps = [
         ":constraint",
         ":defaults",
+        ":deferred_tensor",
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:constrained_minimization_problem",
     ],
@@ -232,16 +234,6 @@ py_test(
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,
-    ],
-)
-
-py_test(
-    name = "constraint_test",
-    srcs = ["constraint_test.py"],
-    srcs_version = "PY2AND3",
-    deps = [
-        ":constraint",
-        # tensorflow dep,
     ],
 )
 
