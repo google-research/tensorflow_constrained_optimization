@@ -380,13 +380,8 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
     if self._constraint_optimizer is None or state is None:
       return self._optimizer._create_slots(var_list)
 
-    var_list = set(var_list)
-    if state not in var_list:
-      state_var_list = []
-    else:
-      var_list.discard(state)
-      state_var_list = [state]
-    var_list = list(var_list)
+    state_var_list = [var for var in var_list if var == state]
+    var_list = [var for var in var_list if var != state]
 
     self._optimizer._create_slots(var_list)
     self._constraint_optimizer._create_slots(state_var_list)
@@ -568,13 +563,8 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     if state is None:
       return var_list, []
 
-    var_list = set(var_list)
-    if state not in var_list:
-      state_var_list = []
-    else:
-      var_list.discard(state)
-      state_var_list = [state]
-    var_list = list(var_list)
+    state_var_list = [var for var in var_list if var == state]
+    var_list = [var for var in var_list if var != state]
 
     return var_list, state_var_list
 

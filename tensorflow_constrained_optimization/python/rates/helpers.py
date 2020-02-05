@@ -112,16 +112,12 @@ class UniqueList(RateObject):
   parameter is provided, it verifies that every element it contains is of the
   given type, and (ii) duplicate elements are removed (but, unlike a set, order
   is preserved).
-
-  Each duplicate-check is *linear* time, so overall, removing duplicates from a
-  list is *quadratic* time. Both subclasses of this class, ConstraintList and
-  DeferredVariableList, should contain a small number of elements, so we don't
-  expect this to be an issue.
   """
 
   def __init__(self, collection=None, element_type=None):
     """Creates a new `UniqueList` from a collection."""
     self._element_type = element_type
+    self._set = set()
     self._list = []
     if collection is not None:
       for element in collection:
@@ -139,13 +135,8 @@ class UniqueList(RateObject):
         not isinstance(element, self._element_type)):
       raise TypeError("every element added to a UniqueList must be of the "
                       "given element_type")
-    # FUTURE WORK: this linear-time duplicate check is probably fine, since we
-    # expect that both subclasses of this class, ConstraintList and
-    # DeferredVariableList, will generally have very few elements, but it would
-    # be nice to use something that scales better. We need to be cautious,
-    # however! In eager mode, tf.Variables, and therefore static
-    # DeferredVariables, might not implement __hash__().
-    if element not in self._list:
+    if element not in self._set:
+      self._set.add(element)
       self._list.append(element)
 
   def __eq__(self, other):
@@ -160,7 +151,9 @@ class UniqueList(RateObject):
 
   def __len__(self):
     """Returns the length of this `UniqueList`."""
-    return self._list.__len__()
+    result = self._set.__len__()
+    assert result == self._list.__len__()
+    return result
 
   def __iter__(self):
     """Returns an iterator over the wrapped list."""

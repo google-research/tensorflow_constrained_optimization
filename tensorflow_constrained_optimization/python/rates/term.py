@@ -469,10 +469,10 @@ class Term(helpers.RateObject):
     of `Term`s that can be added and subtracted to/from each other.
 
     Returns:
-      An object implementing __hash__ and __eq__. When two `Term`s have the same
-      key, they can be safely combined using binary arithmetic operations. When
-      they have different keys, the `BasicExpression` owning them will not
-      attempt to do so.
+      An object implementing __eq__. When two `Term`s have the same key, they
+      can be safely combined using binary arithmetic operations. When they have
+      different keys, the `BasicExpression` owning them will not attempt to do
+      so.
     """
 
   @abc.abstractmethod

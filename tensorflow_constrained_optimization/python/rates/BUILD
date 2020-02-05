@@ -296,6 +296,7 @@ py_test(
     srcs_version = "PY2AND3",
     deps = [
         ":defaults",
+        ":deferred_tensor",
         ":operations",
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",

@@ -56,10 +56,6 @@ class ConstraintList(helpers.UniqueList):
   list, this class also differs in that (i) it verifies that every element it
   contains is a `Constraint` object, and (ii) duplicate elements are removed
   (but, unlike a set, order is preserved).
-
-  Each duplicate-check is *linear* time, so overall, removing duplicates from a
-  list is *quadratic* time. A ConstraintList should contain a small number of
-  Constraints, so we don't expect this to be an issue.
   """
 
   def __init__(self, collection=None):

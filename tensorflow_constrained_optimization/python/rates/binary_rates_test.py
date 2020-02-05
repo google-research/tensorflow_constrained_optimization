@@ -243,10 +243,12 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # We can't create the context in __init__, since it would then wind up in
     # the wrong TensorFlow graph.
     predictions = tf.constant(self._penalty_predictions, dtype=tf.float32)
+    labels = tf.constant(self._penalty_labels, dtype=tf.float32)
+    weights = tf.constant(self._penalty_weights, dtype=tf.float32)
     return subsettable_context.rate_context(
         predictions=lambda: predictions,
-        labels=tf.constant(self._penalty_labels, dtype=tf.float32),
-        weights=tf.constant(self._penalty_weights, dtype=tf.float32))
+        labels=lambda: labels,
+        weights=lambda: weights)
 
   @property
   def _split_context(self):
@@ -257,15 +259,17 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         self._penalty_predictions, dtype=tf.float32)
     constraint_predictions = tf.constant(
         self._constraint_predictions, dtype=tf.float32)
+    penalty_labels = tf.constant(self._penalty_labels, dtype=tf.float32)
+    constraint_labels = tf.constant(self._constraint_labels, dtype=tf.float32)
+    penalty_weights = tf.constant(self._penalty_weights, dtype=tf.float32)
+    constraint_weights = tf.constant(self._constraint_weights, dtype=tf.float32)
     context = subsettable_context.split_rate_context(
         penalty_predictions=lambda: penalty_predictions,
         constraint_predictions=lambda: constraint_predictions,
-        penalty_labels=tf.constant(self._penalty_labels, dtype=tf.float32),
-        constraint_labels=tf.constant(
-            self._constraint_labels, dtype=tf.float32),
-        penalty_weights=tf.constant(self._penalty_weights, dtype=tf.float32),
-        constraint_weights=tf.constant(
-            self._constraint_weights, dtype=tf.float32))
+        penalty_labels=lambda: penalty_labels,
+        constraint_labels=lambda: constraint_labels,
+        penalty_weights=lambda: penalty_weights,
+        constraint_weights=lambda: constraint_weights)
     return context.subset(self._penalty_predicate, self._constraint_predicate)
 
   def _check_rates(self, expected_penalty_value, expected_constraint_value,
@@ -282,15 +286,15 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    variables_set = (
-        set(actual_expression.extra_variables) | set(penalty_variables)
-        | set(constraint_variables))
-    for variable in variables_set:
+    variables = deferred_tensor.DeferredVariableList(
+        actual_expression.extra_variables + penalty_variables +
+        constraint_variables).list
+    for variable in variables:
       variable.create(memoizer)
 
     def update_ops_fn():
       update_ops = []
-      for variable in variables_set:
+      for variable in variables:
         update_ops += variable.update_ops(memoizer)
       return update_ops
 
@@ -706,27 +710,28 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # Extract the the constraints and the associated variables.
     constraint_list = []
-    variables_set = set(expression.extra_variables)
+    variables = deferred_tensor.DeferredVariableList(expression.extra_variables)
     for constraint in expression.extra_constraints:
       constraint_value, constraint_variables = (
           constraint.expression.constraint_expression.evaluate(memoizer))
       constraint_list.append(constraint_value)
-      variables_set.update(constraint_variables)
-      variables_set.update(constraint.expression.extra_variables)
+      variables += constraint_variables
+      variables += constraint.expression.extra_variables
+    variables = variables.list
     self.assertEqual(2, len(constraint_list))
     constraints = deferred_tensor.DeferredTensor.apply(
         lambda *args: tf.stack(args), *constraint_list)
 
     # We need to explicitly create all variables included in the expression
     # before we can try to extract the ratio_bounds.
-    for variable in variables_set:
+    for variable in variables:
       variable.create(memoizer)
 
     # The find_zeros_of_functions() helper will perform a bisection search over
     # the ratio_bounds, so we need to extract the Tensor containing them from
     # the graph.
     ratio_bounds = None
-    for variable in variables_set:
+    for variable in variables:
       tensor = variable(memoizer)
       if tensor.name.startswith("tfco_ratio_bounds"):
         self.assertIsNone(ratio_bounds)
@@ -735,7 +740,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     def update_ops_fn():
       update_ops = []
-      for variable in variables_set:
+      for variable in variables:
         update_ops += variable.update_ops(memoizer)
       return update_ops
 
@@ -871,27 +876,28 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # Extract the the constraints and the associated variables.
     constraint_list = []
-    variables_set = set(expression.extra_variables)
+    variables = deferred_tensor.DeferredVariableList(expression.extra_variables)
     for constraint in expression.extra_constraints:
       constraint_value, constraint_variables = (
           constraint.expression.constraint_expression.evaluate(memoizer))
       constraint_list.append(constraint_value)
-      variables_set.update(constraint_variables)
-      variables_set.update(constraint.expression.extra_variables)
+      variables += constraint_variables
+      variables += constraint.expression.extra_variables
+    variables = variables.list
     self.assertEqual(2, len(constraint_list))
     constraints = deferred_tensor.DeferredTensor.apply(
         lambda *args: tf.stack(args), *constraint_list)
 
     # We need to explicitly create all variables included in the expression
     # before we can try to extract the ratio_bounds.
-    for variable in variables_set:
+    for variable in variables:
       variable.create(memoizer)
 
     # The find_zeros_of_functions() helper will perform a bisection search over
     # the ratio_bounds, so we need to extract the Tensor containing them from
     # the graph.
     ratio_bounds = None
-    for variable in variables_set:
+    for variable in variables:
       tensor = variable(memoizer)
       if tensor.name.startswith("tfco_ratio_bounds"):
         self.assertIsNone(ratio_bounds)
@@ -900,7 +906,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     def update_ops_fn():
       update_ops = []
-      for variable in variables_set:
+      for variable in variables:
         update_ops += variable.update_ops(memoizer)
       return update_ops
 
@@ -990,27 +996,28 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # Extract the the constraints and the associated variables.
     constraint_list = []
-    variables_set = set(expression.extra_variables)
+    variables = deferred_tensor.DeferredVariableList(expression.extra_variables)
     for constraint in expression.extra_constraints:
       constraint_value, constraint_variables = (
           constraint.expression.constraint_expression.evaluate(memoizer))
       constraint_list.append(constraint_value)
-      variables_set.update(constraint_variables)
-      variables_set.update(constraint.expression.extra_variables)
+      variables += constraint_variables
+      variables += constraint.expression.extra_variables
+    variables = variables.list
     self.assertEqual(bins, len(constraint_list))
     constraints = deferred_tensor.DeferredTensor.apply(
         lambda *args: tf.stack(args), *constraint_list)
 
     # We need to explicitly create all variables included in the expression
     # before we can try to extract the roc_auc_thresholds.
-    for variable in variables_set:
+    for variable in variables:
       variable.create(memoizer)
 
     # The find_zeros_of_functions() helper will perform a bisection search over
     # the roc_auc_thresholds, so we need to extract the Tensor containing them
     # from the graph.
     roc_auc_thresholds = None
-    for variable in variables_set:
+    for variable in variables:
       tensor = variable(memoizer)
       if tensor.name.startswith("tfco_roc_auc_thresholds"):
         self.assertIsNone(roc_auc_thresholds)
@@ -1019,7 +1026,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     def update_ops_fn():
       update_ops = []
-      for variable in variables_set:
+      for variable in variables:
         update_ops += variable.update_ops(memoizer)
       return update_ops
 

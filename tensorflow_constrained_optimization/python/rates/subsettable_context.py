@@ -307,7 +307,8 @@ class SubsettableContext(helpers.RateObject):
     """
     return SubsettableContext(
         self._raw_context._transform_predictions(transformation),  # pylint: disable=protected-access
-        self._penalty_predicate, self._constraint_predicate)
+        self._penalty_predicate,
+        self._constraint_predicate)
 
   def subset(self, penalty_predicate, constraint_predicate=None):
     """Returns a subset of this context.
@@ -368,6 +369,28 @@ class SubsettableContext(helpers.RateObject):
         raise ValueError("constraint_predicate must be provided when "
                          "subsetting a split context")
       constraint_predicate = penalty_predicate
+
+    # In eager mode, we do not permit ordinary constant Tensors to be passed as
+    # predicates: only lambdas. Additionally, we allow non-Tensor constants
+    # (e.g. python scalars or numpy arrays) and DeferredTensors (for internal
+    # use).
+    #
+    # The reason for this is that, in eager mode, we want to prevent users from
+    # passing a constant when they intend to use a variable. For example:
+    #   context.subset(some_variable > 0.5)
+    # This is probably a bug, since if, later in the program, the value of
+    # "some_variable" changes, the value of the earlier evaluation of
+    # "some_variable > 0.5" will not. To prevent this, we have checks that force
+    # the user to use something like:
+    #   context.subset(lambda: some_variable > 0.5)
+    # which will work fine even if "some_variable" subsequently changes.
+    if tf.executing_eagerly() and (tf.is_tensor(penalty_predicate) or
+                                   tf.is_tensor(constraint_predicate)):
+      raise ValueError("in eager mode, the predicate provided to a context's "
+                       "subset() method must either be a constant, or a "
+                       "nullary function returning a Tensor: it cannot be a"
+                       "plain Tensor (to fix this, consider wrapping it in a "
+                       "lambda)")
 
     # First convert the predicate Tensors into DeferredTensors, so that we can
     # use the __eq__ operator.
@@ -493,10 +516,24 @@ def rate_context(predictions, labels=None, weights=1.0):
     raise TypeError("weights parameter to rate_context() should be a "
                     "Tensor-like object, or a nullary function returning such")
 
-  if tf.executing_eagerly() and not callable(predictions):
-    raise ValueError("in eager mode, the predictions provided to a context "
-                     "must be a nullary function returning a Tensor (the "
-                     "labels and weights possibly should be, also)")
+  if tf.executing_eagerly():
+    if not callable(predictions):
+      raise ValueError("in eager mode, the predictions provided to a context "
+                       "must be a nullary function returning a Tensor (to fix "
+                       "this, consider wrapping it in a lambda)")
+    # Unlike the predictions, which *must* be callable, we allow non-Tensor
+    # constants (e.g. python scalars or numpy arrays) for the labels and
+    # weights. However, they cannot be ordinary Tensors.
+    if tf.is_tensor(labels):
+      raise ValueError("in eager mode, the labels provided to a context must "
+                       "either be a constant, or a nullary function returning "
+                       "a Tensor: it cannot be a plain Tensor (to fix this, "
+                       "consider wrapping it in a lambda)")
+    if tf.is_tensor(weights):
+      raise ValueError("in eager mode, the weights provided to a context must "
+                       "either be a constant, or a nullary function returning "
+                       "a Tensor: it cannot be a plain Tensor (to fix this, "
+                       "consider wrapping it in a lambda)")
 
   predictions = deferred_tensor.DeferredTensor(predictions)
   if labels is not None:
@@ -584,12 +621,24 @@ def split_rate_context(penalty_predictions,
         "constraint_weights parameter to split_rate_context() "
         "should be a Tensor-like object, or a nullary function returning such")
 
-  if tf.executing_eagerly() and not (callable(penalty_predictions) and
-                                     callable(constraint_predictions)):
-    raise ValueError("in eager mode, the penalty_predictions and "
-                     "constraint_predictions provided to a context must each "
-                     "be a nullary function returning a Tensor (the labels "
-                     "and weights possibly should be, also)")
+  if tf.executing_eagerly():
+    if not (callable(penalty_predictions) and callable(constraint_predictions)):
+      raise ValueError("in eager mode, the predictions provided to a context "
+                       "must be a nullary function returning a Tensor (to fix "
+                       "this, consider wrapping it in a lambda)")
+    # Unlike the predictions, which *must* be callable, we allow non-Tensor
+    # constants (e.g. python scalars or numpy arrays) for the labels and
+    # weights. However, they cannot be ordinary Tensors.
+    if tf.is_tensor(penalty_labels) or tf.is_tensor(constraint_labels):
+      raise ValueError("in eager mode, the labels provided to a context must "
+                       "either be a constant, or a nullary function returning "
+                       "a Tensor: it cannot be a plain Tensor (to fix this, "
+                       "consider wrapping it in a lambda)")
+    if tf.is_tensor(penalty_weights) or tf.is_tensor(constraint_weights):
+      raise ValueError("in eager mode, the weights provided to a context must "
+                       "either be a constant, or a nullary function returning "
+                       "a Tensor: it cannot be a plain Tensor (to fix this, "
+                       "consider wrapping it in a lambda)")
 
   penalty_predictions = deferred_tensor.DeferredTensor(penalty_predictions)
   if penalty_labels is not None:

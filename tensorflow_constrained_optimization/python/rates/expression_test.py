@@ -72,8 +72,9 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    variables_set = set(penalty_variables) | set(constraint_variables)
-    for variable in variables_set:
+    variables = deferred_tensor.DeferredVariableList(penalty_variables +
+                                                     constraint_variables)
+    for variable in variables:
       variable.create(memoizer)
 
     # This is the same expression as above, applied directly to the python

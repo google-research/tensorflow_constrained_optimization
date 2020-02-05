@@ -186,10 +186,10 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    variables_set = (
-        set(zero_one_positive_variables) | set(zero_one_negative_variables)
-        | set(hinge_positive_variables) | set(hinge_negative_variables))
-    for variable in variables_set:
+    variables = deferred_tensor.DeferredVariableList(
+        zero_one_positive_variables + zero_one_negative_variables +
+        hinge_positive_variables + hinge_negative_variables).list
+    for variable in variables:
       variable.create(memoizer)
 
     with self.wrapped_session() as session:
