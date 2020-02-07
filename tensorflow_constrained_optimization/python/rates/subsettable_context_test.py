@@ -51,27 +51,28 @@ def create_contexts():
   # *must* be a function).
   context = subsettable_context.rate_context(lambda: predictions)
 
-  penalty_predicate = tf.constant(
-      [True, False, True, False, True, False, True, False, True, False],
-      dtype=tf.bool)
-  constraint_predicate = tf.constant(
-      [False, True, False, True, False, True, False, True, False, True],
-      dtype=tf.bool)
+  penalty_predicate = [
+      True, False, True, False, True, False, True, False, True, False
+  ],
+  constraint_predicate = [
+      False, True, False, True, False, True, False, True, False, True
+  ],
+
   context = context.subset(penalty_predicate, constraint_predicate)
 
-  penalty_predicate1 = tf.constant(
-      [False, False, True, True, True, True, False, False, False, False],
-      dtype=tf.bool)
-  constraint_predicate1 = tf.constant(
-      [True, True, False, False, False, False, True, True, True, True],
-      dtype=tf.bool)
+  penalty_predicate1 = [
+      False, False, True, True, True, True, False, False, False, False
+  ],
+  constraint_predicate1 = [
+      True, True, False, False, False, False, True, True, True, True
+  ],
 
-  penalty_predicate2 = tf.constant(
-      [False, False, False, False, True, True, True, True, False, False],
-      dtype=tf.bool)
-  constraint_predicate2 = tf.constant(
-      [True, True, True, True, False, False, False, False, True, True],
-      dtype=tf.bool)
+  penalty_predicate2 = [
+      False, False, False, False, True, True, True, True, False, False
+  ],
+  constraint_predicate2 = [
+      True, True, True, True, False, False, False, False, True, True
+  ],
 
   context1 = context.subset(penalty_predicate1, constraint_predicate1)
   context2 = context.subset(penalty_predicate2, constraint_predicate2)

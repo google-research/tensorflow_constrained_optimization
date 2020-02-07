@@ -87,7 +87,20 @@ class _StaticDeferredTensorState(_DeferredTensorState):
     return self._value, self._auto_cast
 
   def __hash__(self):
-    return hash((self._value, self._auto_cast))
+    # We return a triple containing (i) the value, or None if the value is a
+    # Tensor, (ii) the id of the value, or None if the value is not a Tensor,
+    # and (iii) the auto_cast flag.
+    #
+    # The reason for the first two fields being laid out like they are is that
+    # __eq__() compares Tensors by id (using "is"), and non-Tensors by value.
+    if tf.is_tensor(self.value):
+      identifier = (None, id(self.value), self._auto_cast)
+    else:
+      # We cast to a numpy array and then to a list so that, even if we're given
+      # a numpy type (which is not necesarily hashable), we'll wind up with a
+      # hashable type.
+      identifier = (np.array(self.value).tolist(), None, self._auto_cast)
+    return hash(identifier)
 
   def __eq__(self, other):
     if not isinstance(other, _StaticDeferredTensorState):
@@ -100,7 +113,9 @@ class _StaticDeferredTensorState(_DeferredTensorState):
     #
     # In eager mode, we could potentially check for value-equality, by using the
     # np.array_equal() code below after *explicitly* casting the Tensors to
-    # numpy arrays by calling Tensor.numpy().
+    # numpy arrays by calling Tensor.numpy(). This would probably be a bad idea,
+    # though, since if the Tensor is actually a tf.Variable, its value could
+    # change in the future.
     if tf.is_tensor(self.value) or tf.is_tensor(other.value):
       return self.value is other.value
 
@@ -589,3 +604,18 @@ class DeferredVariable(DeferredTensor):
     if self._update_ops_fn is None:
       return []
     return self._update_ops_fn(self.__call__(memoizer), memoizer)
+
+
+class DeferredVariableList(helpers.UniqueList):
+  """Represents a list of `DeferredVariable`s.
+
+  Aside from having a very stripped-down interface compared to a normal Python
+  list, this class also differs in that (i) it verifies that every element it
+  contains is a `DeferredVariable` object, and (ii) duplicate elements are
+  removed (but, unlike a set, order is preserved).
+  """
+
+  def __init__(self, collection=None):
+    """Creates a new `DeferredVariableList` from a collection."""
+    super(DeferredVariableList, self).__init__(
+        collection=collection, element_type=DeferredVariable)

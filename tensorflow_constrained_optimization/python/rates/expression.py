@@ -127,17 +127,8 @@ class Expression(helpers.RateObject):
     """
     self._penalty_expression = penalty_expression
     self._constraint_expression = constraint_expression
-
-    if extra_variables is None:
-      self._extra_variables = set()
-    else:
-      self._extra_variables = set(extra_variables)
-    if not all(
-        isinstance(extra_variable, deferred_tensor.DeferredVariable)
-        for extra_variable in self._extra_variables):
-      raise TypeError("all elements of extra_variables must be "
-                      "DeferredVariable objects")
-
+    self._extra_variables = deferred_tensor.DeferredVariableList(
+        extra_variables)
     self._extra_constraints = constraint.ConstraintList(extra_constraints)
 
   @property
@@ -166,15 +157,14 @@ class Expression(helpers.RateObject):
 
   @property
   def extra_variables(self):
-    """Returns the set of extra `DeferredVariable`s."""
-    # Construct a new set so that the caller can't change the set owned by this
-    # class.
-    return set(self._extra_variables)
+    """Returns the list of extra `DeferredVariable`s."""
+    # The "list" property of a DeferredVariableList returns a copy.
+    return self._extra_variables.list
 
   @property
   def extra_constraints(self):
     """Returns the list of extra `Constraint`s."""
-    # The "list" property of a ConstraintList already returns a copy.
+    # The "list" property of a ConstraintList returns a copy.
     return self._extra_constraints.list
 
   def add_dependencies(self, extra_variables=None, extra_constraints=None):
@@ -192,22 +182,13 @@ class Expression(helpers.RateObject):
       extra_constraints: optional collection of `Constraint`s to add to the list
         of constraints required by the resulting `Expression`.
     """
-    if extra_variables is None:
-      extra_variables = set()
-    else:
-      extra_variables = set(extra_variables)
-    if not all(
-        isinstance(extra_variable, deferred_tensor.DeferredVariable)
-        for extra_variable in extra_variables):
-      raise TypeError("all elements of extra_variables must be "
-                      "DeferredVariable objects")
-
+    extra_variables = deferred_tensor.DeferredVariableList(extra_variables)
     extra_constraints = constraint.ConstraintList(extra_constraints)
 
     return Expression(
         self._penalty_expression,
         self._constraint_expression,
-        extra_variables=self._extra_variables | extra_variables,
+        extra_variables=self._extra_variables + extra_variables,
         extra_constraints=self._extra_constraints + extra_constraints)
 
   def __mul__(self, scalar):
@@ -282,7 +263,7 @@ class Expression(helpers.RateObject):
       return Expression(
           self._penalty_expression + other.penalty_expression,
           self._constraint_expression + other.constraint_expression,
-          extra_variables=self._extra_variables | other.extra_variables,
+          extra_variables=self._extra_variables + other.extra_variables,
           extra_constraints=self._extra_constraints + other.extra_constraints)
     elif not isinstance(other, helpers.RateObject):
       return Expression(
@@ -304,7 +285,7 @@ class Expression(helpers.RateObject):
       return Expression(
           self._penalty_expression - other.penalty_expression,
           self._constraint_expression - other.constraint_expression,
-          extra_variables=self._extra_variables | other.extra_variables,
+          extra_variables=self._extra_variables + other.extra_variables,
           extra_constraints=self._extra_constraints + other.extra_constraints)
     elif not isinstance(other, helpers.RateObject):
       return Expression(

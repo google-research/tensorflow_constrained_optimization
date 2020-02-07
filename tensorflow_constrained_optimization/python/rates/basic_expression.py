@@ -68,41 +68,53 @@ class BasicExpression(helpers.RateObject):
   """
 
   def _add_terms(self, source):
-    """Adds a list of `Term`s to this `BasicExpression` (in place).
+    """Adds a collection of `Term`s to this `BasicExpression` (in place).
 
     Args:
-      source: list of `Term`s to add to this `BasicExpression`.
+      source: collection of `Term`s to add to this `BasicExpression`.
     """
-    for tt in source:
-      key = tt.key
-      if key in self._terms:
-        self._terms[key] += tt
+    # We use a list to store the Terms (instead of e.g. a dict mapping keys to
+    # Terms), so that we can preserve the order of the Terms. As a consequence,
+    # we set up an indices dict every time we add two BasicExpressions (of
+    # course, this isn't the only way to handle it).
+    indices = {tt.key: ii for ii, tt in enumerate(self._terms)}
+    for cc in source:
+      key = cc.key
+      if key in indices:
+        self._terms[indices[key]] += cc
       else:
-        self._terms[key] = tt
+        indices[cc.key] = len(self._terms)
+        self._terms.append(cc)
 
   def _sub_terms(self, source):
-    """Subtracts a list of `Term`s from this `BasicExpression` (in place).
+    """Subtracts a collection of `Term`s from this `BasicExpression` (in place).
 
     Args:
-      source: list of `Term`s to subtract from this `BasicExpression`.
+      source: collection of `Term`s to subtract from this `BasicExpression`.
     """
-    for tt in source:
-      key = tt.key
-      if key in self._terms:
-        self._terms[key] -= tt
+    # We use a list to store the Terms (instead of e.g. a dict mapping keys to
+    # Terms), so that we can preserve the order of the Terms. As a consequence,
+    # we set up an indices dict every time we subtract two BasicExpressions (of
+    # course, this isn't the only way to handle it).
+    indices = {tt.key: ii for ii, tt in enumerate(self._terms)}
+    for cc in source:
+      key = cc.key
+      if key in indices:
+        self._terms[indices[key]] -= cc
       else:
-        self._terms[key] = -tt
+        indices[cc.key] = len(self._terms)
+        self._terms.append(-cc)
 
   def __init__(self, terms, tensor=0.0):
     """Creates a new `BasicExpression`.
 
-    The reason for taking a list of `Term`s, instead of only a single `Term`
-    representing the entire linear combination, is that, unlike `Tensor`s, two
-    `Term`s can only be added or subtracted if they're "compatible" (which is a
-    notion defined by the `Term` itself).
+    The reason for taking a collection of `Term`s, instead of only a single
+    `Term` representing the entire linear combination, is that, unlike
+    `Tensor`s, two `Term`s can only be added or subtracted if they're
+    "compatible" (which is a notion defined by the `Term` itself).
 
     Args:
-      terms: list of `Term`s to sum in the `BasicExpression`.
+      terms: collection of `Term`s to sum in the `BasicExpression`.
       tensor: optional scalar `DeferredTensor` or `Tensor`-like object to add to
         the sum of `Term`s.
 
@@ -110,21 +122,26 @@ class BasicExpression(helpers.RateObject):
       TypeError: if "tensor" is not a `DeferredTensor` or `Tensor`-like object.
     """
     # This object contains two member variables: "_terms", representing a linear
-    # combination of `Term` objects, and "_tensor", representing an additional
-    # `Tensor`-like object to include in the sum. The "_tensor" variable is
-    # capable of representing a linear combination of `Tensor`s, since `Tensor`s
+    # combination of Term objects, and "_tensor", representing an additional
+    # Tensor-like object to include in the sum. The "_tensor" variable is
+    # capable of representing a linear combination of Tensors, since Tensors
     # support negation, addition, subtraction, scalar multiplication and
     # division.
     #
-    # It isn't so simple for `Term`s. Like `Tensor`s, they support negation,
-    # scalar multiplication and division without restriction. Unlike `Tensor`s,
-    # however, only "compatible" `Term`s may be added or subtracted. Two `Term`s
-    # are compatible iff they have the same key (returned by their "key"
-    # method). For this reason, "_terms" is a dict mapping keys to `Term`s.
-    # When we add or subtract two `BasicExpression`s, compatible `Term`s are
-    # added or subtracted, and incompatible `Term`s are put in their own dict
-    # entries.
-    self._terms = {}
+    # It isn't so simple for Terms. Like Tensors, they support negation, scalar
+    # multiplication and division without restriction. Unlike Tensors, however,
+    # only "compatible" Terms may be added or subtracted. Two Terms are
+    # compatible iff they have the same key (returned by their "key" method).
+    # When we add or subtract two BasicExpressions, compatible Terms are added
+    # or subtracted within the _terms list, and incompatible Terms are appended
+    # to the list.
+    #
+    # We use a list to store the Terms (instead of e.g. a dict mapping keys to
+    # Terms), so that we can preserve the order of the Terms (of course, this
+    # isn't the only way to handle it). This is needed to support distributed
+    # optimization, since it results in the DeferredVariables upon which the
+    # Terms depend having a consistent order from machine-to-machine.
+    self._terms = []
     self._add_terms(terms)
     if isinstance(tensor, deferred_tensor.DeferredTensor):
       self._tensor = tensor
@@ -133,13 +150,6 @@ class BasicExpression(helpers.RateObject):
     else:
       raise TypeError("tensor argument to BasicExpression's constructor "
                       "should be a DeferredTensor or a Tensor-like object")
-
-  @property
-  def terms(self):
-    """Returns the list of `Term`s contained in this `BasicExpression`."""
-    # Notice that we only return the values in the _terms dict. The keys are
-    # only used for combining common terms (in the binary operators).
-    return self._terms.values()
 
   @property
   def tensor(self):
@@ -159,7 +169,7 @@ class BasicExpression(helpers.RateObject):
       {sub,super}differentiable losses. False otherwise.
     """
     result = True
-    for tt in self._terms.values():
+    for tt in self._terms:
       result &= tt.is_differentiable
     return result
 
@@ -176,7 +186,7 @@ class BasicExpression(helpers.RateObject):
     if isinstance(scalar, helpers.RateObject):
       raise TypeError("BasicExpression objects only support *scalar* "
                       "multiplication")
-    terms = [tt * scalar for tt in self._terms.values()]
+    terms = [tt * scalar for tt in self._terms]
     return BasicExpression(terms, self._tensor * scalar)
 
   def __rmul__(self, scalar):
@@ -188,7 +198,7 @@ class BasicExpression(helpers.RateObject):
     # See comment in __mul__.
     if isinstance(scalar, helpers.RateObject):
       raise TypeError("BasicExpression objects only support *scalar* division")
-    terms = [tt / scalar for tt in self._terms.values()]
+    terms = [tt / scalar for tt in self._terms]
     return BasicExpression(terms, self._tensor / scalar)
 
   # __rtruediv__ is not implemented since we only allow *scalar* division, i.e.
@@ -197,20 +207,19 @@ class BasicExpression(helpers.RateObject):
 
   def __neg__(self):
     """Returns the result of negating this `BasicExpression`."""
-    terms = [-tt for tt in self._terms.values()]
+    terms = [-tt for tt in self._terms]
     return BasicExpression(terms, -self._tensor)
 
   def __add__(self, other):
     """Returns the result of adding two `BasicExpression`s."""
     if isinstance(other, BasicExpression):
-      result = BasicExpression(self._terms.values(),
-                               self._tensor + other.tensor)
+      result = BasicExpression(self._terms, self._tensor + other.tensor)
       # pylint: disable=protected-access
-      result._add_terms(other.terms)
+      result._add_terms(other._terms)
       # pylint: enable=protected-access
       return result
     elif not isinstance(other, helpers.RateObject):
-      return BasicExpression(self._terms.values(), self._tensor + other)
+      return BasicExpression(self._terms, self._tensor + other)
     else:
       raise TypeError("BasicExpression objects can only be added to each "
                       "other, or scalars")
@@ -222,14 +231,13 @@ class BasicExpression(helpers.RateObject):
   def __sub__(self, other):
     """Returns the result of subtracting two `BasicExpression`s."""
     if isinstance(other, BasicExpression):
-      result = BasicExpression(self._terms.values(),
-                               self._tensor - other.tensor)
+      result = BasicExpression(self._terms, self._tensor - other.tensor)
       # pylint: disable=protected-access
-      result._sub_terms(other.terms)
+      result._sub_terms(other._terms)
       # pylint: enable=protected-access
       return result
     elif not isinstance(other, helpers.RateObject):
-      return BasicExpression(self._terms.values(), self._tensor - other)
+      return BasicExpression(self._terms, self._tensor - other)
     else:
       raise TypeError("BasicExpression objects can only be subtracted from "
                       "each other, or scalars")
@@ -247,21 +255,24 @@ class BasicExpression(helpers.RateObject):
         "denominator_lower_bound" and "global_step", with the corresponding
         values being the minimum allowed value of a rate denominator (a python
         float), and the current iterate (starting at zero), respectively.
+        Returns A (`DeferredTensor`, list) pair containing (i) the value of this
+        `BasicExpression`, and (ii) a list of `DeferredVariable`s containing the
+        internal state upon which the `BasicExpression` evaluation depends.
 
     Returns:
-      A (`DeferredTensor`, set) pair containing (i) the value of this
-      `BasicExpression`, and (ii) a set of `DeferredVariable`s containing the
+      A (`DeferredTensor`, list) pair containing (i) the value of this
+      `BasicExpression`, and (ii) a list of `DeferredVariable`s containing the
       internal state upon which the `BasicExpression` evaluation depends.
     """
     values = [self._tensor]
-    variables = set()
-    for tt in self._terms.values():
+    variables = deferred_tensor.DeferredVariableList()
+    for tt in self._terms:
       term_value, term_variables = tt.evaluate(memoizer)
       values.append(term_value)
-      variables.update(term_variables)
+      variables += term_variables
 
     # We create a list of values, and sum them all-at-once (instead of adding
     # them one-by-one inside the above loop) to limit how deeply the closures
     # inside the DeferredTensor will be nested.
     return deferred_tensor.DeferredTensor.apply(lambda *args: sum(args),
-                                                *values), variables
+                                                *values), variables.list

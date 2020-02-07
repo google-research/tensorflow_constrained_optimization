@@ -23,6 +23,7 @@ import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import defaults
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import operations
 # Placeholder for internal import.
 
@@ -55,8 +56,8 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    variables = (
-        expression.extra_variables | penalty_variables | constraint_variables)
+    variables = deferred_tensor.DeferredVariableList(
+        expression.extra_variables + penalty_variables + constraint_variables)
     for variable in variables:
       variable.create(memoizer)
 

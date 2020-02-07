@@ -299,8 +299,8 @@ class _RatioWeights(helpers.RateObject):
         float), and the current iterate (starting at zero), respectively.
 
     Returns:
-      A (`DeferredTensor`, set) pair containing (i) the (approximate)
-      denominator, and (ii) a set of `DeferredVariable`s containing the
+      A (`DeferredTensor`, list) pair containing (i) the (approximate)
+      denominator, and (ii) a list of `DeferredVariable`s containing the
       internal state upon which the denominator depends.
     """
     key = (_RatioWeights, denominator)
@@ -385,8 +385,7 @@ class _RatioWeights(helpers.RateObject):
             false_fn=lambda: running_denominator_lower_bound)
 
       memoizer[key] = (deferred_tensor.DeferredTensor.apply(
-          average_denominator_weight_fn,
-          running_averages), set([running_averages]))
+          average_denominator_weight_fn, running_averages), [running_averages])
 
     return memoizer[key]
 
@@ -401,12 +400,12 @@ class _RatioWeights(helpers.RateObject):
         float), and the current iterate (starting at zero), respectively.
 
     Returns:
-      A (`DeferredTensor`, set) pair containing (i) the weights associated with
-      each example, and (ii) a set of `DeferredVariable`s containing the
+      A (`DeferredTensor`, list) pair containing (i) the weights associated with
+      each example, and (ii) a list of `DeferredVariable`s containing the
       internal state upon which the `_RatioWeights` evaluation depends.
     """
     ratios = []
-    variables = set()
+    variables = deferred_tensor.DeferredVariableList()
 
     for denominator_key, numerator in six.iteritems(self._ratios):
       denominator, denominator_variables = self._evaluate_denominator(
@@ -420,7 +419,7 @@ class _RatioWeights(helpers.RateObject):
       ratios.append(
           deferred_tensor.DeferredTensor.apply(ratio_fn, numerator,
                                                denominator))
-      variables.update(denominator_variables)
+      variables += denominator_variables
 
     # It's probably paranoid to call stop_gradient on the ratio weights, but
     # it shouldn't do any harm, and might prevent failure if someone's doing
@@ -428,7 +427,7 @@ class _RatioWeights(helpers.RateObject):
     value = deferred_tensor.DeferredTensor.apply(
         lambda *args: tf.stop_gradient(sum(args, (0.0,))), *ratios)
 
-    return value, variables
+    return value, variables.list
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -470,10 +469,10 @@ class Term(helpers.RateObject):
     of `Term`s that can be added and subtracted to/from each other.
 
     Returns:
-      An object implementing __hash__ and __eq__. When two `Term`s have the same
-      key, they can be safely combined using binary arithmetic operations. When
-      they have different keys, the `BasicExpression` owning them will not
-      attempt to do so.
+      An object implementing __eq__. When two `Term`s have the same key, they
+      can be safely combined using binary arithmetic operations. When they have
+      different keys, the `BasicExpression` owning them will not attempt to do
+      so.
     """
 
   @abc.abstractmethod
@@ -529,8 +528,8 @@ class Term(helpers.RateObject):
         float), and the current iterate (starting at zero), respectively.
 
     Returns:
-      A (`DeferredTensor`, set) pair containing (i) the value of this `Term`,
-      and (ii) a set of `DeferredVariable`s containing the internal state upon
+      A (`DeferredTensor`, list) pair containing (i) the value of this `Term`,
+      and (ii) a list of `DeferredVariable`s containing the internal state upon
       which the `Term` evaluation depends.
     """
 
@@ -891,20 +890,20 @@ class BinaryClassificationTerm(Term):
         float), and the current iterate (starting at zero), respectively.
 
     Returns:
-      A (`DeferredTensor`, set) pair containing (i) the value of this
-      `BinaryClassificationTerm`, and (ii) a set of `DeferredVariable`s
+      A (`DeferredTensor`, list) pair containing (i) the value of this
+      `BinaryClassificationTerm`, and (ii) a list of `DeferredVariable`s
       containing the internal state upon which the `BinaryClassificationTerm`
       evaluation depends.
     """
-    variables = set()
+    variables = deferred_tensor.DeferredVariableList()
 
     # Evalaute the weights on the positive and negative approximate indicators.
     positive_weights, positive_variables = (
         self._positive_ratio_weights.evaluate(memoizer))
     negative_weights, negative_variables = (
         self._negative_ratio_weights.evaluate(memoizer))
-    variables.update(positive_variables)
-    variables.update(negative_variables)
+    variables += positive_variables
+    variables += negative_variables
 
     def average_loss_fn(positive_weights_value, negative_weights_value,
                         predictions_value):
@@ -923,7 +922,6 @@ class BinaryClassificationTerm(Term):
 
       return tf.reduce_mean(losses)
 
-    return deferred_tensor.DeferredTensor.apply(average_loss_fn,
-                                                positive_weights,
-                                                negative_weights,
-                                                self._predictions), variables
+    return deferred_tensor.DeferredTensor.apply(
+        average_loss_fn, positive_weights, negative_weights,
+        self._predictions), variables.list

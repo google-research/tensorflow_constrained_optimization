@@ -380,15 +380,17 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
     if self._constraint_optimizer is None or state is None:
       return self._optimizer._create_slots(var_list)
 
-    var_list = set(var_list)
-    if state not in var_list:
-      state_var_list = []
-    else:
-      var_list.discard(state)
-      state_var_list = [state]
-    var_list = list(var_list)
+    state_var_list = []
+    non_state_var_list = []
+    for var in var_list:
+      # We have to use "is" for the state comparison because in eager mode in
+      # TensorFlow 2.1+, __eq__ is an element-wise comparison.
+      if var is state:
+        state_var_list.append(var)
+      else:
+        non_state_var_list.append(var)
 
-    self._optimizer._create_slots(var_list)
+    self._optimizer._create_slots(non_state_var_list)
     self._constraint_optimizer._create_slots(state_var_list)
 
   def _prepare(self):
@@ -399,7 +401,7 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
   def _apply_dense(self, gradient, variable, *args, **kwargs):
     assert variable is not None
     if (self._constraint_optimizer is not None and
-        variable == self._formulation.state):
+        variable is self._formulation.state):
       return self._constraint_optimizer._apply_dense(gradient, variable, *args,
                                                      **kwargs)
     return self._optimizer._apply_dense(gradient, variable, *args, **kwargs)
@@ -407,7 +409,7 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
   def _apply_sparse(self, gradient, variable, *args, **kwargs):
     assert variable is not None
     if (self._constraint_optimizer is not None and
-        variable == self._formulation.state):
+        variable is self._formulation.state):
       return self._constraint_optimizer._apply_sparse(gradient, variable, *args,
                                                       **kwargs)
     return self._optimizer._apply_sparse(gradient, variable, *args, **kwargs)
@@ -417,7 +419,7 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
     # TODO: is it safe to compare variables and handles? It works in
     # the tests, but will it *always* work?
     if (self._constraint_optimizer is not None and
-        handle == self._formulation.state):
+        handle is self._formulation.state):
       return self._constraint_optimizer._resource_apply_dense(
           gradient, handle, *args, **kwargs)
     return self._optimizer._resource_apply_dense(gradient, handle, *args,
@@ -428,7 +430,7 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
     # TODO: is it safe to compare variables and handles? It works in
     # the tests, but will it *always* work?
     if (self._constraint_optimizer is not None and
-        handle == self._formulation.state):
+        handle is self._formulation.state):
       return self._constraint_optimizer._resource_apply_sparse(
           gradient, handle, *args, **kwargs)
     return self._optimizer._resource_apply_sparse(gradient, handle, *args,
@@ -568,15 +570,17 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     if state is None:
       return var_list, []
 
-    var_list = set(var_list)
-    if state not in var_list:
-      state_var_list = []
-    else:
-      var_list.discard(state)
-      state_var_list = [state]
-    var_list = list(var_list)
+    state_var_list = []
+    non_state_var_list = []
+    for var in var_list:
+      # We have to use "is" for the state comparison because in eager mode in
+      # TensorFlow 2.1+, __eq__ is an element-wise comparison.
+      if var is state:
+        state_var_list.append(var)
+      else:
+        non_state_var_list.append(var)
 
-    return var_list, state_var_list
+    return non_state_var_list, state_var_list
 
   # pylint: disable=protected-access
 
@@ -656,7 +660,7 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     # TODO: is it safe to compare variables and handles? It works in
     # the tests, but will it *always* work?
     if (self._constraint_optimizer is not None and
-        handle == self._formulation.state):
+        handle is self._formulation.state):
       return self._constraint_optimizer._resource_apply_dense(
           gradient, handle, *args, **kwargs)
     return self._optimizer._resource_apply_dense(gradient, handle, *args,
@@ -667,7 +671,7 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     # TODO: is it safe to compare variables and handles? It works in
     # the tests, but will it *always* work?
     if (self._constraint_optimizer is not None and
-        handle == self._formulation.state):
+        handle is self._formulation.state):
       return self._constraint_optimizer._resource_apply_sparse(
           gradient, handle, *args, **kwargs)
     return self._optimizer._resource_apply_sparse(gradient, handle, *args,

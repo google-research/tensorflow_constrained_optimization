@@ -64,20 +64,20 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     self.assertEqual(term_object1.key, term_object2.key)
 
     expression_object1 = basic_expression.BasicExpression([term_object1])
-    self.assertEqual(1, len(expression_object1.terms))
+    self.assertEqual(1, len(expression_object1._terms))
     expression_object2 = basic_expression.BasicExpression([term_object2])
-    self.assertEqual(1, len(expression_object2.terms))
+    self.assertEqual(1, len(expression_object2._terms))
 
     # Check that __init__ correctly merges compatible terms.
     expression_object = basic_expression.BasicExpression(
         [term_object1, term_object2])
-    self.assertEqual(1, len(expression_object.terms))
+    self.assertEqual(1, len(expression_object._terms))
     # Check that __add__ correctly merges compatible terms.
     expression_object = expression_object1 + expression_object2
-    self.assertEqual(1, len(expression_object.terms))
+    self.assertEqual(1, len(expression_object._terms))
     # Check that __sub__ correctly merges compatible terms.
     expression_object = expression_object1 - expression_object2
-    self.assertEqual(1, len(expression_object.terms))
+    self.assertEqual(1, len(expression_object._terms))
 
   def test_not_merging(self):
     """Checks that `BasicExpression`s don't merge incompatible `Term`s."""
@@ -106,20 +106,20 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     self.assertNotEqual(term_object1.key, term_object2.key)
 
     expression_object1 = basic_expression.BasicExpression([term_object1])
-    self.assertEqual(1, len(expression_object1.terms))
+    self.assertEqual(1, len(expression_object1._terms))
     expression_object2 = basic_expression.BasicExpression([term_object2])
-    self.assertEqual(1, len(expression_object2.terms))
+    self.assertEqual(1, len(expression_object2._terms))
 
     # Check that __init__ doesn't merge incompatible terms.
     expression_object = basic_expression.BasicExpression(
         [term_object1, term_object2])
-    self.assertEqual(2, len(expression_object.terms))
+    self.assertEqual(2, len(expression_object._terms))
     # Check that __add__ doesn't merge incompatible terms.
     expression_object = expression_object1 + expression_object2
-    self.assertEqual(2, len(expression_object.terms))
+    self.assertEqual(2, len(expression_object._terms))
     # Check that __sub__ doesn't merge incompatible terms.
     expression_object = expression_object1 - expression_object2
-    self.assertEqual(2, len(expression_object.terms))
+    self.assertEqual(2, len(expression_object._terms))
 
   def test_arithmetic(self):
     """Tests `BasicExpression`'s arithmetic operators."""
@@ -166,7 +166,7 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     expected_hinge_negative_weights = negative_coefficients[1]
 
     # We should have two terms, since the two compatible terms will be merged.
-    expression_terms = expression_object.terms
+    expression_terms = expression_object._terms
     self.assertEqual(2, len(expression_terms))
     zero_one_term, hinge_term = expression_terms
     if zero_one_term.loss != loss.ZeroOneLoss():
@@ -186,9 +186,9 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    variables = (
-        zero_one_positive_variables | zero_one_negative_variables
-        | hinge_positive_variables | hinge_negative_variables)
+    variables = deferred_tensor.DeferredVariableList(
+        zero_one_positive_variables + zero_one_negative_variables +
+        hinge_positive_variables + hinge_negative_variables).list
     for variable in variables:
       variable.create(memoizer)
 

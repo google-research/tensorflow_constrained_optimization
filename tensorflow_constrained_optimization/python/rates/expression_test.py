@@ -72,7 +72,8 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    variables = penalty_variables | constraint_variables
+    variables = deferred_tensor.DeferredVariableList(penalty_variables +
+                                                     constraint_variables)
     for variable in variables:
       variable.create(memoizer)
 
@@ -117,10 +118,10 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     expression23 = expression2 - expression3 / 1.3
     expression123 = -expression12 + 0.6 * expression23
 
-    self.assertEqual(expression12.extra_variables, set([variable1, variable2]))
-    self.assertEqual(expression23.extra_variables, set([variable2, variable3]))
+    self.assertEqual(expression12.extra_variables, [variable1, variable2])
+    self.assertEqual(expression23.extra_variables, [variable2, variable3])
     self.assertEqual(expression123.extra_variables,
-                     set([variable1, variable2, variable3]))
+                     [variable1, variable2, variable3])
 
   def test_extra_constraints(self):
     """Tests that `Expression`s propagate extra constraints correctly."""

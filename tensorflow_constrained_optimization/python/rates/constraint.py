@@ -49,70 +49,16 @@ class Constraint(helpers.RateObject):
     return self._expression
 
 
-class ConstraintList(helpers.RateObject):
+class ConstraintList(helpers.UniqueList):
   """Represents a list of `Constraint`s.
 
   Aside from having a very stripped-down interface compared to a normal Python
   list, this class also differs in that (i) it verifies that every element it
-  contains is a `Constraint` object, and (ii) if one tries to add a duplicate
-  `Constraint` to the list, then it will be ignored.
+  contains is a `Constraint` object, and (ii) duplicate elements are removed
+  (but, unlike a set, order is preserved).
   """
 
-  def __init__(self, container=None):
-    """Creates a new `ConstraintList` from a collection of `Constraint`s."""
-    self._list = []
-    if container is not None:
-      for element in container:
-        self.append(element)
-
-  @property
-  def list(self):
-    """Returns the list of `Constraint`s as a Python list."""
-    # We take a slice of the whole list to make a copy.
-    return self._list[:]
-
-  def append(self, element):
-    """Appends a new `Constraint` to the list, ignoring duplicates."""
-    if not isinstance(element, Constraint):
-      raise TypeError("every element added to a ConstraintList must be a "
-                      "Constraint object")
-    # FUTURE WORK: this linear-time duplicate check is probably fine, since we
-    # expect to generally have very few constraints, but it would be nice to use
-    # something that scales better.
-    if element not in self._list:
-      self._list.append(element)
-
-  def __eq__(self, other):
-    return self._list.__eq__(other._list)  # pylint: disable=protected-access
-
-  def __ne__(self, other):
-    return not self.__eq__(other)
-
-  def __len__(self):
-    """Returns the length of this `ConstraintList`."""
-    return self._list.__len__()
-
-  def __iter__(self):
-    """Returns an iterator over the wrapped list of `Constraint`s."""
-    return self._list.__iter__()
-
-  def __add__(self, other):
-    """Appends two `ConstraintList`s."""
-    result = ConstraintList(self)
-    for element in other:
-      result.append(element)
-    return result
-
-  def __radd__(self, other):
-    """Appends two `ConstraintList`s."""
-    result = ConstraintList(other)
-    for element in self:
-      result.append(element)
-    return result
-
-  def __getitem__(self, slice_spec):
-    """Returns a single element or a slice of this `ConstraintList`."""
-    result = self._list[slice_spec]
-    if isinstance(result, list):
-      result = ConstraintList(result)
-    return result
+  def __init__(self, collection=None):
+    """Creates a new `ConstraintList` from a collection."""
+    super(ConstraintList, self).__init__(
+        collection=collection, element_type=Constraint)

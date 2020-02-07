@@ -74,6 +74,7 @@ import tensorflow as tf
 from tensorflow_constrained_optimization.python import constrained_minimization_problem
 from tensorflow_constrained_optimization.python.rates import constraint
 from tensorflow_constrained_optimization.python.rates import defaults
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 
 
 class RateMinimizationProblem(
@@ -133,6 +134,7 @@ class RateMinimizationProblem(
       raise ValueError("non-differentiable losses (e.g. the zero-one loss) "
                        "cannot be optimized--they can only be constrained")
 
+    variables = deferred_tensor.DeferredVariableList()
     constraints = constraint.ConstraintList(constraints)
 
     # We make our own global_step, for keeping track of the denominators. We
@@ -158,9 +160,10 @@ class RateMinimizationProblem(
 
     # We ignore the "constraint_expression" field here, since we're not inside a
     # constraint (this is the objective function).
-    self._objective, self._variables = (
+    self._objective, objective_variables = (
         objective.penalty_expression.evaluate(self._memoizer))
-    self._variables.update(objective.extra_variables)
+    variables += objective_variables
+    variables += objective.extra_variables
     constraints += objective.extra_constraints
 
     # Evaluating expressions can result in extra constraints being introduced,
@@ -191,15 +194,16 @@ class RateMinimizationProblem(
                 self._memoizer))
         self._proxy_constraints.append(penalty_value)
         self._constraints.append(constraint_value)
-        self._variables.update(penalty_variables)
-        self._variables.update(constraint_variables)
-        self._variables.update(new_constraint.expression.extra_variables)
+        variables += penalty_variables
+        variables += constraint_variables
+        variables += new_constraint.expression.extra_variables
         constraints += new_constraint.expression.extra_constraints
 
     # Explicitly create all of the variables. This also functions as a sanity
     # check: before this point, no variable should have been accessed
     # directly, and since their storage didn't exist yet, they couldn't have
     # been.
+    self._variables = variables.list
     for variable in self._variables:
       variable.create(self._memoizer)
 
