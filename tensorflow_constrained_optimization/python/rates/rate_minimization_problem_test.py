@@ -20,7 +20,6 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
@@ -155,9 +154,9 @@ class RateMinimizationProblemTest(
       # In eager mode, tf.Variable.initial_value doesn't work, so we need to
       # cache the initial values for later.
       if tf.executing_eagerly():
-        variables_and_initial_values = {
-            variable: variable.numpy() for variable in problem.variables
-        }
+        variables_and_initial_values = [
+            (variable, variable.numpy()) for variable in problem.variables
+        ]
 
       initial_objective = session.run(problem.objective())
       initial_constraints = session.run(problem.constraints())
@@ -175,8 +174,7 @@ class RateMinimizationProblemTest(
       # resulting objective, constraints and proxy constraints should be the
       # same as they were before running the update_ops.
       if tf.executing_eagerly():
-        for variable, initial_value in six.iteritems(
-            variables_and_initial_values):
+        for variable, initial_value in variables_and_initial_values:
           variable.assign(initial_value)
       else:
         session.run_ops(
