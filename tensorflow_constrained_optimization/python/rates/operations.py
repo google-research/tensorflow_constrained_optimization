@@ -25,6 +25,7 @@ from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import expression
 from tensorflow_constrained_optimization.python.rates import helpers
+from tensorflow_constrained_optimization.python.rates import term
 
 
 def wrap_rate(penalty_tensor, constraint_tensor=None):
@@ -62,12 +63,12 @@ def wrap_rate(penalty_tensor, constraint_tensor=None):
     raise TypeError("you cannot wrap an object that has already been wrapped")
 
   penalty_basic_expression = basic_expression.BasicExpression(
-      terms=[], tensor=deferred_tensor.DeferredTensor(penalty_tensor))
+      [term.TensorTerm(deferred_tensor.DeferredTensor(penalty_tensor))])
   if constraint_tensor is None:
     constraint_basic_expression = penalty_basic_expression
   else:
     constraint_basic_expression = basic_expression.BasicExpression(
-        terms=[], tensor=deferred_tensor.DeferredTensor(constraint_tensor))
+        [term.TensorTerm(deferred_tensor.DeferredTensor(constraint_tensor))])
   return expression.Expression(penalty_basic_expression,
                                constraint_basic_expression)
 
@@ -113,7 +114,7 @@ def upper_bound(expressions):
       auto_cast=True)
 
   bound_basic_expression = basic_expression.BasicExpression(
-      terms=[], tensor=bound)
+      [term.TensorTerm(bound)])
   bound_expression = expression.Expression(
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression,
@@ -167,7 +168,7 @@ def lower_bound(expressions):
       auto_cast=True)
 
   bound_basic_expression = basic_expression.BasicExpression(
-      terms=[], tensor=bound)
+      [term.TensorTerm(bound)])
   bound_expression = expression.Expression(
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression,

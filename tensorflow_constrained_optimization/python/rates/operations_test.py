@@ -37,7 +37,7 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     Args:
       expression: `Expression` to evaluate.
-      extra_update_ops_fn: function that takes a `EvaluationMemoizer`, and
+      extra_update_ops_fn: function that takes an `EvaluationMemoizer`, and
         returns a list of ops to execute before evaluation.
 
     Returns:
@@ -152,7 +152,9 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # variable, so that we can make sure that the same slack variable is being
     # used for all of the constraints.
     def update_ops_fn(memoizer):
-      bound_tensor = bounded.penalty_expression.tensor(memoizer)
+      bound_terms = list(bounded.penalty_expression._terms)
+      self.assertEqual(1, len(bound_terms))
+      bound_tensor = bound_terms[0].tensor(memoizer)
       return [bound_tensor.assign(bound_value)]
 
     # Extract the set of constraints, and make sure that there is one for each
@@ -207,7 +209,9 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # variable, so that we can make sure that the same slack variable is being
     # used for all of the constraints.
     def update_ops_fn(memoizer):
-      bound_tensor = bounded.penalty_expression.tensor(memoizer)
+      bound_terms = list(bounded.penalty_expression._terms)
+      self.assertEqual(1, len(bound_terms))
+      bound_tensor = bound_terms[0].tensor(memoizer)
       return [bound_tensor.assign(bound_value)]
 
     # Extract the set of constraints, and make sure that there is one for each

@@ -47,20 +47,22 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import constraint
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers
+from tensorflow_constrained_optimization.python.rates import term
 
 
 class Expression(helpers.RateObject):
   """Represents an expression that can be penalized or constrained.
 
   An `Expression`, like a `BasicExpression`, represents a linear combination of
-  `Term`s and `Tensor`s. Internally, it's actually represented as *two*
-  `BasicExpression`s, one of which--the "penalty" portion--is used when the
-  expression is being minimized (in the objective function) or penalized (to
-  satisfy a constraint), and the second of which--the "constraint" portion--is
-  used when the expression is being constrained.
+  `Term`s. Internally, it's actually represented as *two* `BasicExpression`s,
+  one of which--the "penalty" portion--is used when the expression is being
+  minimized (in the objective function) or penalized (to satisfy a constraint),
+  and the second of which--the "constraint" portion--is used when the expression
+  is being constrained.
 
   Typically, the "penalty" and "constraint" portions will be different
   approximations of the same quantity, e.g. the latter could be a zero-one-based
@@ -259,21 +261,21 @@ class Expression(helpers.RateObject):
 
   def __add__(self, other):
     """Returns the result of adding two `Expression`s."""
-    if isinstance(other, Expression):
-      return Expression(
-          self._penalty_expression + other.penalty_expression,
-          self._constraint_expression + other.constraint_expression,
-          extra_variables=self._extra_variables + other.extra_variables,
-          extra_constraints=self._extra_constraints + other.extra_constraints)
-    elif not isinstance(other, helpers.RateObject):
-      return Expression(
-          self._penalty_expression + other,
-          self._constraint_expression + other,
-          extra_variables=self._extra_variables,
-          extra_constraints=self._extra_constraints)
-    else:
-      raise TypeError("Expression objects can only be added to each other, "
-                      "or scalars")
+    if not isinstance(other, helpers.RateObject):
+      # BasicExpressions do not support scalar addition, so we first need to
+      # convert the scalar into an Expression.
+      other_basic_expression = basic_expression.BasicExpression(
+          [term.TensorTerm(other)])
+      other = Expression(other_basic_expression, other_basic_expression)
+    elif not isinstance(other, Expression):
+      raise TypeError("Expression objects can only be added to each other, or "
+                      "scalars")
+
+    return Expression(
+        self._penalty_expression + other.penalty_expression,
+        self._constraint_expression + other.constraint_expression,
+        extra_variables=self._extra_variables + other.extra_variables,
+        extra_constraints=self._extra_constraints + other.extra_constraints)
 
   def __radd__(self, other):
     """Returns the result of adding two `Expression`s."""
@@ -281,36 +283,25 @@ class Expression(helpers.RateObject):
 
   def __sub__(self, other):
     """Returns the result of subtracting two `Expression`s."""
-    if isinstance(other, Expression):
-      return Expression(
-          self._penalty_expression - other.penalty_expression,
-          self._constraint_expression - other.constraint_expression,
-          extra_variables=self._extra_variables + other.extra_variables,
-          extra_constraints=self._extra_constraints + other.extra_constraints)
-    elif not isinstance(other, helpers.RateObject):
-      return Expression(
-          self._penalty_expression - other,
-          self._constraint_expression - other,
-          extra_variables=self._extra_variables,
-          extra_constraints=self._extra_constraints)
-    else:
+    if not isinstance(other, helpers.RateObject):
+      # BasicExpressions do not support scalar subtraction, so we first need to
+      # convert the scalar into an Expression.
+      other_basic_expression = basic_expression.BasicExpression(
+          [term.TensorTerm(other)])
+      other = Expression(other_basic_expression, other_basic_expression)
+    elif not isinstance(other, Expression):
       raise TypeError("Expression objects can only be subtracted from each "
                       "other, or scalars")
 
+    return Expression(
+        self._penalty_expression - other.penalty_expression,
+        self._constraint_expression - other.constraint_expression,
+        extra_variables=self._extra_variables + other.extra_variables,
+        extra_constraints=self._extra_constraints + other.extra_constraints)
+
   def __rsub__(self, other):
     """Returns the result of subtracting two `Expression`s."""
-    # We assert if "other" is an Expression, since if it was, then __sub__ would
-    # have been called instead of __rsub__.
-    assert not isinstance(other, Expression)
-    if not isinstance(other, helpers.RateObject):
-      return Expression(
-          other - self._penalty_expression,
-          other - self._constraint_expression,
-          extra_variables=self._extra_variables,
-          extra_constraints=self._extra_constraints)
-    else:
-      raise TypeError("Expression objects can only be subtracted from each "
-                      "other, or scalars")
+    return self.__neg__().__add__(other)
 
   def __le__(self, other):
     """Returns a `Constraint` representing self <= other."""

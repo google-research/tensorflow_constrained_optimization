@@ -26,6 +26,7 @@ from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import expression
+from tensorflow_constrained_optimization.python.rates import term
 # Placeholder for internal import.
 
 
@@ -40,30 +41,24 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    penalty_values = [-3.6, 1.5, 0.4]
-    constraint_values = [-0.2, -0.5, 2.3]
-
-    # Create three expressions containing the constants in "penalty_values" in
-    # their penalty_expressions, and "constraint_values" in their
-    # constraint_expressions.
-    expression_objects = []
-    for penalty_value, constraint_value in zip(penalty_values,
-                                               constraint_values):
-      expression_object = expression.Expression(
-          basic_expression.BasicExpression([],
-                                           deferred_tensor.DeferredTensor(
-                                               tf.constant(
-                                                   penalty_value,
-                                                   dtype=tf.float32))),
-          basic_expression.BasicExpression([],
-                                           deferred_tensor.DeferredTensor(
-                                               tf.constant(constraint_value))))
-      expression_objects.append(expression_object)
+    def constant_expression(penalty_constant, constraint_constant=None):
+      penalty_basic_expression = basic_expression.BasicExpression(
+          [term.TensorTerm(tf.constant(penalty_constant, dtype=tf.float32))])
+      if constraint_constant is None:
+        constraint_basic_expression = penalty_basic_expression
+      else:
+        constraint_basic_expression = basic_expression.BasicExpression([
+            term.TensorTerm(tf.constant(constraint_constant, dtype=tf.float32))
+        ])
+      return expression.Expression(penalty_basic_expression,
+                                   constraint_basic_expression)
 
     # This expression exercises all of the operators.
     expression_object = (
-        0.3 - (expression_objects[0] / 2.3 + 0.7 * expression_objects[1]) -
-        (1.2 + expression_objects[2] - 0.1) * 0.6 + 0.8)
+        constant_expression(0.3) - (constant_expression(-3.6, -0.2) / 2.3 +
+                                    0.7 * constant_expression(1.5, -0.5)) -
+        (constant_expression(1.2) + constant_expression(0.4, 2.3) -
+         constant_expression(0.1)) * 0.6 + constant_expression(0.8))
 
     actual_penalty_value, penalty_variables = (
         expression_object.penalty_expression.evaluate(memoizer))
@@ -79,14 +74,16 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # This is the same expression as above, applied directly to the python
     # floats.
-    expected_penalty_value = (
-        0.3 - (penalty_values[0] / 2.3 + 0.7 * penalty_values[1]) -
-        (1.2 + penalty_values[2] - 0.1) * 0.6 + 0.8)
-    expected_constraint_value = (
-        0.3 - (constraint_values[0] / 2.3 + 0.7 * constraint_values[1]) -
-        (1.2 + constraint_values[2] - 0.1) * 0.6 + 0.8)
+    expected_penalty_value = (0.3 - (-3.6 / 2.3 + 0.7 * 1.5) -
+                              (1.2 + 0.4 - 0.1) * 0.6 + 0.8)
+    expected_constraint_value = (0.3 - (-0.2 / 2.3 + 0.7 * -0.5) -
+                                 (1.2 + 2.3 - 0.1) * 0.6 + 0.8)
 
     with self.wrapped_session() as session:
+      print("HELLO")
+      print(actual_penalty_value)
+      print(actual_penalty_value(memoizer))
+      print("GOODBYE")
       self.assertNear(
           expected_penalty_value,
           session.run(actual_penalty_value(memoizer)),

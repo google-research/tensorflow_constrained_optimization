@@ -42,8 +42,8 @@ two `BasicExpression` objects: one for the "penalty" portion of the problem
 (which is used when optimizing the model parameters), and the other for the
 "constraint" portion (used when optimizing the constraints, e.g. the Lagrange
 multipliers, if using the Lagrangian formulation). It is the `BasicExpression`
-object that actually represents linear combinations of `Term`s and `Tensor`s,
-and it contains some additional logic for combining "compatible" `Term`s.
+object that actually represents linear combinations of `Term`s, and it contains
+some additional logic for combining "compatible" `Term`s.
 """
 
 from __future__ import absolute_import
@@ -295,8 +295,9 @@ class _RatioWeights(helpers.RateObject):
       memoizer: dict, which memoizes portions of the calculation to simplify the
         resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
-        values being the minimum allowed value of a rate denominator (a python
-        float), and the current iterate (starting at zero), respectively.
+        values being the minimum allowed value of a rate denominator (a float),
+        and the current iterate (a non-negative integer, starting at zero),
+        respectively.
 
     Returns:
       A (`DeferredTensor`, list) pair containing (i) the (approximate)
@@ -396,8 +397,9 @@ class _RatioWeights(helpers.RateObject):
       memoizer: dict, which memoizes portions of the calculation to simplify the
         resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
-        values being the minimum allowed value of a rate denominator (a python
-        float), and the current iterate (starting at zero), respectively.
+        values being the minimum allowed value of a rate denominator (a float),
+        and the current iterate (a non-negative integer, starting at zero),
+        respectively.
 
     Returns:
       A (`DeferredTensor`, list) pair containing (i) the weights associated with
@@ -440,11 +442,11 @@ class Term(helpers.RateObject):
   matching keys.
 
   This functionality is needed since a `BasicExpression` is a linear combination
-  of `Term`s and `Tensor`s, and implements arithmetic operators for manipulating
-  and combining such linear combinations. To ensure that pairwise operations are
-  performed on compatible `Term`s, and *only* compatible `Term`s, the
-  `BasicExpression` class stores its terms in a dictionary with its keys being
-  the results of the `Term`.key method.
+  of `Term`s, and implements arithmetic operators for manipulating and combining
+  such linear combinations. To ensure that pairwise operations are performed on
+  compatible `Term`s, and *only* compatible `Term`s, the `BasicExpression` class
+  stores its terms in a dictionary with its keys being the results of the
+  `Term`.key method.
   """
 
   @abc.abstractproperty
@@ -524,14 +526,123 @@ class Term(helpers.RateObject):
       memoizer: dict, which memoizes portions of the calculation to simplify the
         resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
-        values being the minimum allowed value of a rate denominator (a python
-        float), and the current iterate (starting at zero), respectively.
+        values being the minimum allowed value of a rate denominator (a float),
+        and the current iterate (a non-negative integer, starting at zero),
+        respectively.
 
     Returns:
       A (`DeferredTensor`, list) pair containing (i) the value of this `Term`,
       and (ii) a list of `DeferredVariable`s containing the internal state upon
       which the `Term` evaluation depends.
     """
+
+
+class TensorTerm(Term):
+  """`Term` object wrapping a `DeferredTensor` or `Tensor`-like object."""
+
+  def __init__(self, tensor):
+    """Creates a new `TensorTerm`.
+
+    Args:
+      tensor: scalar `DeferredTensor` or `Tensor`-like object that this
+        `TensorTerm` will wrap.
+
+    Raises:
+      TypeError: if "tensor" is not a `DeferredTensor` or `Tensor`-like object.
+    """
+    if isinstance(tensor, deferred_tensor.DeferredTensor):
+      self._tensor = tensor
+    elif not isinstance(tensor, helpers.RateObject):
+      self._tensor = deferred_tensor.DeferredTensor(tensor)
+    else:
+      raise TypeError("tensor argument to TensorTerm's constructor should be a "
+                      "DeferredTensor or a Tensor-like object")
+
+  @property
+  def tensor(self):
+    """Returns the `DeferredTensor` wrapped by this `TensorTerm`."""
+    return self._tensor
+
+  @property
+  def is_differentiable(self):
+    """Returns `True`, since we assume that `Tensor`s can be differentiated."""
+    return True
+
+  @property
+  def key(self):
+    """A key used to determine whether different `Term`s are compatible.
+
+    The result of this function is used to determine whether two `Term`s are
+    compatible: `Term`s with the same key can be added and subtracted, and those
+    with different keys cannot. Each key can therefore be identified with a set
+    of `Term`s that can be added and subtracted to/from each other.
+
+    `TensorTerm`s are always compatible with each other (but not with other
+    `Term`s). Hence, the key returned by this method is simply the type
+    (`TensorTerm`).
+
+    Returns:
+      The type (`TensorTerm`).
+    """
+    return TensorTerm
+
+  def __mul__(self, scalar):
+    """Returns the result of multiplying this `TensorTerm` by a scalar."""
+    return TensorTerm(self._tensor * scalar)
+
+  def __truediv__(self, scalar):
+    """Returns the result of dividing this `TensorTerm` by a scalar."""
+    return TensorTerm(self._tensor / scalar)
+
+  def __neg__(self):
+    """Returns the result of negating this `TensorTerm`."""
+    return TensorTerm(-self._tensor)
+
+  def __add__(self, other):
+    """Returns the result of adding two `TensorTerm`s.
+
+    Args:
+      other: `TensorTerm` with the same key as self.
+
+    Returns:
+      A new `TensorTerm` representing the sum of self and other.
+    """
+    if self.key != other.key:
+      raise ValueError("Terms can only be added if they have the same key")
+
+    return TensorTerm(self._tensor + other.tensor)
+
+  def __sub__(self, other):
+    """Returns the result of subtracting two `TensorTerm`s.
+
+    Args:
+      other: `TensorTerm` with the same key as self.
+
+    Returns:
+      A new `TensorTerm` representing the difference of self and other.
+    """
+    if self.key != other.key:
+      raise ValueError("Terms can only be subtracted if they have the same key")
+
+    return TensorTerm(self._tensor - other.tensor)
+
+  def evaluate(self, memoizer):
+    """Computes and returns the value of this `TensorTerm`.
+
+    Args:
+      memoizer: dict, which memoizes portions of the calculation to simplify the
+        resulting TensorFlow graph. It must contain the keys
+        "denominator_lower_bound" and "global_step", with the corresponding
+        values being the minimum allowed value of a rate denominator (a float),
+        and the current iterate (a non-negative integer, starting at zero),
+        respectively.
+
+    Returns:
+      A (`DeferredTensor`, list) pair containing (i) the value of this
+      `TensorTerm`, and (ii) a set of `DeferredVariable`s containing the
+      internal state upon which the `TensorTerm` evaluation depends.
+    """
+    return self._tensor, []
 
 
 class BinaryClassificationTerm(Term):
@@ -585,9 +696,9 @@ class BinaryClassificationTerm(Term):
   This "compatibility" condition is checked using the "key" method. If two
   `Term`s have the same keys, then they may be combined using a binary
   arithmetic operation. This is used by the `BasicExpression` object, which
-  represents arbitrary linear combinations of `Term`s and `Tensor`s, to identify
-  compatible `Term`s by storing its `Term`s in a dictionary, with its keys taken
-  from the "key" method.
+  represents arbitrary linear combinations of `Term`s, to identify compatible
+  `Term`s by storing its `Term`s in a dictionary, with its keys taken from the
+  "key" method.
 
   The benefit of combining compatible terms is that, when using a relaxed loss
   (e.g. a hinge) it enables us to use a tighter approximation to the true
@@ -848,8 +959,7 @@ class BinaryClassificationTerm(Term):
         different keys.
     """
     if self.key != other.key:
-      raise ValueError("binary terms can only be added if they have the same "
-                       "key")
+      raise ValueError("Terms can only be added if they have the same key")
 
     return BinaryClassificationTerm(
         self._predictions,
@@ -871,8 +981,7 @@ class BinaryClassificationTerm(Term):
         different keys.
     """
     if self.key != other.key:
-      raise ValueError("binary terms can only be subtracted if they have the "
-                       "same key")
+      raise ValueError("Terms can only be subtracted if they have the same key")
 
     return BinaryClassificationTerm(
         self._predictions,
@@ -886,8 +995,9 @@ class BinaryClassificationTerm(Term):
       memoizer: dict, which memoizes portions of the calculation to simplify the
         resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
-        values being the minimum allowed value of a rate denominator (a python
-        float), and the current iterate (starting at zero), respectively.
+        values being the minimum allowed value of a rate denominator (a float),
+        and the current iterate (a non-negative integer, starting at zero),
+        respectively.
 
     Returns:
       A (`DeferredTensor`, list) pair containing (i) the value of this

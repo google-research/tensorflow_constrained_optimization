@@ -258,14 +258,14 @@ def _ratio(numerator_expression, denominator_expression, lower_bound,
   extra_variables = [ratio_bounds]
 
   numerator_bound_basic_expression = basic_expression.BasicExpression(
-      terms=[], tensor=ratio_bounds[0])
+      [term.TensorTerm(ratio_bounds[0])])
   numerator_bound_expression = expression.Expression(
       penalty_expression=numerator_bound_basic_expression,
       constraint_expression=numerator_bound_basic_expression,
       extra_variables=extra_variables)
 
   denominator_bound_basic_expression = basic_expression.BasicExpression(
-      terms=[], tensor=ratio_bounds[1])
+      [term.TensorTerm(ratio_bounds[1])])
   denominator_bound_expression = expression.Expression(
       penalty_expression=denominator_bound_basic_expression,
       constraint_expression=denominator_bound_basic_expression,
@@ -282,7 +282,7 @@ def _ratio(numerator_expression, denominator_expression, lower_bound,
         denominator_bound_expression <= denominator_expression)
 
   ratio_basic_expression = basic_expression.BasicExpression(
-      terms=[], tensor=ratio_bounds[0] / ratio_bounds[1])
+      [term.TensorTerm(ratio_bounds[0] / ratio_bounds[1])])
   return expression.Expression(
       penalty_expression=ratio_basic_expression,
       constraint_expression=ratio_basic_expression,
@@ -2303,7 +2303,7 @@ def _precision_at_recall(context, recall_target, threshold_tensor, slack_tensor,
           extra_variables=extra_variables)
 
   slack_basic_expression = basic_expression.BasicExpression(
-      terms=[], tensor=slack_tensor)
+      [term.TensorTerm(slack_tensor)])
   slack_expression = expression.Expression(
       penalty_expression=slack_basic_expression,
       constraint_expression=slack_basic_expression,
@@ -2318,7 +2318,7 @@ def _precision_at_recall(context, recall_target, threshold_tensor, slack_tensor,
     extra_constraints.append(slack_expression <= constraint_expression)
 
   precision_basic_expression = basic_expression.BasicExpression(
-      terms=[], tensor=recall_target / (recall_target + slack_tensor))
+      [term.TensorTerm(recall_target / (recall_target + slack_tensor))])
   return expression.Expression(
       penalty_expression=precision_basic_expression,
       constraint_expression=precision_basic_expression,

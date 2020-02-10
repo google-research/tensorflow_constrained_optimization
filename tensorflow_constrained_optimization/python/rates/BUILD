@@ -123,9 +123,11 @@ py_library(
     srcs = ["expression.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":basic_expression",
         ":constraint",
         ":deferred_tensor",
         ":helpers",
+        ":term",
         # tensorflow dep,
     ],
 )
@@ -139,6 +141,7 @@ py_library(
         ":deferred_tensor",
         ":expression",
         ":helpers",
+        ":term",
         # tensorflow dep,
     ],
 )
@@ -267,7 +270,6 @@ py_test(
         ":predicate",
         ":term",
         # numpy dep,
-        # six dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,
@@ -283,6 +285,7 @@ py_test(
         ":defaults",
         ":deferred_tensor",
         ":expression",
+        ":term",
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
