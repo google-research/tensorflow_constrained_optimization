@@ -222,6 +222,78 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       self.assertEqual(ii, term_value(expressions[ii]))
       self.assertEqual(ii, term_value(actual_expressions[ii]))
 
+  def test_bounded_expression(self):
+    """Tests that `BoundedExpression`s select their components correctly."""
+    memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+    }
+
+    term1 = term.TensorTerm(1.0)
+    term2 = term.TensorTerm(2.0)
+    term3 = term.TensorTerm(4.0)
+    term4 = term.TensorTerm(8.0)
+
+    basic_expression1 = basic_expression.BasicExpression([term1])
+    basic_expression2 = basic_expression.BasicExpression([term2])
+    basic_expression3 = basic_expression.BasicExpression([term3])
+    basic_expression4 = basic_expression.BasicExpression([term4])
+
+    expression1 = expression.ExplicitExpression(basic_expression1,
+                                                basic_expression1)
+    expression2 = expression.ExplicitExpression(basic_expression2,
+                                                basic_expression2)
+    expression3 = expression.ExplicitExpression(basic_expression3,
+                                                basic_expression3)
+    expression4 = expression.ExplicitExpression(basic_expression4,
+                                                basic_expression4)
+
+    # Each of our BasicExpressions contains exactly one term, and while we might
+    # negate it, by taking the absolute value we can uniquely determine which
+    # BasicExpression is which.
+    def term_value(expression_object):
+      terms = expression_object.penalty_expression._terms
+      self.assertEqual(1, len(terms))
+      return abs(terms[0].tensor(memoizer))
+
+    bounded_expression1 = expression.BoundedExpression(
+        lower_bound=expression1, upper_bound=expression2)
+    self.assertEqual(term_value(bounded_expression1), 2.0)
+    self.assertEqual(term_value(-bounded_expression1), 1.0)
+
+    bounded_expression2 = expression.BoundedExpression(
+        lower_bound=expression3, upper_bound=expression4)
+    self.assertEqual(term_value(bounded_expression2), 8.0)
+    self.assertEqual(term_value(-bounded_expression2), 4.0)
+
+    bounded_expression3 = -(bounded_expression1 - bounded_expression2)
+    self.assertEqual(term_value(bounded_expression3), 8.0 - 1.0)
+    self.assertEqual(term_value(-bounded_expression3), 4.0 - 2.0)
+
+    # Checks that nested BoundedExpressions work.
+    bounded_expression4 = expression.BoundedExpression(
+        lower_bound=bounded_expression1, upper_bound=expression3)
+    self.assertEqual(term_value(bounded_expression4), 4.0)
+    self.assertEqual(term_value(-bounded_expression4), 1.0)
+
+    # Checks that nested negated BoundedExpressions work.
+    bounded_expression5 = expression.BoundedExpression(
+        lower_bound=-bounded_expression1, upper_bound=-bounded_expression2)
+    self.assertEqual(term_value(bounded_expression5), 4.0)
+    self.assertEqual(term_value(-bounded_expression5), 2.0)
+
+  def test_error_expression(self):
+    """Tests that `InvalidExpression`s raise when used."""
+    error_expression = expression.InvalidExpression("an error message")
+    # All three of "penalty_expression", "constraint_expression" and
+    # "extra_constraints" should raise.
+    with self.assertRaises(RuntimeError):
+      _ = error_expression.penalty_expression
+    with self.assertRaises(RuntimeError):
+      _ = error_expression.constraint_expression
+    with self.assertRaises(RuntimeError):
+      _ = error_expression.extra_constraints
+
 
 if __name__ == "__main__":
   tf.test.main()

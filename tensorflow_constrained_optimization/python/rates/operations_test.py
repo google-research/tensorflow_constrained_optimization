@@ -80,16 +80,14 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Make sure that wrap_rate() raises if given an `Expression`."""
     penalty_value = 3.1
     constraint_value = 2.7
-    penalty_tensor = tf.constant(penalty_value, dtype=tf.float32)
-    constraint_tensor = tf.constant(constraint_value, dtype=tf.float32)
 
-    wrapped = operations.wrap_rate(penalty_tensor, constraint_tensor)
+    wrapped = operations.wrap_rate(penalty_value, constraint_value)
     # We should raise a TypeError if either or both of the parameters to
     # wrap_rate() are Expressions.
     with self.assertRaises(TypeError):
-      operations.wrap_rate(penalty_tensor, wrapped)
+      operations.wrap_rate(penalty_value, wrapped)
     with self.assertRaises(TypeError):
-      operations.wrap_rate(wrapped, constraint_tensor)
+      operations.wrap_rate(wrapped, constraint_value)
     with self.assertRaises(TypeError):
       operations.wrap_rate(wrapped, wrapped)
 
@@ -138,12 +136,23 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     with self.assertRaises(TypeError):
       operations.upper_bound([tensor1, expression2])
 
+  def test_upper_bound_raises_on_maximization(self):
+    """Make sure that upper_bound() raises if it's maximized."""
+    bounded = -operations.upper_bound([operations.wrap_rate(1.0)])
+    # All three of "penalty_expression", "constraint_expression" and
+    # "extra_constraints" should raise.
+    with self.assertRaises(RuntimeError):
+      _ = bounded.penalty_expression
+    with self.assertRaises(RuntimeError):
+      _ = bounded.constraint_expression
+    with self.assertRaises(RuntimeError):
+      _ = bounded.extra_constraints
+
   def test_upper_bound(self):
     """Make sure that upper_bound() creates the correct Expression."""
     values = [0.8, 3.1, -1.6, 2.7]
     bound_value = 1.4
-    tensors = [tf.constant(value, dtype=tf.float32) for value in values]
-    expressions = [operations.wrap_rate(tt) for tt in tensors]
+    expressions = [operations.wrap_rate(value) for value in values]
 
     bounded = operations.upper_bound(expressions)
 
@@ -199,14 +208,27 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     with self.assertRaises(TypeError):
       operations.lower_bound([tensor1, expression2])
 
+  def test_lower_bound_raises_on_minimization(self):
+    """Make sure that lower_bound() raises if it's minimized."""
+    bounded = operations.lower_bound([operations.wrap_rate(1.0)])
+    # All three of "penalty_expression", "constraint_expression" and
+    # "extra_constraints" should raise.
+    with self.assertRaises(RuntimeError):
+      _ = bounded.penalty_expression
+    with self.assertRaises(RuntimeError):
+      _ = bounded.constraint_expression
+    with self.assertRaises(RuntimeError):
+      _ = bounded.extra_constraints
+
   def test_lower_bound(self):
     """Make sure that lower_bound() creates the correct Expression."""
     values = [0.8, 3.1, -1.6, 2.7]
     bound_value = 1.4
-    tensors = [tf.constant(value, dtype=tf.float32) for value in values]
-    expressions = [operations.wrap_rate(tt) for tt in tensors]
+    expressions = [operations.wrap_rate(value) for value in values]
 
-    bounded = operations.lower_bound(expressions)
+    # We need to negate "bounded" since it's implicitly being minimized, and we
+    # cannot minimize a lower bound.
+    bounded = -operations.lower_bound(expressions)
 
     # Before evaluating any expressions, we'll assign "bound_value" to the slack
     # variable, so that we can make sure that the same slack variable is being

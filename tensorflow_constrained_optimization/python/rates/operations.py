@@ -121,11 +121,19 @@ def upper_bound(expressions):
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression)
   extra_constraints = [ee <= bound_expression for ee in expressions]
-  return expression.ConstrainedExpression(
-      expression.ExplicitExpression(
-          penalty_expression=bound_basic_expression,
-          constraint_expression=bound_basic_expression),
-      extra_constraints=extra_constraints)
+
+  # We wrap the result in a BoundedExpression so that we'll check if the user
+  # attempts to maximize of lower-bound the result of this function, and will
+  # raise an error if they do.
+  return expression.BoundedExpression(
+      lower_bound=expression.InvalidExpression(
+          "the result of a call to upper_bound() can only be minimized or "
+          "upper-bounded; it *cannot* be maximized or lower-bounded"),
+      upper_bound=expression.ConstrainedExpression(
+          expression.ExplicitExpression(
+              penalty_expression=bound_basic_expression,
+              constraint_expression=bound_basic_expression),
+          extra_constraints=extra_constraints))
 
 
 def lower_bound(expressions):
@@ -174,8 +182,16 @@ def lower_bound(expressions):
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression)
   extra_constraints = [ee >= bound_expression for ee in expressions]
-  return expression.ConstrainedExpression(
-      expression.ExplicitExpression(
-          penalty_expression=bound_basic_expression,
-          constraint_expression=bound_basic_expression),
-      extra_constraints=extra_constraints)
+
+  # We wrap the result in a BoundedExpression so that we'll check if the user
+  # attempts to minimize of upper-bound the result of this function, and will
+  # raise an error if they do.
+  return expression.BoundedExpression(
+      lower_bound=expression.ConstrainedExpression(
+          expression.ExplicitExpression(
+              penalty_expression=bound_basic_expression,
+              constraint_expression=bound_basic_expression),
+          extra_constraints=extra_constraints),
+      upper_bound=expression.InvalidExpression(
+          "the result of a call to lower_bound() can only be maximized or "
+          "lower-bounded; it *cannot* be minimized or upper-bounded"))

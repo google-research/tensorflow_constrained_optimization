@@ -695,17 +695,15 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     self._check_rates(expected_penalty_value, expected_constraint_value,
                       actual_denominator_expression)
 
-  def test_precision_lower_bound(self):
-    """Checks that `precision_lower_bound` calculates the right quantities."""
-    # We don't check precision_upper_bound since most of the code is shared, and
-    # the test is too slow already.
+  def test_precision(self):
+    """Checks that `precision` calculates the right quantities."""
     bisection_epsilon = 1e-6
     memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    expression = binary_rates.precision_lower_bound(self._split_context)
+    expression = binary_rates.precision(self._split_context)
 
     # Extract the the constraints and the associated variables.
     constraint_list = []
@@ -859,10 +857,8 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       self._check_rates(expected_penalty_value, expected_constraint_value,
                         actual_denominator_expression)
 
-  def test_f_score_upper_bound(self):
-    """Checks that `f_score_upper_bound` calculates the right quantities."""
-    # We don't check f_score_lower_bound since most of the code is shared, and
-    # the test is too slow already.
+  def test_f_score(self):
+    """Checks that `f_score` calculates the right quantities."""
     beta = 1.6
     bisection_epsilon = 1e-6
     memoizer = {
@@ -870,7 +866,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    expression = binary_rates.f_score_upper_bound(self._split_context, beta)
+    expression = binary_rates.f_score(self._split_context, beta)
 
     # Extract the the constraints and the associated variables.
     constraint_list = []
@@ -978,8 +974,8 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     return prediction_thresholds
 
-  def test_roc_auc_lower_bound(self):
-    """Tests that roc_auc_lower_bound's constraints give correct thresholds."""
+  def test_roc_auc(self):
+    """Tests that roc_auc's constraints give correct thresholds."""
     # We don't check roc_auc_upper_bound since most of the code is shared, and
     # the test is too slow already.
     bins = 3
@@ -989,7 +985,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    expression = binary_rates.roc_auc_lower_bound(self._context, bins)
+    expression = binary_rates.roc_auc(self._context, bins)
 
     # Extract the the constraints and the associated variables.
     constraint_list = []

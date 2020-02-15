@@ -356,3 +356,126 @@ class SumExpression(Expression):
   def __neg__(self):
     return SumExpression(
         [-subexpression for subexpression in self._expressions])
+
+
+class BoundedExpression(Expression):
+  """Represents a pair of upper and lower bound `Expressions`."""
+
+  def __init__(self, lower_bound, upper_bound, scalar=1.0):
+    """Creates a new `BoundedExpression`.
+
+    Sometimes, the quantity that we wish to optimize or constrain cannot be
+    represented directly, but *can* be bounded. In these cases, a
+    `BoundedExpression` can be used. It contains both an upper and lower bound,
+    and chooses which to use based on the sign of the `BoundedExpression` (i.e.
+    so that we'll maximize a lower bound and minimize an upper bound, instead of
+    the other way around).
+
+    If we only have a one-sided bound, an `InvalidExpression`, which raises an
+    error if it's used, can be placed in the other side, to ensure that we don't
+    try to use it.
+
+    Args:
+      lower_bound: `Expression` representing a lower bound on the quantity of
+        interest.
+      upper_bound: `Expression` representing an upper bound on the quantity of
+        interest.
+      scalar: float, a quantity by which to multiply this `BoundedExpression`.
+    """
+    self._lower_bound = lower_bound
+    self._upper_bound = upper_bound
+    self._scalar = scalar
+
+  @property
+  def penalty_expression(self):
+    # When this is called, we will always be extracting the penalty expression
+    # for minimization or upper-bounding. Hence, we'll use the lower bound if
+    # the scalar is negative, and the upper bound otherwise.
+    #
+    # Notice that we scale the lower bound or upper bound Expression before
+    # extracting the BasicExpression, instead of extracting the BasicExpression
+    # and scaling it. The reason for this is that further BoundedExpressions
+    # could be nested inside this one, and we need to be sure that their scalars
+    # are up-to-date.
+    if self._scalar < 0:
+      return (self._lower_bound * self._scalar).penalty_expression
+    elif self._scalar > 0:
+      return (self._upper_bound * self._scalar).penalty_expression
+    return basic_expression.BasicExpression([])
+
+  @property
+  def constraint_expression(self):
+    # See comment in penalty_expression.
+    if self._scalar < 0:
+      return (self._lower_bound * self._scalar).constraint_expression
+    elif self._scalar > 0:
+      return (self._upper_bound * self._scalar).constraint_expression
+    return basic_expression.BasicExpression([])
+
+  @property
+  def extra_constraints(self):
+    # See comment in penalty_expression.
+    if self._scalar < 0:
+      return (self._lower_bound * self._scalar).extra_constraints
+    elif self._scalar > 0:
+      return (self._upper_bound * self._scalar).extra_constraints
+    return []
+
+  def __mul__(self, scalar):
+    if not isinstance(scalar, numbers.Number):
+      raise TypeError("Expression objects only support *scalar* multiplication")
+    return BoundedExpression(self._lower_bound, self._upper_bound,
+                             self._scalar * scalar)
+
+  def __truediv__(self, scalar):
+    if not isinstance(scalar, numbers.Number):
+      raise TypeError("Expression objects only support *scalar* division")
+    return BoundedExpression(self._lower_bound, self._upper_bound,
+                             self._scalar / scalar)
+
+  def __neg__(self):
+    return BoundedExpression(self._lower_bound, self._upper_bound,
+                             -self._scalar)
+
+
+class InvalidExpression(Expression):
+  """Represents an invalid `Expression`."""
+
+  def __init__(self, message):
+    """Creates a new `InvalidExpression`.
+
+    While a `BoundedExpression` usually contains both a lower bound an an upper
+    bound, it could contain only one of the two, in which case the other should
+    be an `InvalidExpression`. This makes it so that if someone tries to
+    maximize an upper bound, or minimize a lower bound, an error will be raised.
+
+    Args:
+      message: string to raise when "penalty_expression",
+        "constraint_expression" or "extra_constraints" is called.
+    """
+    self._message = message
+
+  @property
+  def penalty_expression(self):
+    raise RuntimeError(self._message)
+
+  @property
+  def constraint_expression(self):
+    raise RuntimeError(self._message)
+
+  @property
+  def extra_constraints(self):
+    raise RuntimeError(self._message)
+
+  def __mul__(self, scalar):
+    if not isinstance(scalar, numbers.Number):
+      raise TypeError("Expression objects only support *scalar* multiplication")
+    return self
+
+  def __truediv__(self, scalar):
+    if not isinstance(scalar, numbers.Number):
+      raise TypeError("Expression objects only support *scalar* division")
+    return self
+
+  def __neg__(self):
+    return self
