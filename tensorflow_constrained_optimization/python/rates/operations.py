@@ -71,8 +71,8 @@ def wrap_rate(penalty_tensor, constraint_tensor=None):
         term.TensorTerm(
             deferred_tensor.ExplicitDeferredTensor(constraint_tensor))
     ])
-  return expression.Expression(penalty_basic_expression,
-                               constraint_basic_expression)
+  return expression.ExplicitExpression(penalty_basic_expression,
+                                       constraint_basic_expression)
 
 
 def upper_bound(expressions):
@@ -117,13 +117,14 @@ def upper_bound(expressions):
 
   bound_basic_expression = basic_expression.BasicExpression(
       [term.TensorTerm(bound)])
-  bound_expression = expression.Expression(
+  bound_expression = expression.ExplicitExpression(
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression)
   extra_constraints = [ee <= bound_expression for ee in expressions]
-  return expression.Expression(
-      penalty_expression=bound_basic_expression,
-      constraint_expression=bound_basic_expression,
+  return expression.ConstrainedExpression(
+      expression.ExplicitExpression(
+          penalty_expression=bound_basic_expression,
+          constraint_expression=bound_basic_expression),
       extra_constraints=extra_constraints)
 
 
@@ -169,11 +170,12 @@ def lower_bound(expressions):
 
   bound_basic_expression = basic_expression.BasicExpression(
       [term.TensorTerm(bound)])
-  bound_expression = expression.Expression(
+  bound_expression = expression.ExplicitExpression(
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression)
   extra_constraints = [ee >= bound_expression for ee in expressions]
-  return expression.Expression(
-      penalty_expression=bound_basic_expression,
-      constraint_expression=bound_basic_expression,
+  return expression.ConstrainedExpression(
+      expression.ExplicitExpression(
+          penalty_expression=bound_basic_expression,
+          constraint_expression=bound_basic_expression),
       extra_constraints=extra_constraints)

@@ -52,6 +52,7 @@ from __future__ import print_function
 
 import abc
 import copy
+import numbers
 import six
 import tensorflow as tf
 
@@ -193,15 +194,7 @@ class _RatioWeights(helpers.RateObject):
 
   def __mul__(self, scalar):
     """Returns the result of multiplying the ratio weights by a scalar."""
-    # Ideally, we'd check that "scalar" is a scalar Tensor, or is a type that
-    # can be converted to a scalar Tensor. Unfortunately, this includes a lot of
-    # possible types, so the easiest solution would be to actually perform the
-    # conversion, and then check that the resulting Tensor has only one element.
-    # This, however, would add a dummy element to the Tensorflow graph, and
-    # wouldn't work for a Tensor with an unknown size. Hence, we only check that
-    # "scalar" is not a type that we know for certain is disallowed: an object
-    # internal to this library.
-    if isinstance(scalar, helpers.RateObject):
+    if not isinstance(scalar, numbers.Number):
       raise TypeError("_RatioWeights objects only support *scalar* "
                       "multiplication")
 
@@ -218,8 +211,7 @@ class _RatioWeights(helpers.RateObject):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing the ratio weights by a scalar."""
-    # See comment in __mul__.
-    if isinstance(scalar, helpers.RateObject):
+    if not isinstance(scalar, numbers.Number):
       raise TypeError("_RatioWeights objects only support *scalar* division")
 
     if scalar == 0:
@@ -897,15 +889,7 @@ class BinaryClassificationTerm(Term):
   # function.
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
-    # Ideally, we'd check that "scalar" is a scalar Tensor, or is a type that
-    # can be converted to a scalar Tensor. Unfortunately, this includes a lot of
-    # possible types, so the easiest solution would be to actually perform the
-    # conversion, and then check that the resulting Tensor has only one element.
-    # This, however, would add a dummy element to the Tensorflow graph, and
-    # wouldn't work for a Tensor with an unknown size. Hence, we only check that
-    # "scalar" is not a type that we know for certain is disallowed: an object
-    # internal to this library.
-    if isinstance(scalar, helpers.RateObject):
+    if not isinstance(scalar, numbers.Number):
       raise TypeError("Term objects only support *scalar* multiplication")
 
     return BinaryClassificationTerm(self._predictions,
@@ -915,8 +899,7 @@ class BinaryClassificationTerm(Term):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    # See comment in __mul__.
-    if isinstance(scalar, helpers.RateObject):
+    if not isinstance(scalar, numbers.Number):
       raise TypeError("Term objects only support *scalar* division")
 
     return BinaryClassificationTerm(self._predictions,

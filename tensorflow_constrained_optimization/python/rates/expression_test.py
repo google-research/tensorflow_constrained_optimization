@@ -19,6 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
@@ -50,8 +51,8 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         constraint_basic_expression = basic_expression.BasicExpression([
             term.TensorTerm(tf.constant(constraint_constant, dtype=tf.float32))
         ])
-      return expression.Expression(penalty_basic_expression,
-                                   constraint_basic_expression)
+      return expression.ExplicitExpression(penalty_basic_expression,
+                                           constraint_basic_expression)
 
     # This expression exercises all of the operators.
     expression_object = (
@@ -98,7 +99,7 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     def create_dummy_expression(penalty_variable, constraint_variable):
       """Creates an empty `Expression` from the given extra variables."""
-      return expression.Expression(
+      return expression.ExplicitExpression(
           basic_expression.BasicExpression([term.TensorTerm(penalty_variable)]),
           basic_expression.BasicExpression(
               [term.TensorTerm(constraint_variable)]))
@@ -156,9 +157,10 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     def create_dummy_expression(extra_constraints=None):
       """Creates an empty `Expression` with the given extra constraints."""
-      return expression.Expression(
-          basic_expression.BasicExpression([]),
-          basic_expression.BasicExpression([]),
+      return expression.ConstrainedExpression(
+          expression.ExplicitExpression(
+              basic_expression.BasicExpression([]),
+              basic_expression.BasicExpression([])),
           extra_constraints=extra_constraints)
 
     constrained_expression = create_dummy_expression()
@@ -178,6 +180,47 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     self.assertEqual(expression23.extra_constraints, [constraint2, constraint3])
     self.assertEqual(expression123.extra_constraints,
                      [constraint1, constraint2, constraint3])
+
+  def test_sum_expression(self):
+    """Tests that `SumExpression`s flatten correctly."""
+    # The logic of SumExpression is checked in the above tests (which include
+    # addition and subtraction). Here, we only check that constructing a
+    # SumExpression flattens the list.
+    memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+    }
+
+    term_values = [0, 1, 2, 3, 4]
+
+    def create_dummy_expression(value):
+      """Creates an empty `Expression` with the given extra constraints."""
+      basic_expression_object = basic_expression.BasicExpression(
+          [term.TensorTerm(value)])
+      return expression.ExplicitExpression(basic_expression_object,
+                                           basic_expression_object)
+
+    expressions = [create_dummy_expression(value) for value in term_values]
+
+    # Each of our Expressions contains exactly one term, so by checking its
+    # value we can uniquely determine which subexpression is which.
+    def term_value(expression_object):
+      terms = expression_object.penalty_expression._terms
+      self.assertEqual(1, len(terms))
+      return terms[0].tensor(memoizer)
+
+    sum1 = expression.SumExpression([expressions[0], expressions[1]])
+    sum2 = expression.SumExpression([expressions[2]])
+    sum3 = expression.SumExpression([expressions[3]])
+    sum4 = expression.SumExpression([expressions[4]])
+    sum5 = expression.SumExpression([sum3, sum4])
+    sum6 = expression.SumExpression([sum1, sum2, sum5])
+
+    actual_expressions = sum6._expressions
+    self.assertEqual(5, len(actual_expressions))
+    for ii in xrange(5):
+      self.assertEqual(ii, term_value(expressions[ii]))
+      self.assertEqual(ii, term_value(actual_expressions[ii]))
 
 
 if __name__ == "__main__":

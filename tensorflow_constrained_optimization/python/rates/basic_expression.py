@@ -47,6 +47,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numbers
+
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers
 
@@ -152,15 +154,7 @@ class BasicExpression(helpers.RateObject):
 
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
-    # Ideally, we'd check that "scalar" is a scalar Tensor, or is a type that
-    # can be converted to a scalar Tensor. Unfortunately, this includes a lot of
-    # possible types, so the easiest solution would be to actually perform the
-    # conversion, and then check that the resulting Tensor has only one element.
-    # This, however, would add a dummy element to the Tensorflow graph, and
-    # wouldn't work for a Tensor with an unknown size. Hence, we only check that
-    # "scalar" is not a type that we know for certain is disallowed: an object
-    # internal to this library.
-    if isinstance(scalar, helpers.RateObject):
+    if not isinstance(scalar, numbers.Number):
       raise TypeError("BasicExpression objects only support *scalar* "
                       "multiplication")
     return BasicExpression([tt * scalar for tt in self._terms])
@@ -171,8 +165,7 @@ class BasicExpression(helpers.RateObject):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    # See comment in __mul__.
-    if isinstance(scalar, helpers.RateObject):
+    if not isinstance(scalar, numbers.Number):
       raise TypeError("BasicExpression objects only support *scalar* division")
     return BasicExpression([tt / scalar for tt in self._terms])
 
