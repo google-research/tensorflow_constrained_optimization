@@ -60,15 +60,15 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         (constant_expression(1.2) + constant_expression(0.4, 2.3) -
          constant_expression(0.1)) * 0.6 + constant_expression(0.8))
 
-    actual_penalty_value, penalty_variables = (
-        expression_object.penalty_expression.evaluate(memoizer))
-    actual_constraint_value, constraint_variables = (
-        expression_object.constraint_expression.evaluate(memoizer))
+    actual_penalty_value = expression_object.penalty_expression.evaluate(
+        memoizer)
+    actual_constraint_value = expression_object.constraint_expression.evaluate(
+        memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    variables = deferred_tensor.DeferredVariableList(penalty_variables +
-                                                     constraint_variables)
+    variables = deferred_tensor.DeferredVariableList(
+        actual_penalty_value.variables + actual_constraint_value.variables)
     for variable in variables:
       variable.create(memoizer)
 
@@ -80,10 +80,6 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                                  (1.2 + 2.3 - 0.1) * 0.6 + 0.8)
 
     with self.wrapped_session() as session:
-      print("HELLO")
-      print(actual_penalty_value)
-      print(actual_penalty_value(memoizer))
-      print("GOODBYE")
       self.assertNear(
           expected_penalty_value,
           session.run(actual_penalty_value(memoizer)),
@@ -93,32 +89,67 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
           session.run(actual_constraint_value(memoizer)),
           err=1e-6)
 
-  def test_extra_variables(self):
+  def test_variables(self):
     """Tests that `Expression`s propagate extra variables correctly."""
+    memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+    }
 
-    def create_dummy_expression(extra_variables=None):
-      """Creates an empty `Expression` with the given extra variables."""
+    def create_dummy_expression(penalty_variable, constraint_variable):
+      """Creates an empty `Expression` from the given extra variables."""
       return expression.Expression(
-          basic_expression.BasicExpression([]),
-          basic_expression.BasicExpression([]),
-          extra_variables=extra_variables)
+          basic_expression.BasicExpression([term.TensorTerm(penalty_variable)]),
+          basic_expression.BasicExpression(
+              [term.TensorTerm(constraint_variable)]))
 
-    variable1 = deferred_tensor.DeferredVariable(2.718)
-    variable2 = deferred_tensor.DeferredVariable(3.142)
-    variable3 = deferred_tensor.DeferredVariable(-1.0)
+    penalty_variable1 = deferred_tensor.DeferredVariable(1)
+    penalty_variable2 = deferred_tensor.DeferredVariable(2)
+    penalty_variable3 = deferred_tensor.DeferredVariable(3)
 
-    expression1 = create_dummy_expression([variable1])
-    expression2 = create_dummy_expression([variable2])
-    expression3 = create_dummy_expression([variable3])
+    constraint_variable1 = deferred_tensor.DeferredVariable(-1)
+    constraint_variable2 = deferred_tensor.DeferredVariable(-2)
+    constraint_variable3 = deferred_tensor.DeferredVariable(-3)
+
+    expression1 = create_dummy_expression(penalty_variable1,
+                                          constraint_variable1)
+    expression2 = create_dummy_expression(penalty_variable2,
+                                          constraint_variable2)
+    expression3 = create_dummy_expression(penalty_variable3,
+                                          constraint_variable3)
 
     expression12 = expression1 * 0.5 + expression2
     expression23 = expression2 - expression3 / 1.3
     expression123 = -expression12 + 0.6 * expression23
 
-    self.assertEqual(expression12.extra_variables, [variable1, variable2])
-    self.assertEqual(expression23.extra_variables, [variable2, variable3])
-    self.assertEqual(expression123.extra_variables,
-                     [variable1, variable2, variable3])
+    expression12_penalty_value = (
+        expression12.penalty_expression.evaluate(memoizer))
+    expression23_penalty_value = (
+        expression23.penalty_expression.evaluate(memoizer))
+    expression123_penalty_value = (
+        expression123.penalty_expression.evaluate(memoizer))
+
+    expression12_constraint_value = (
+        expression12.constraint_expression.evaluate(memoizer))
+    expression23_constraint_value = (
+        expression23.constraint_expression.evaluate(memoizer))
+    expression123_constraint_value = (
+        expression123.constraint_expression.evaluate(memoizer))
+
+    self.assertEqual(expression12_penalty_value.variables,
+                     [penalty_variable1, penalty_variable2])
+    self.assertEqual(expression23_penalty_value.variables,
+                     [penalty_variable2, penalty_variable3])
+    self.assertEqual(expression123_penalty_value.variables,
+                     [penalty_variable1, penalty_variable2, penalty_variable3])
+
+    self.assertEqual(expression12_constraint_value.variables,
+                     [constraint_variable1, constraint_variable2])
+    self.assertEqual(expression23_constraint_value.variables,
+                     [constraint_variable2, constraint_variable3])
+    self.assertEqual(
+        expression123_constraint_value.variables,
+        [constraint_variable1, constraint_variable2, constraint_variable3])
 
   def test_extra_constraints(self):
     """Tests that `Expression`s propagate extra constraints correctly."""

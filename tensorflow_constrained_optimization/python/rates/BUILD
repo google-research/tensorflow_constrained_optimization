@@ -125,7 +125,6 @@ py_library(
     deps = [
         ":basic_expression",
         ":constraint",
-        ":deferred_tensor",
         ":helpers",
         ":term",
         # tensorflow dep,

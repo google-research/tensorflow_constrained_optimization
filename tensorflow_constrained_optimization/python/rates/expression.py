@@ -49,7 +49,6 @@ from __future__ import print_function
 
 from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import constraint
-from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers
 from tensorflow_constrained_optimization.python.rates import term
 
@@ -85,7 +84,6 @@ class Expression(helpers.RateObject):
   def __init__(self,
                penalty_expression,
                constraint_expression,
-               extra_variables=None,
                extra_constraints=None):
     """Creates a new `Expression`.
 
@@ -97,11 +95,7 @@ class Expression(helpers.RateObject):
     used when the expression is being constrained. These two `BasicExpression`s
     are the first two parameters of this function.
 
-    The third parameter--"extra_variables"--should contain any
-    `DeferredVariable`s that are used (perhaps even indirectly) by this
-    `Expression`. This is most commonly used for slack variables.
-
-    The fourth parameter--"extra_constraints"--is used to specify additional
+    The third parameter--"extra_constraints"--is used to specify additional
     constraints that should be added to any optimization problem involving this
     `Expression`. Technically, these can be anything: they're simply additional
     constraints, which may or may not have anything to do with the `Expression`
@@ -122,15 +116,11 @@ class Expression(helpers.RateObject):
       constraint_expression: `BasicExpression` that will be used for the
         "constraint" portion of the optimization (i.e. when optimizing the
         constraints). It does not need to be {sub,semi}differentiable.
-      extra_variables: optional collection of `DeferredVariable`s upon which
-        this `Expression` depends.
       extra_constraints: optional collection of `Constraint`s required by this
         `Expression`.
     """
     self._penalty_expression = penalty_expression
     self._constraint_expression = constraint_expression
-    self._extra_variables = deferred_tensor.DeferredVariableList(
-        extra_variables)
     self._extra_constraints = constraint.ConstraintList(extra_constraints)
 
   @property
@@ -158,39 +148,28 @@ class Expression(helpers.RateObject):
     return self._constraint_expression
 
   @property
-  def extra_variables(self):
-    """Returns the list of extra `DeferredVariable`s."""
-    # The "list" property of a DeferredVariableList returns a copy.
-    return self._extra_variables.list
-
-  @property
   def extra_constraints(self):
     """Returns the list of extra `Constraint`s."""
     # The "list" property of a ConstraintList returns a copy.
     return self._extra_constraints.list
 
-  def add_dependencies(self, extra_variables=None, extra_constraints=None):
+  def add_dependencies(self, extra_constraints=None):
     """Returns a new `Expression` with extra dependencies.
 
-    The resulting `Expression` will depend on the same variables and constraints
-    as this `Expression`, but will *also* depend on those included in the
-    extra_variables and extra_constraints parameters to this method. Notice that
-    this method does *not* change `self`: instead, it returns a *new*
-    `Expression` that includes the extra dependencies.
+    The resulting `Expression` will depend on the same constraints as this
+    `Expression`, but will *also* depend on those included in the
+    extra_constraints parameter. Notice that this method does *not* change
+    `self`: instead, it returns a *new* `Expression` that includes the extra
+    dependencies.
 
     Args:
-      extra_variables: optional collection of `DeferredVariable`s to add to the
-        list of variables upon which the resulting `Expression` depends.
       extra_constraints: optional collection of `Constraint`s to add to the list
         of constraints required by the resulting `Expression`.
     """
-    extra_variables = deferred_tensor.DeferredVariableList(extra_variables)
     extra_constraints = constraint.ConstraintList(extra_constraints)
-
     return Expression(
         self._penalty_expression,
         self._constraint_expression,
-        extra_variables=self._extra_variables + extra_variables,
         extra_constraints=self._extra_constraints + extra_constraints)
 
   def __mul__(self, scalar):
@@ -208,7 +187,6 @@ class Expression(helpers.RateObject):
     return Expression(
         self._penalty_expression * scalar,
         self._constraint_expression * scalar,
-        extra_variables=self._extra_variables,
         extra_constraints=self._extra_constraints)
 
   def __rmul__(self, scalar):
@@ -223,7 +201,6 @@ class Expression(helpers.RateObject):
     return Expression(
         self._penalty_expression / scalar,
         self._constraint_expression / scalar,
-        extra_variables=self._extra_variables,
         extra_constraints=self._extra_constraints)
 
   # __rtruediv__ is not implemented since we only allow *scalar* division, i.e.
@@ -256,7 +233,6 @@ class Expression(helpers.RateObject):
     return Expression(
         -self._penalty_expression,
         -self._constraint_expression,
-        extra_variables=self._extra_variables,
         extra_constraints=self._extra_constraints)
 
   def __add__(self, other):
@@ -274,7 +250,6 @@ class Expression(helpers.RateObject):
     return Expression(
         self._penalty_expression + other.penalty_expression,
         self._constraint_expression + other.constraint_expression,
-        extra_variables=self._extra_variables + other.extra_variables,
         extra_constraints=self._extra_constraints + other.extra_constraints)
 
   def __radd__(self, other):
@@ -296,7 +271,6 @@ class Expression(helpers.RateObject):
     return Expression(
         self._penalty_expression - other.penalty_expression,
         self._constraint_expression - other.constraint_expression,
-        extra_variables=self._extra_variables + other.extra_variables,
         extra_constraints=self._extra_constraints + other.extra_constraints)
 
   def __rsub__(self, other):

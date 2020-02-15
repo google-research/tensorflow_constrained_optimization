@@ -217,25 +217,18 @@ class BasicExpression(helpers.RateObject):
         "denominator_lower_bound" and "global_step", with the corresponding
         values being the minimum allowed value of a rate denominator (a float),
         and the current iterate (a non-negative integer, starting at zero),
-        respectively.  Returns A (`DeferredTensor`, list) pair containing (i)
-        the value of this `BasicExpression`, and (ii) a list of
-        `DeferredVariable`s containing the internal state upon which the
-        `BasicExpression` evaluation depends.
+        respectively.
 
     Returns:
-      A (`DeferredTensor`, list) pair containing (i) the value of this
-      `BasicExpression`, and (ii) a list of `DeferredVariable`s containing the
-      internal state upon which the `BasicExpression` evaluation depends.
+      A `DeferredTensor` containing the value of this `BasicExpression`.
     """
     values = []
-    variables = deferred_tensor.DeferredVariableList()
     for tt in self._terms:
-      term_value, term_variables = tt.evaluate(memoizer)
+      term_value = tt.evaluate(memoizer)
       values.append(term_value)
-      variables += term_variables
 
     # We create a list of values, and sum them all-at-once (instead of adding
     # them one-by-one inside the above loop) to limit how deeply the closures
     # inside the DeferredTensor will be nested.
     return deferred_tensor.DeferredTensor.apply(lambda *args: sum(args),
-                                                *values), variables.list
+                                                *values)

@@ -160,8 +160,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     }
 
     ratio_weights = term._RatioWeights({})
-    actual_weights, variables = ratio_weights.evaluate(memoizer)
-    self.assertEqual(0, len(variables))
+    actual_weights = ratio_weights.evaluate(memoizer)
+    self.assertEqual(0, len(actual_weights.variables))
 
     # We don't need to run this in a session, since the expected weights are a
     # constant (zero).
@@ -183,18 +183,18 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     denominator_predicate = predicate.Predicate(
         denominator_predicate_placeholder)
     ratio_weights = term._RatioWeights.ratio(
-        deferred_tensor.DeferredTensor(weights_placeholder),
+        deferred_tensor.ExplicitDeferredTensor(weights_placeholder),
         numerator_predicate, denominator_predicate)
-    actual_weights, variables = ratio_weights.evaluate(memoizer)
+    actual_weights = ratio_weights.evaluate(memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    for variable in variables:
+    for variable in actual_weights.variables:
       variable.create(memoizer)
 
     def update_ops_fn():
       update_ops = []
-      for variable in variables:
+      for variable in actual_weights.variables:
         update_ops += variable.update_ops(memoizer)
       return update_ops
 
@@ -258,7 +258,7 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     def create_ratio_weights(weights_tensor):
       return term._RatioWeights.ratio(
-          deferred_tensor.DeferredTensor(weights_tensor),
+          deferred_tensor.ExplicitDeferredTensor(weights_tensor),
           predicate.Predicate(True), predicate.Predicate(True))
 
     weights_tensors = [
@@ -275,11 +275,11 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     expected_weights = (-self._weights[:, 0] + 0.3 * self._weights[:, 1] -
                         self._weights[:, 2] / 3.1 + self._weights[:, 0] * 0.5)
 
-    actual_weights, variables = ratio_weights.evaluate(memoizer)
+    actual_weights = ratio_weights.evaluate(memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    for variable in variables:
+    for variable in actual_weights.variables:
       variable.create(memoizer)
 
     with self.wrapped_session() as session:
@@ -294,11 +294,11 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    weights_tensor = deferred_tensor.DeferredTensor(
+    weights_tensor = deferred_tensor.ExplicitDeferredTensor(
         tf.constant([0.5, 0.1, 1.0], dtype=tf.float32))
-    numerator1_tensor = deferred_tensor.DeferredTensor(
+    numerator1_tensor = deferred_tensor.ExplicitDeferredTensor(
         tf.constant([True, False, True], dtype=tf.bool))
-    numerator2_tensor = deferred_tensor.DeferredTensor(
+    numerator2_tensor = deferred_tensor.ExplicitDeferredTensor(
         tf.constant([True, True, False], dtype=tf.bool))
     numerator1_predicate = predicate.Predicate(numerator1_tensor)
     numerator2_predicate = predicate.Predicate(numerator2_tensor)
@@ -310,13 +310,13 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     ratio_weights2 = term._RatioWeights.ratio(weights_tensor,
                                               numerator2_predicate,
                                               denominator_predicate)
-    result1, variables1 = ratio_weights1.evaluate(memoizer)
-    result2, variables2 = ratio_weights2.evaluate(memoizer)
+    result1 = ratio_weights1.evaluate(memoizer)
+    result2 = ratio_weights2.evaluate(memoizer)
 
     # The numerators differ, so the results should be different, but the
     # weights and denominators match, so the variables should be the same.
     self.assertIsNot(result1, result2)
-    self.assertEqual(variables1, variables2)
+    self.assertEqual(result1.variables, result2.variables)
 
   def test_binary_classification_term(self):
     """Tests `BinaryClassificationTerm`."""
@@ -341,13 +341,13 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                                           positive_weights_tensor,
                                           negative_weights_tensor):
       positive_ratio_weights = term._RatioWeights.ratio(
-          deferred_tensor.DeferredTensor(positive_weights_tensor),
+          deferred_tensor.ExplicitDeferredTensor(positive_weights_tensor),
           predicate.Predicate(True), predicate.Predicate(True))
       negative_ratio_weights = term._RatioWeights.ratio(
-          deferred_tensor.DeferredTensor(negative_weights_tensor),
+          deferred_tensor.ExplicitDeferredTensor(negative_weights_tensor),
           predicate.Predicate(True), predicate.Predicate(True))
       return term.BinaryClassificationTerm(
-          deferred_tensor.DeferredTensor(predictions_tensor),
+          deferred_tensor.ExplicitDeferredTensor(predictions_tensor),
           positive_ratio_weights, negative_ratio_weights, loss.HingeLoss())
 
     # Randomly construct arrays of predictions and weights.
@@ -384,11 +384,11 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                                                      expected_negative_weights,
                                                      self._predictions)
 
-    actual_term, variables = term_object.evaluate(memoizer)
+    actual_term = term_object.evaluate(memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    for variable in variables:
+    for variable in actual_term.variables:
       variable.create(memoizer)
 
     with self.wrapped_session() as session:

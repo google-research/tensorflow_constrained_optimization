@@ -63,12 +63,14 @@ def wrap_rate(penalty_tensor, constraint_tensor=None):
     raise TypeError("you cannot wrap an object that has already been wrapped")
 
   penalty_basic_expression = basic_expression.BasicExpression(
-      [term.TensorTerm(deferred_tensor.DeferredTensor(penalty_tensor))])
+      [term.TensorTerm(deferred_tensor.ExplicitDeferredTensor(penalty_tensor))])
   if constraint_tensor is None:
     constraint_basic_expression = penalty_basic_expression
   else:
-    constraint_basic_expression = basic_expression.BasicExpression(
-        [term.TensorTerm(deferred_tensor.DeferredTensor(constraint_tensor))])
+    constraint_basic_expression = basic_expression.BasicExpression([
+        term.TensorTerm(
+            deferred_tensor.ExplicitDeferredTensor(constraint_tensor))
+    ])
   return expression.Expression(penalty_basic_expression,
                                constraint_basic_expression)
 
@@ -117,13 +119,11 @@ def upper_bound(expressions):
       [term.TensorTerm(bound)])
   bound_expression = expression.Expression(
       penalty_expression=bound_basic_expression,
-      constraint_expression=bound_basic_expression,
-      extra_variables=[bound])
+      constraint_expression=bound_basic_expression)
   extra_constraints = [ee <= bound_expression for ee in expressions]
   return expression.Expression(
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression,
-      extra_variables=[bound],
       extra_constraints=extra_constraints)
 
 
@@ -171,11 +171,9 @@ def lower_bound(expressions):
       [term.TensorTerm(bound)])
   bound_expression = expression.Expression(
       penalty_expression=bound_basic_expression,
-      constraint_expression=bound_basic_expression,
-      extra_variables=[bound])
+      constraint_expression=bound_basic_expression)
   extra_constraints = [ee >= bound_expression for ee in expressions]
   return expression.Expression(
       penalty_expression=bound_basic_expression,
       constraint_expression=bound_basic_expression,
-      extra_variables=[bound],
       extra_constraints=extra_constraints)

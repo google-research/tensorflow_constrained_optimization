@@ -29,8 +29,8 @@ from tensorflow_constrained_optimization.python.rates import helpers
 
 
 @six.add_metaclass(abc.ABCMeta)
-class _DeferredTensorState(helpers.RateObject):
-  """Base class for internal state of a `DeferredTensor`."""
+class _ExplicitDeferredTensorState(helpers.RateObject):
+  """Base class for internal state of an `ExplicitDeferredTensor`."""
 
   @abc.abstractmethod
   def value_and_auto_cast(self, memoizer):
@@ -58,11 +58,11 @@ class _DeferredTensorState(helpers.RateObject):
     return not self.__eq__(other)
 
 
-class _StaticDeferredTensorState(_DeferredTensorState):
-  """Internal state for a `DeferredTensor` with known value."""
+class _StaticExplicitDeferredTensorState(_ExplicitDeferredTensorState):
+  """Internal state for an `ExplicitDeferredTensor` wrapping a `Tensor."""
 
   def __init__(self, value, auto_cast):
-    """Creates a new `_StaticDeferredTensorState`.
+    """Creates a new `_StaticExplicitDeferredTensorState`.
 
     Args:
       value: `Tensor`-like, the value of the `DeferredTensor`.
@@ -103,7 +103,7 @@ class _StaticDeferredTensorState(_DeferredTensorState):
     return hash(identifier)
 
   def __eq__(self, other):
-    if not isinstance(other, _StaticDeferredTensorState):
+    if not isinstance(other, _StaticExplicitDeferredTensorState):
       return False
     if self.auto_cast != other.auto_cast:
       return False
@@ -127,8 +127,8 @@ class _StaticDeferredTensorState(_DeferredTensorState):
     return np.array_equal(self.value, other.value)
 
 
-class _CallableDeferredTensorState(_DeferredTensorState):
-  """Internal state for a `DeferredTensor` with unknown value.
+class _CallableExplicitDeferredTensorState(_ExplicitDeferredTensorState):
+  """Internal state for an `ExplicitDeferredTensor` wrapping a callable.
 
   The value isn't exactly "unknown". Rather, it isn't immediately available,
   since it is returned by the callback function passed to the constructor, which
@@ -136,7 +136,7 @@ class _CallableDeferredTensorState(_DeferredTensorState):
   """
 
   def __init__(self, callback, auto_cast):
-    """Creates a new `_CallableDeferredTensorState`.
+    """Creates a new `_CallableExplicitDeferredTensorState`.
 
     Args:
       callback: nullary function returning a `Tensor`-like, the value of the
@@ -165,7 +165,7 @@ class _CallableDeferredTensorState(_DeferredTensorState):
     return hash((self._callback, self._auto_cast))
 
   def __eq__(self, other):
-    if not isinstance(other, _CallableDeferredTensorState):
+    if not isinstance(other, _CallableExplicitDeferredTensorState):
       return False
     # We can't actually determine the values without calling the callbacks, so
     # we only consider the states equal if they have the same callbacks.
@@ -173,44 +173,7 @@ class _CallableDeferredTensorState(_DeferredTensorState):
             self.auto_cast == other.auto_cast)
 
 
-class _DerivedDeferredTensorState(_DeferredTensorState):
-  """Internal state for a `DeferredTensor` derived from others.
-
-  This `DeferredTensor` state will be used in two cases: (i) when a new
-  `DeferredTensor` is constructed from others via a call to
-  `DeferredTensor.apply`(), or (ii) when creating a `DeferredVariable`.
-  """
-
-  def __init__(self, callback):
-    """Creates a new `_DerivedDeferredTensorState`.
-
-    Args:
-      callback: nullary function returning a (`Tensor`-like, `Boolean`) pair,
-        the first element of which is the `DeferredTensor`, with the second
-        indicating whether the value should be automatically type-promoted, if
-        necessary.
-    """
-    assert callable(callback)
-    self._callback = callback
-
-  @property
-  def callback(self):
-    return self._callback
-
-  def value_and_auto_cast(self, memoizer):
-    return self._callback(memoizer)
-
-  def __hash__(self):
-    return hash(self._callback)
-
-  def __eq__(self, other):
-    if not isinstance(other, _DerivedDeferredTensorState):
-      return False
-    # We can't actually determine the values without calling the callbacks, so
-    # we only consider the states equal if they have the same callbacks.
-    return self.callback is other.callback
-
-
+@six.add_metaclass(abc.ABCMeta)
 class DeferredTensor(helpers.RateObject):
   """Wrapper around `Tensor`-like objects, and functions returning such.
 
@@ -255,8 +218,8 @@ class DeferredTensor(helpers.RateObject):
   int16 `Tensor`. Consider the following code:
 
   ```python
-  arg1 = DeferredTensor(lambda: tensor1)
-  arg2 = DeferredTensor(tensor2, auto_cast=True)
+  arg1 = ExplicitDeferredTensor(lambda: tensor1)
+  arg2 = ExplicitDeferredTensor(tensor2, auto_cast=True)
   result = DeferredTensor.apply(tf.maximum, arg1, arg2)
   result_tensor = result()
   ```
@@ -270,39 +233,47 @@ class DeferredTensor(helpers.RateObject):
   into a normal `Tensor` by calling it.
   """
 
-  def __init__(self, value, auto_cast=False):
-    """Constructs a new `DeferredTensor.
+  @abc.abstractmethod
+  def _value_and_auto_cast(self, memoizer):
+    """Returns the value of the `Tensor`, and whether it has no fixed type.
 
     Args:
-      value: either a `Tensor`-like object, or a nullary function returning such
-        an object.
-      auto_cast: if `True`, then calls to `apply` will attempt to perform
-        automatic type promotion on the resulting `DeferredTensor`. Only applies
-        if "value" is a `Tensor` or a function returning a `Tensor`:
-          non-`Tensor` types are always auto-castable.
+      memoizer: dict, which memoizes variables (among other things).
 
-    Raises:
-      TypeError: if value is neither a `Tensor`-like object nor a nullary
-        function returning such an object.
+    Returns:
+      A (`Tensor`-like, `Boolean`) pair containing the value of the
+      `DeferredTensor`, and whether this value should be automatically
+      type-promoted if necessary.
     """
-    if isinstance(value, _DeferredTensorState):
-      # We permit a DeferredTensor to be created from a _DeferredTensorState,
-      # but this is for internal use *only* (it's used to create a
-      # DeferredTensor with a _DerivedDeferredTensorState). Notice that the
-      # auto_cast parameter is ignored (since it's a part of the state).
-      del auto_cast
-      self._state = value
-    elif isinstance(value, helpers.RateObject):
-      raise TypeError("a DeferredTensor may only be created from a Tensor-like "
-                      "object, or a nullary function returning such")
-    elif callable(value):
-      # If we're given a callable value, then we treat it as a nullary function
-      # returning a Tensor-like object.
-      self._state = _CallableDeferredTensorState(value, auto_cast)
-    else:
-      # If we're not given a callable value, then we treat it as a Tensor-like
-      # object.
-      self._state = _StaticDeferredTensorState(value, auto_cast)
+    pass
+
+  @abc.abstractproperty
+  def variables(self):
+    """Returns the list of `DeferredVariable` dependencies.
+
+    `DeferredTensor`s can be constructed from other `DeferredTensor`s via a call
+    to apply(), as well as various operators (all of which thunk down to
+    apply()). You can therefore think of a `DeferredTensor` as a parse tree of a
+    python expression. Some of the leaves of the tree could be
+    `DeferredVariable`s, which require initialization before they can be
+    accessed. For this reason, apply() keeps track of all `DeferredVariable`s
+    included in the parse tree of a `DeferredTensor`, with the list of such
+    `DeferredVariable`s being returned by this method.
+
+    Returns:
+      A list of `DeferredVariable`s.
+    """
+
+  @abc.abstractmethod
+  def __hash__(self):
+    pass
+
+  @abc.abstractmethod
+  def __eq__(self, other):
+    pass
+
+  def __ne__(self, other):
+    return not self.__eq__(other)
 
   def __call__(self, memoizer):
     """Returns the value of this `DeferredTensor`.
@@ -318,7 +289,7 @@ class DeferredTensor(helpers.RateObject):
     Returns:
       A `Tensor`-like object containing the value of this `DeferredTensor`.
     """
-    value, _ = self._state.value_and_auto_cast(memoizer)
+    value, _ = self._value_and_auto_cast(memoizer)
     return value
 
   @classmethod
@@ -361,24 +332,23 @@ class DeferredTensor(helpers.RateObject):
         `Tensor`-like objects.
     """
     deferred_args = []
+    variables = []
     for arg in args:
       if isinstance(arg, DeferredTensor):
         deferred_args.append(arg)
+        variables += arg.variables
       elif not isinstance(arg, helpers.RateObject):
-        deferred_args.append(DeferredTensor(arg))
+        deferred_args.append(ExplicitDeferredTensor(arg))
       else:
         raise TypeError("apply can only be called on DeferredTensor or "
                         "Tensor-like arguments")
 
-    states = [
-        arg._state  # pylint: disable=protected-access
-        for arg in deferred_args
-    ]
-
     def value_and_auto_cast_fn(memoizer):
       """Returns the application value, and whether it should be auto-casted."""
       values_and_auto_casts = [
-          state.value_and_auto_cast(memoizer) for state in states
+          # pylint: disable=protected-access
+          arg._value_and_auto_cast(memoizer) for arg in deferred_args
+          # pylint: enable=protected-access
       ]
       values = [value for value, _ in values_and_auto_casts]
       # The auto_cast flag is only meaningful for Tensors. For all other types,
@@ -415,7 +385,7 @@ class DeferredTensor(helpers.RateObject):
         # then we won't perform any casting at all.
         non_auto_cast_dtypes = set(
             value_dtypes[ii]
-            for ii in xrange(len(states))
+            for ii in xrange(len(deferred_args))
             if value_dtypes[ii] is not None and not auto_casts[ii])
 
         dtype = None
@@ -457,20 +427,7 @@ class DeferredTensor(helpers.RateObject):
 
     # FUTURE WORK: if all of the inputs are static, then the memoizer will be
     # ignored, and we could just construct a new static DeferredTensor here.
-    return DeferredTensor(_DerivedDeferredTensorState(value_and_auto_cast_fn))
-
-  def __hash__(self):
-    return self._state.__hash__()
-
-  def __eq__(self, other):
-    if not isinstance(other, helpers.RateObject):
-      other = DeferredTensor(other)
-    elif not isinstance(other, DeferredTensor):
-      return NotImplemented
-    return self._state == other._state  # pylint: disable=protected-access
-
-  def __ne__(self, other):
-    return not self.__eq__(other)
+    return _DerivedDeferredTensor(value_and_auto_cast_fn, variables=variables)
 
   def __neg__(self):
     return DeferredTensor.apply(lambda arg: -arg, self)
@@ -519,13 +476,126 @@ class DeferredTensor(helpers.RateObject):
     return DeferredTensor.apply(lambda arg: arg[slice_spec], self)
 
 
+class _DerivedDeferredTensor(DeferredTensor):
+  """A `DeferredTensor` representing an expression.
+
+  If we interpret a `DeferredTensor` as an expression tree, then
+  `ExplicitDeferredTensor`s and `VariableDeferredTensor`s will be the leaves,
+  and `_DerivedDeferredTensor`s will be the internal nodes. Specifically, a
+  `_DerivedDeferredTensor` represents an expression written in terms of other
+  `DeferredTensor`s.
+  """
+
+  def __init__(self, callback, variables=None):
+    """Constructs a new `_DerivedDeferredTensor`.
+
+    Args:
+      callback: nullary function returning a (`Tensor`-like, `Boolean`) pair,
+        the first element of which is the `DeferredTensor`, with the second
+        indicating whether the value should be automatically type-promoted, if
+        necessary.
+      variables: collection of `DeferredVariable`s upon which this expression
+        depends.
+
+    Raises:
+      TypeError: if value is neither a `Tensor`-like object nor a nullary
+        function returning such an object.
+    """
+    assert callable(callback)
+    self._callback = callback
+    self._variables = DeferredVariableList(variables)
+
+  def _value_and_auto_cast(self, memoizer):
+    return self._callback(memoizer)
+
+  @property
+  def variables(self):
+    return self._variables.list
+
+  def __hash__(self):
+    return hash(id(self))
+
+  def __eq__(self, other):
+    return self is other
+
+
+class ExplicitDeferredTensor(DeferredTensor):
+  """A `DeferredTensor` representing an explicit `Tensor`.
+
+  If we interpret a `DeferredTensor` as an expression tree, then
+  `ExplicitDeferredTensor`s and `VariableDeferredTensor`s will be the leaves,
+  and `_DerivedDeferredTensor`s will be the internal nodes. Unlike a
+  `VariableDeferredTensor`, which represents a `tf.Variable`, this class
+  represents either a `Tensor`, or a nullary function returning such.
+
+  These two cases (`Tensor`, or callable) are handled by the two internal
+  "state" classes `_StaticExplicitDeferredTensorState` and
+  `_CallableExplicitDeferredTensorState` classes, respectively.
+  """
+
+  def __init__(self, value, auto_cast=False):
+    """Constructs a new `ExplicitDeferredTensor`.
+
+    Args:
+      value: either a `Tensor`-like object, or a nullary function returning such
+        an object.
+      auto_cast: if `True`, then calls to `apply` will attempt to perform
+        automatic type promotion on the resulting `DeferredTensor`. Only applies
+        if "value" is a `Tensor` or a function returning a `Tensor`:
+          non-`Tensor` types are always auto-castable.
+
+    Raises:
+      TypeError: if value is neither a `Tensor`-like object nor a nullary
+        function returning such an object.
+    """
+    if isinstance(value, helpers.RateObject):
+      raise TypeError(
+          "a ExplicitDeferredTensor may only be created from a "
+          "Tensor-like object, or a nullary function returning such")
+    elif callable(value):
+      # If we're given a callable value, then we treat it as a nullary function
+      # returning a Tensor-like object.
+      self._state = _CallableExplicitDeferredTensorState(value, auto_cast)
+    else:
+      # If we're not given a callable value, then we treat it as a Tensor-like
+      # object.
+      self._state = _StaticExplicitDeferredTensorState(value, auto_cast)
+
+  def _value_and_auto_cast(self, memoizer):
+    return self._state.value_and_auto_cast(memoizer)
+
+  @property
+  def variables(self):
+    # ExplicitDeferredTensors are non-variable leaves, and therefore have no
+    # dependencies on DeferredVariables.
+    return []
+
+  def __hash__(self):
+    return self._state.__hash__()
+
+  def __eq__(self, other):
+    if not isinstance(other, helpers.RateObject):
+      other = ExplicitDeferredTensor(other)
+    elif not isinstance(other, DeferredTensor):
+      return NotImplemented
+    elif not isinstance(other, ExplicitDeferredTensor):
+      return False
+    return self._state == other._state  # pylint: disable=protected-access
+
+
 class DeferredVariable(DeferredTensor):
   """A `DeferredTensor` representing a variable.
 
-  This class is intended as a substitute for `tf.Variable`, with the main
-  difference being that we want all variables to be owned by a
-  `RateMinimizationProblem`. Furthermore, we want there to be multiple copies of
-  the "same" variable, if there are multiple `RateMinimizationProblem`s.
+  If we interpret a `DeferredTensor` as an expression tree, then
+  `ExplicitDeferredTensor`s and `VariableDeferredTensor`s will be the leaves,
+  and `_DerivedDeferredTensor`s will be the internal nodes. Unlike an
+  `ExplicitDeferredTensor`, which wraps a normal `Tensor` (or a nullary function
+  returning such), this class is intended as a substitute for `tf.Variable`.
+
+  Unlike a normal `tf.Variable`, in this library we want all variables to be
+  owned by a `RateMinimizationProblem`. Furthermore, we want there to be
+  multiple copies of the "same" variable, if there are multiple
+  `RateMinimizationProblem`s.
 
   The storage for all `DeferredVariables` must be *explicitly* created by
   calling `create` (this will happen inside the `RateMinimizationProblem`
@@ -563,18 +633,27 @@ class DeferredVariable(DeferredTensor):
     self._name = name
     self._dtype = dtype
     self._constraint = constraint
-
-    def value_and_auto_cast_fn(memoizer):
-      """Returns the variable's value, and whether it should be auto-casted."""
-      key = (DeferredVariable, self)
-      if key not in memoizer:
-        raise RuntimeError("attempted to read a DeferredVariable that has not "
-                           "yet been created")
-      return memoizer[key], auto_cast
-
     self._update_ops_fn = update_ops_fn
-    super(DeferredVariable,
-          self).__init__(_DerivedDeferredTensorState(value_and_auto_cast_fn))
+    self._auto_cast = auto_cast
+
+  def _value_and_auto_cast(self, memoizer):
+    key = (DeferredVariable, self)
+    if key not in memoizer:
+      raise RuntimeError("attempted to read a DeferredVariable that has not "
+                         "yet been created")
+    return memoizer[key], self._auto_cast
+
+  @property
+  def variables(self):
+    # The only DeferredVariable upon which this DeferredVariable depends is
+    # itself.
+    return [self]
+
+  def __hash__(self):
+    return hash(id(self))
+
+  def __eq__(self, other):
+    return self is other
 
   def create(self, memoizer):
     """Creates the `tf.Variable` owned by this `DeferredVariable`."""

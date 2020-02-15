@@ -160,10 +160,8 @@ class RateMinimizationProblem(
 
     # We ignore the "constraint_expression" field here, since we're not inside a
     # constraint (this is the objective function).
-    self._objective, objective_variables = (
-        objective.penalty_expression.evaluate(self._memoizer))
-    variables += objective_variables
-    variables += objective.extra_variables
+    self._objective = objective.penalty_expression.evaluate(self._memoizer)
+    variables += self._objective.variables
     constraints += objective.extra_constraints
 
     # Evaluating expressions can result in extra constraints being introduced,
@@ -186,17 +184,14 @@ class RateMinimizationProblem(
         if not new_constraint.expression.penalty_expression.is_differentiable:
           raise ValueError("non-differentiable losses (e.g. the zero-one loss) "
                            "cannot be optimized--they can only be constrained")
-        penalty_value, penalty_variables = (
-            new_constraint.expression.penalty_expression.evaluate(
-                self._memoizer))
-        constraint_value, constraint_variables = (
-            new_constraint.expression.constraint_expression.evaluate(
-                self._memoizer))
+        penalty_value = new_constraint.expression.penalty_expression.evaluate(
+            self._memoizer)
+        constraint_value = new_constraint.expression.constraint_expression.evaluate(
+            self._memoizer)
         self._proxy_constraints.append(penalty_value)
         self._constraints.append(constraint_value)
-        variables += penalty_variables
-        variables += constraint_variables
-        variables += new_constraint.expression.extra_variables
+        variables += penalty_value.variables
+        variables += constraint_value.variables
         constraints += new_constraint.expression.extra_constraints
 
     # Explicitly create all of the variables. This also functions as a sanity

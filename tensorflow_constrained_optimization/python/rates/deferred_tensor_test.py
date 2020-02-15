@@ -38,13 +38,13 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    tensor1 = deferred_tensor.DeferredTensor(
+    tensor1 = deferred_tensor.ExplicitDeferredTensor(
         tf.constant(-2, dtype=tf.int16), auto_cast=True)
-    tensor2 = deferred_tensor.DeferredTensor(
+    tensor2 = deferred_tensor.ExplicitDeferredTensor(
         lambda: tf.constant(1.5, dtype=tf.float32), auto_cast=True)
-    tensor3 = deferred_tensor.DeferredTensor(
+    tensor3 = deferred_tensor.ExplicitDeferredTensor(
         tf.constant(2.7, dtype=tf.float32), auto_cast=True)
-    tensor4 = deferred_tensor.DeferredTensor(
+    tensor4 = deferred_tensor.ExplicitDeferredTensor(
         tf.constant(0.3, dtype=tf.float64), auto_cast=True)
 
     expression5 = tensor1 + tensor2
@@ -94,8 +94,8 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       callback_list.append("callback2")
       return 4
 
-    tensor1 = deferred_tensor.DeferredTensor(callback1)
-    tensor2 = deferred_tensor.DeferredTensor(callback2)
+    tensor1 = deferred_tensor.ExplicitDeferredTensor(callback1)
+    tensor2 = deferred_tensor.ExplicitDeferredTensor(callback2)
     expression = tensor1 / tensor2
 
     # When we created the above expression, it should have created a closure,

@@ -49,15 +49,13 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    penalty_value, penalty_variables = (
-        expression.penalty_expression.evaluate(memoizer))
-    constraint_value, constraint_variables = (
-        expression.constraint_expression.evaluate(memoizer))
+    penalty_value = expression.penalty_expression.evaluate(memoizer)
+    constraint_value = expression.constraint_expression.evaluate(memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
-    variables = deferred_tensor.DeferredVariableList(
-        expression.extra_variables + penalty_variables + constraint_variables)
+    variables = deferred_tensor.DeferredVariableList(penalty_value.variables +
+                                                     constraint_value.variables)
     for variable in variables:
       variable.create(memoizer)
 

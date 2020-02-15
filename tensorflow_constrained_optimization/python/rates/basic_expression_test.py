@@ -38,10 +38,10 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_merging(self):
     """Checks that `BasicExpression`s merge compatible `Term`s."""
-    predictions = deferred_tensor.DeferredTensor(
+    predictions = deferred_tensor.ExplicitDeferredTensor(
         tf.constant([1.0, -1.0, 0.5], dtype=tf.float32))
-    weights1 = deferred_tensor.DeferredTensor(1.0)
-    weights2 = deferred_tensor.DeferredTensor(
+    weights1 = deferred_tensor.ExplicitDeferredTensor(1.0)
+    weights2 = deferred_tensor.ExplicitDeferredTensor(
         tf.constant([0.7, 0.3, 1.0], dtype=tf.float32))
     numerator_predicate1 = predicate.Predicate(True)
     numerator_predicate2 = predicate.Predicate(
@@ -80,10 +80,10 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_not_merging(self):
     """Checks that `BasicExpression`s don't merge incompatible `Term`s."""
-    predictions = deferred_tensor.DeferredTensor(
+    predictions = deferred_tensor.ExplicitDeferredTensor(
         tf.constant([1.0, -1.0, 0.5], dtype=tf.float32))
-    weights1 = deferred_tensor.DeferredTensor(1.0)
-    weights2 = deferred_tensor.DeferredTensor(
+    weights1 = deferred_tensor.ExplicitDeferredTensor(1.0)
+    weights2 = deferred_tensor.ExplicitDeferredTensor(
         tf.constant([0.7, 0.3, 1.0], dtype=tf.float32))
     numerator_predicate1 = predicate.Predicate(True)
     numerator_predicate2 = predicate.Predicate(
@@ -127,9 +127,9 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    dummy_predictions = deferred_tensor.DeferredTensor(
+    dummy_predictions = deferred_tensor.ExplicitDeferredTensor(
         tf.constant(0, dtype=tf.float32, shape=(1,)))
-    dummy_weights = deferred_tensor.DeferredTensor(1.0)
+    dummy_weights = deferred_tensor.ExplicitDeferredTensor(1.0)
     true_predicate = predicate.Predicate(True)
 
     def ratio_expression(positive_coefficient, negative_coefficient,
@@ -189,21 +189,23 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     self.assertEqual(zero_one_term.loss, loss.ZeroOneLoss())
     self.assertEqual(hinge_term.loss, loss.HingeLoss())
 
-    actual_constant, _ = expression_tensor_terms[0].evaluate(memoizer)
-    actual_zero_one_positive_weights, zero_one_positive_variables = (
+    actual_constant = expression_tensor_terms[0].evaluate(memoizer)
+    actual_zero_one_positive_weights = (
         zero_one_term.positive_ratio_weights.evaluate(memoizer))
-    actual_zero_one_negative_weights, zero_one_negative_variables = (
+    actual_zero_one_negative_weights = (
         zero_one_term.negative_ratio_weights.evaluate(memoizer))
-    actual_hinge_positive_weights, hinge_positive_variables = (
+    actual_hinge_positive_weights = (
         hinge_term.positive_ratio_weights.evaluate(memoizer))
-    actual_hinge_negative_weights, hinge_negative_variables = (
+    actual_hinge_negative_weights = (
         hinge_term.negative_ratio_weights.evaluate(memoizer))
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
     variables = deferred_tensor.DeferredVariableList(
-        zero_one_positive_variables + zero_one_negative_variables +
-        hinge_positive_variables + hinge_negative_variables).list
+        actual_constant.variables + actual_zero_one_positive_weights.variables +
+        actual_zero_one_negative_weights.variables +
+        actual_hinge_positive_weights.variables +
+        actual_hinge_negative_weights.variables)
     for variable in variables:
       variable.create(memoizer)
 

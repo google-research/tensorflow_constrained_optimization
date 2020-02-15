@@ -57,7 +57,7 @@ class Predicate(helpers.RateObject):
 
     self._tensor = tensor
     if not isinstance(self._tensor, deferred_tensor.DeferredTensor):
-      self._tensor = deferred_tensor.DeferredTensor(self._tensor)
+      self._tensor = deferred_tensor.ExplicitDeferredTensor(self._tensor)
     if _convert_and_clip:
       self._tensor = deferred_tensor.DeferredTensor.apply(
           convert_and_clip_fn, self._tensor)
