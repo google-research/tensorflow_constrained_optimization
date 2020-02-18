@@ -42,17 +42,12 @@ _install_requires = [
     "numpy",
     "scipy",
     "six",
-
-    # TODO: Uncomment this once TF can automatically select between CPU
-    # and GPU installation:
-    #   "tensorflow>=1.14",
-    #   "tensorflow-gpu>=1.14",
+    # For TensorFlow 1.14 and 2.0, this dependency isn't quite correct, since
+    # the user might want "tensorflow-gpu" instead of "tensorflow". However, in
+    # TensorFlow 1.15 and later (before 2.0), or 2.1 and later, "tensorflow" and
+    # "tensorflow-gpu" are no longer distinguished.
+    "tensorflow>=1.14",
 ]
-# TODO: get rid of this, once _install_requires includes TensorFlow.
-_extras_require = {
-    "tensorflow": "tensorflow>=1.14",
-    "tensorflow-gpu": "tensorflow-gpu>=1.14",
-}
 
 _classifiers = [
     "Development Status :: 4 - Beta",
@@ -95,7 +90,6 @@ setup(
     license="Apache 2.0",
     classifiers=_classifiers,
     install_requires=_install_requires,
-    extras_require=_extras_require,
     packages=find_packages(),
     include_package_data=True,
     description=_description,
