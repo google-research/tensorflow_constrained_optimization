@@ -502,3 +502,10 @@ use this library:
     comment posted on a Wiki Talk page contain toxic content. The notebook
     discusses two criteria for fairness and shows how to enforce them by
     constructing a rate-based optimization optimization problem.
+
+*   [CelebA_fairness.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/CelebA_fairness.ipynb):
+    This notebook shows how to train a *fair* classifier to predict to detect a
+    celebrity's smile in images using tf.keras and the large-scale CelebFaces
+    Attributes dataset. The model trained in this notebook is evaluating for
+    fairness across age group, with the false positive rate set as the
+    constraint.
