@@ -395,9 +395,10 @@ class SubsettableContext(helpers.RateObject):
     # First convert the predicate Tensors into DeferredTensors, so that we can
     # use the __eq__ operator.
     if not isinstance(penalty_predicate, deferred_tensor.DeferredTensor):
-      penalty_predicate = deferred_tensor.DeferredTensor(penalty_predicate)
+      penalty_predicate = deferred_tensor.ExplicitDeferredTensor(
+          penalty_predicate)
     if not isinstance(constraint_predicate, deferred_tensor.DeferredTensor):
-      constraint_predicate = deferred_tensor.DeferredTensor(
+      constraint_predicate = deferred_tensor.ExplicitDeferredTensor(
           constraint_predicate)
 
     # Convert the boolean predicates to Predicate objects. Make sure that we
@@ -535,10 +536,10 @@ def rate_context(predictions, labels=None, weights=1.0):
                        "a Tensor: it cannot be a plain Tensor (to fix this, "
                        "consider wrapping it in a lambda)")
 
-  predictions = deferred_tensor.DeferredTensor(predictions)
+  predictions = deferred_tensor.ExplicitDeferredTensor(predictions)
   if labels is not None:
-    labels = deferred_tensor.DeferredTensor(labels)
-  weights = deferred_tensor.DeferredTensor(weights)
+    labels = deferred_tensor.ExplicitDeferredTensor(labels)
+  weights = deferred_tensor.ExplicitDeferredTensor(weights)
 
   raw_context = _RawContext(
       penalty_predictions=predictions,
@@ -640,16 +641,19 @@ def split_rate_context(penalty_predictions,
                        "a Tensor: it cannot be a plain Tensor (to fix this, "
                        "consider wrapping it in a lambda)")
 
-  penalty_predictions = deferred_tensor.DeferredTensor(penalty_predictions)
+  penalty_predictions = deferred_tensor.ExplicitDeferredTensor(
+      penalty_predictions)
   if penalty_labels is not None:
-    penalty_labels = deferred_tensor.DeferredTensor(penalty_labels)
-  penalty_weights = deferred_tensor.DeferredTensor(penalty_weights)
+    penalty_labels = deferred_tensor.ExplicitDeferredTensor(penalty_labels)
+  penalty_weights = deferred_tensor.ExplicitDeferredTensor(penalty_weights)
 
-  constraint_predictions = deferred_tensor.DeferredTensor(
+  constraint_predictions = deferred_tensor.ExplicitDeferredTensor(
       constraint_predictions)
   if constraint_labels is not None:
-    constraint_labels = deferred_tensor.DeferredTensor(constraint_labels)
-  constraint_weights = deferred_tensor.DeferredTensor(constraint_weights)
+    constraint_labels = deferred_tensor.ExplicitDeferredTensor(
+        constraint_labels)
+  constraint_weights = deferred_tensor.ExplicitDeferredTensor(
+      constraint_weights)
 
   raw_context = _RawContext(
       penalty_predictions=penalty_predictions,

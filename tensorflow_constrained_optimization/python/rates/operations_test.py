@@ -37,8 +37,9 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     Args:
       expression: `Expression` to evaluate.
-      extra_update_ops_fn: function that takes a `EvaluationMemoizer`, and
-        returns a list of ops to execute before evaluation.
+      extra_update_ops_fn: function that takes an `EvaluationMemoizer` and the
+        list of `DeferredVariables`, and returns a list of ops to execute before
+        evaluation.
 
     Returns:
       A pair (penalty,constraint) containing the values of the penalty and
@@ -49,15 +50,13 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    penalty_value, penalty_variables = (
-        expression.penalty_expression.evaluate(memoizer))
-    constraint_value, constraint_variables = (
-        expression.constraint_expression.evaluate(memoizer))
+    penalty_value = expression.penalty_expression.evaluate(memoizer)
+    constraint_value = expression.constraint_expression.evaluate(memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
     variables = deferred_tensor.DeferredVariableList(
-        expression.extra_variables + penalty_variables + constraint_variables)
+        penalty_value.variables + constraint_value.variables).list
     for variable in variables:
       variable.create(memoizer)
 
@@ -65,7 +64,7 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       if not extra_update_ops_fn:
         update_ops = []
       else:
-        update_ops = extra_update_ops_fn(memoizer)
+        update_ops = extra_update_ops_fn(memoizer, variables)
       for variable in variables:
         update_ops += variable.update_ops(memoizer)
       return update_ops
@@ -81,16 +80,14 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Make sure that wrap_rate() raises if given an `Expression`."""
     penalty_value = 3.1
     constraint_value = 2.7
-    penalty_tensor = tf.constant(penalty_value, dtype=tf.float32)
-    constraint_tensor = tf.constant(constraint_value, dtype=tf.float32)
 
-    wrapped = operations.wrap_rate(penalty_tensor, constraint_tensor)
+    wrapped = operations.wrap_rate(penalty_value, constraint_value)
     # We should raise a TypeError if either or both of the parameters to
     # wrap_rate() are Expressions.
     with self.assertRaises(TypeError):
-      operations.wrap_rate(penalty_tensor, wrapped)
+      operations.wrap_rate(penalty_value, wrapped)
     with self.assertRaises(TypeError):
-      operations.wrap_rate(wrapped, constraint_tensor)
+      operations.wrap_rate(wrapped, constraint_value)
     with self.assertRaises(TypeError):
       operations.wrap_rate(wrapped, wrapped)
 
@@ -139,21 +136,38 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     with self.assertRaises(TypeError):
       operations.upper_bound([tensor1, expression2])
 
+  def test_upper_bound_raises_on_maximization(self):
+    """Make sure that upper_bound() raises if it's maximized."""
+    bounded = -operations.upper_bound([operations.wrap_rate(1.0)])
+    # All three of "penalty_expression", "constraint_expression" and
+    # "extra_constraints" should raise.
+    with self.assertRaises(RuntimeError):
+      _ = bounded.penalty_expression
+    with self.assertRaises(RuntimeError):
+      _ = bounded.constraint_expression
+    with self.assertRaises(RuntimeError):
+      _ = bounded.extra_constraints
+
   def test_upper_bound(self):
     """Make sure that upper_bound() creates the correct Expression."""
     values = [0.8, 3.1, -1.6, 2.7]
     bound_value = 1.4
-    tensors = [tf.constant(value, dtype=tf.float32) for value in values]
-    expressions = [operations.wrap_rate(tt) for tt in tensors]
+    expressions = [operations.wrap_rate(value) for value in values]
 
     bounded = operations.upper_bound(expressions)
 
     # Before evaluating any expressions, we'll assign "bound_value" to the slack
     # variable, so that we can make sure that the same slack variable is being
     # used for all of the constraints.
-    def update_ops_fn(memoizer):
-      bound_tensor = bounded.penalty_expression.tensor(memoizer)
-      return [bound_tensor.assign(bound_value)]
+    def update_ops_fn(memoizer, variables):
+      upper_bound_tensor = None
+      for variable in variables:
+        tensor = variable(memoizer)
+        if tensor.name.startswith("tfco_upper_bound"):
+          self.assertIsNone(upper_bound_tensor)
+          upper_bound_tensor = tensor
+      self.assertIsNotNone(upper_bound_tensor)
+      return [upper_bound_tensor.assign(bound_value)]
 
     # Extract the set of constraints, and make sure that there is one for each
     # quantity that is being bounded.
@@ -194,21 +208,40 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     with self.assertRaises(TypeError):
       operations.lower_bound([tensor1, expression2])
 
+  def test_lower_bound_raises_on_minimization(self):
+    """Make sure that lower_bound() raises if it's minimized."""
+    bounded = operations.lower_bound([operations.wrap_rate(1.0)])
+    # All three of "penalty_expression", "constraint_expression" and
+    # "extra_constraints" should raise.
+    with self.assertRaises(RuntimeError):
+      _ = bounded.penalty_expression
+    with self.assertRaises(RuntimeError):
+      _ = bounded.constraint_expression
+    with self.assertRaises(RuntimeError):
+      _ = bounded.extra_constraints
+
   def test_lower_bound(self):
     """Make sure that lower_bound() creates the correct Expression."""
     values = [0.8, 3.1, -1.6, 2.7]
     bound_value = 1.4
-    tensors = [tf.constant(value, dtype=tf.float32) for value in values]
-    expressions = [operations.wrap_rate(tt) for tt in tensors]
+    expressions = [operations.wrap_rate(value) for value in values]
 
-    bounded = operations.lower_bound(expressions)
+    # We need to negate "bounded" since it's implicitly being minimized, and we
+    # cannot minimize a lower bound.
+    bounded = -operations.lower_bound(expressions)
 
     # Before evaluating any expressions, we'll assign "bound_value" to the slack
     # variable, so that we can make sure that the same slack variable is being
     # used for all of the constraints.
-    def update_ops_fn(memoizer):
-      bound_tensor = bounded.penalty_expression.tensor(memoizer)
-      return [bound_tensor.assign(bound_value)]
+    def update_ops_fn(memoizer, variables):
+      lower_bound_tensor = None
+      for variable in variables:
+        tensor = variable(memoizer)
+        if tensor.name.startswith("tfco_lower_bound"):
+          self.assertIsNone(lower_bound_tensor)
+          lower_bound_tensor = tensor
+      self.assertIsNotNone(lower_bound_tensor)
+      return [lower_bound_tensor.assign(bound_value)]
 
     # Extract the set of constraints, and make sure that there is one for each
     # quantity that is being bounded.

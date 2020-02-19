@@ -114,7 +114,6 @@ py_library(
     deps = [
         ":deferred_tensor",
         ":helpers",
-        # six dep,
     ],
 )
 
@@ -123,9 +122,11 @@ py_library(
     srcs = ["expression.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":basic_expression",
         ":constraint",
-        ":deferred_tensor",
         ":helpers",
+        ":term",
+        # six dep,
         # tensorflow dep,
     ],
 )
@@ -139,6 +140,7 @@ py_library(
         ":deferred_tensor",
         ":expression",
         ":helpers",
+        ":term",
         # tensorflow dep,
     ],
 )
@@ -204,6 +206,7 @@ py_test(
     deps = [
         ":defaults",
         ":deferred_tensor",
+        # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,
@@ -267,7 +270,6 @@ py_test(
         ":predicate",
         ":term",
         # numpy dep,
-        # six dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,
@@ -283,7 +285,8 @@ py_test(
         ":defaults",
         ":deferred_tensor",
         ":expression",
-        # numpy dep,
+        ":term",
+        # six dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,
@@ -329,7 +332,7 @@ py_test(
     srcs_version = "PY2AND3",
     deps = [
         ":binary_rates",
-        ":deferred_tensor",
+        ":expression",
         ":rate_minimization_problem",
         ":subsettable_context",
         # numpy dep,

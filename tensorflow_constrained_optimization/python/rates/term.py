@@ -42,8 +42,8 @@ two `BasicExpression` objects: one for the "penalty" portion of the problem
 (which is used when optimizing the model parameters), and the other for the
 "constraint" portion (used when optimizing the constraints, e.g. the Lagrange
 multipliers, if using the Lagrangian formulation). It is the `BasicExpression`
-object that actually represents linear combinations of `Term`s and `Tensor`s,
-and it contains some additional logic for combining "compatible" `Term`s.
+object that actually represents linear combinations of `Term`s, and it contains
+some additional logic for combining "compatible" `Term`s.
 """
 
 from __future__ import absolute_import
@@ -52,6 +52,7 @@ from __future__ import print_function
 
 import abc
 import copy
+import numbers
 import six
 import tensorflow as tf
 
@@ -193,15 +194,7 @@ class _RatioWeights(helpers.RateObject):
 
   def __mul__(self, scalar):
     """Returns the result of multiplying the ratio weights by a scalar."""
-    # Ideally, we'd check that "scalar" is a scalar Tensor, or is a type that
-    # can be converted to a scalar Tensor. Unfortunately, this includes a lot of
-    # possible types, so the easiest solution would be to actually perform the
-    # conversion, and then check that the resulting Tensor has only one element.
-    # This, however, would add a dummy element to the Tensorflow graph, and
-    # wouldn't work for a Tensor with an unknown size. Hence, we only check that
-    # "scalar" is not a type that we know for certain is disallowed: an object
-    # internal to this library.
-    if isinstance(scalar, helpers.RateObject):
+    if not isinstance(scalar, numbers.Number):
       raise TypeError("_RatioWeights objects only support *scalar* "
                       "multiplication")
 
@@ -218,8 +211,7 @@ class _RatioWeights(helpers.RateObject):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing the ratio weights by a scalar."""
-    # See comment in __mul__.
-    if isinstance(scalar, helpers.RateObject):
+    if not isinstance(scalar, numbers.Number):
       raise TypeError("_RatioWeights objects only support *scalar* division")
 
     if scalar == 0:
@@ -295,13 +287,12 @@ class _RatioWeights(helpers.RateObject):
       memoizer: dict, which memoizes portions of the calculation to simplify the
         resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
-        values being the minimum allowed value of a rate denominator (a python
-        float), and the current iterate (starting at zero), respectively.
+        values being the minimum allowed value of a rate denominator (a float),
+        and the current iterate (a non-negative integer, starting at zero),
+        respectively.
 
     Returns:
-      A (`DeferredTensor`, list) pair containing (i) the (approximate)
-      denominator, and (ii) a list of `DeferredVariable`s containing the
-      internal state upon which the denominator depends.
+      A `DeferredTensor` containing the (approximate) denominator.
     """
     key = (_RatioWeights, denominator)
     if key not in memoizer:
@@ -384,8 +375,8 @@ class _RatioWeights(helpers.RateObject):
             true_fn=lambda: running_average_sum / running_average_count,
             false_fn=lambda: running_denominator_lower_bound)
 
-      memoizer[key] = (deferred_tensor.DeferredTensor.apply(
-          average_denominator_weight_fn, running_averages), [running_averages])
+      memoizer[key] = deferred_tensor.DeferredTensor.apply(
+          average_denominator_weight_fn, running_averages)
 
     return memoizer[key]
 
@@ -396,20 +387,16 @@ class _RatioWeights(helpers.RateObject):
       memoizer: dict, which memoizes portions of the calculation to simplify the
         resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
-        values being the minimum allowed value of a rate denominator (a python
-        float), and the current iterate (starting at zero), respectively.
+        values being the minimum allowed value of a rate denominator (a float),
+        and the current iterate (a non-negative integer, starting at zero),
+        respectively.
 
     Returns:
-      A (`DeferredTensor`, list) pair containing (i) the weights associated with
-      each example, and (ii) a list of `DeferredVariable`s containing the
-      internal state upon which the `_RatioWeights` evaluation depends.
+      A `DeferredTensor` containing the weights associated with each example.
     """
     ratios = []
-    variables = deferred_tensor.DeferredVariableList()
-
     for denominator_key, numerator in six.iteritems(self._ratios):
-      denominator, denominator_variables = self._evaluate_denominator(
-          denominator_key, memoizer)
+      denominator = self._evaluate_denominator(denominator_key, memoizer)
 
       def ratio_fn(numerator_value, denominator_value):
         """Returns the value of the current ratio as a `Tensor`."""
@@ -419,7 +406,6 @@ class _RatioWeights(helpers.RateObject):
       ratios.append(
           deferred_tensor.DeferredTensor.apply(ratio_fn, numerator,
                                                denominator))
-      variables += denominator_variables
 
     # It's probably paranoid to call stop_gradient on the ratio weights, but
     # it shouldn't do any harm, and might prevent failure if someone's doing
@@ -427,7 +413,7 @@ class _RatioWeights(helpers.RateObject):
     value = deferred_tensor.DeferredTensor.apply(
         lambda *args: tf.stop_gradient(sum(args, (0.0,))), *ratios)
 
-    return value, variables.list
+    return value
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -440,11 +426,11 @@ class Term(helpers.RateObject):
   matching keys.
 
   This functionality is needed since a `BasicExpression` is a linear combination
-  of `Term`s and `Tensor`s, and implements arithmetic operators for manipulating
-  and combining such linear combinations. To ensure that pairwise operations are
-  performed on compatible `Term`s, and *only* compatible `Term`s, the
-  `BasicExpression` class stores its terms in a dictionary with its keys being
-  the results of the `Term`.key method.
+  of `Term`s, and implements arithmetic operators for manipulating and combining
+  such linear combinations. To ensure that pairwise operations are performed on
+  compatible `Term`s, and *only* compatible `Term`s, the `BasicExpression` class
+  stores its terms in a dictionary with its keys being the results of the
+  `Term`.key method.
   """
 
   @abc.abstractproperty
@@ -524,14 +510,119 @@ class Term(helpers.RateObject):
       memoizer: dict, which memoizes portions of the calculation to simplify the
         resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
-        values being the minimum allowed value of a rate denominator (a python
-        float), and the current iterate (starting at zero), respectively.
+        values being the minimum allowed value of a rate denominator (a float),
+        and the current iterate (a non-negative integer, starting at zero),
+        respectively.
 
     Returns:
-      A (`DeferredTensor`, list) pair containing (i) the value of this `Term`,
-      and (ii) a list of `DeferredVariable`s containing the internal state upon
-      which the `Term` evaluation depends.
+      A `DeferredTensor` containing the value of this `Term`.
     """
+
+
+class TensorTerm(Term):
+  """`Term` object wrapping a `DeferredTensor` or `Tensor`-like object."""
+
+  def __init__(self, tensor):
+    """Creates a new `TensorTerm`.
+
+    Args:
+      tensor: scalar `DeferredTensor` or `Tensor`-like object that this
+        `TensorTerm` will wrap.
+
+    Raises:
+      TypeError: if "tensor" is not a `DeferredTensor` or `Tensor`-like object.
+    """
+    if isinstance(tensor, deferred_tensor.DeferredTensor):
+      self._tensor = tensor
+    elif not isinstance(tensor, helpers.RateObject):
+      self._tensor = deferred_tensor.ExplicitDeferredTensor(tensor)
+    else:
+      raise TypeError("tensor argument to TensorTerm's constructor should be a "
+                      "DeferredTensor or a Tensor-like object")
+
+  @property
+  def tensor(self):
+    """Returns the `DeferredTensor` wrapped by this `TensorTerm`."""
+    return self._tensor
+
+  @property
+  def is_differentiable(self):
+    """Returns `True`, since we assume that `Tensor`s can be differentiated."""
+    return True
+
+  @property
+  def key(self):
+    """A key used to determine whether different `Term`s are compatible.
+
+    The result of this function is used to determine whether two `Term`s are
+    compatible: `Term`s with the same key can be added and subtracted, and those
+    with different keys cannot. Each key can therefore be identified with a set
+    of `Term`s that can be added and subtracted to/from each other.
+
+    `TensorTerm`s are always compatible with each other (but not with other
+    `Term`s). Hence, the key returned by this method is simply the type
+    (`TensorTerm`).
+
+    Returns:
+      The type (`TensorTerm`).
+    """
+    return TensorTerm
+
+  def __mul__(self, scalar):
+    """Returns the result of multiplying this `TensorTerm` by a scalar."""
+    return TensorTerm(self._tensor * scalar)
+
+  def __truediv__(self, scalar):
+    """Returns the result of dividing this `TensorTerm` by a scalar."""
+    return TensorTerm(self._tensor / scalar)
+
+  def __neg__(self):
+    """Returns the result of negating this `TensorTerm`."""
+    return TensorTerm(-self._tensor)
+
+  def __add__(self, other):
+    """Returns the result of adding two `TensorTerm`s.
+
+    Args:
+      other: `TensorTerm` with the same key as self.
+
+    Returns:
+      A new `TensorTerm` representing the sum of self and other.
+    """
+    if self.key != other.key:
+      raise ValueError("Terms can only be added if they have the same key")
+
+    return TensorTerm(self._tensor + other.tensor)
+
+  def __sub__(self, other):
+    """Returns the result of subtracting two `TensorTerm`s.
+
+    Args:
+      other: `TensorTerm` with the same key as self.
+
+    Returns:
+      A new `TensorTerm` representing the difference of self and other.
+    """
+    if self.key != other.key:
+      raise ValueError("Terms can only be subtracted if they have the same key")
+
+    return TensorTerm(self._tensor - other.tensor)
+
+  def evaluate(self, memoizer):
+    """Computes and returns the value of this `TensorTerm`.
+
+    Args:
+      memoizer: dict, which memoizes portions of the calculation to simplify the
+        resulting TensorFlow graph. It must contain the keys
+        "denominator_lower_bound" and "global_step", with the corresponding
+        values being the minimum allowed value of a rate denominator (a float),
+        and the current iterate (a non-negative integer, starting at zero),
+        respectively.
+
+    Returns:
+      A `DeferredTensor` containing the value of this `TensorTerm`.
+    """
+    return self._tensor
 
 
 class BinaryClassificationTerm(Term):
@@ -585,9 +676,9 @@ class BinaryClassificationTerm(Term):
   This "compatibility" condition is checked using the "key" method. If two
   `Term`s have the same keys, then they may be combined using a binary
   arithmetic operation. This is used by the `BasicExpression` object, which
-  represents arbitrary linear combinations of `Term`s and `Tensor`s, to identify
-  compatible `Term`s by storing its `Term`s in a dictionary, with its keys taken
-  from the "key" method.
+  represents arbitrary linear combinations of `Term`s, to identify compatible
+  `Term`s by storing its `Term`s in a dictionary, with its keys taken from the
+  "key" method.
 
   The benefit of combining compatible terms is that, when using a relaxed loss
   (e.g. a hinge) it enables us to use a tighter approximation to the true
@@ -798,15 +889,7 @@ class BinaryClassificationTerm(Term):
   # function.
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
-    # Ideally, we'd check that "scalar" is a scalar Tensor, or is a type that
-    # can be converted to a scalar Tensor. Unfortunately, this includes a lot of
-    # possible types, so the easiest solution would be to actually perform the
-    # conversion, and then check that the resulting Tensor has only one element.
-    # This, however, would add a dummy element to the Tensorflow graph, and
-    # wouldn't work for a Tensor with an unknown size. Hence, we only check that
-    # "scalar" is not a type that we know for certain is disallowed: an object
-    # internal to this library.
-    if isinstance(scalar, helpers.RateObject):
+    if not isinstance(scalar, numbers.Number):
       raise TypeError("Term objects only support *scalar* multiplication")
 
     return BinaryClassificationTerm(self._predictions,
@@ -816,8 +899,7 @@ class BinaryClassificationTerm(Term):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    # See comment in __mul__.
-    if isinstance(scalar, helpers.RateObject):
+    if not isinstance(scalar, numbers.Number):
       raise TypeError("Term objects only support *scalar* division")
 
     return BinaryClassificationTerm(self._predictions,
@@ -848,8 +930,7 @@ class BinaryClassificationTerm(Term):
         different keys.
     """
     if self.key != other.key:
-      raise ValueError("binary terms can only be added if they have the same "
-                       "key")
+      raise ValueError("Terms can only be added if they have the same key")
 
     return BinaryClassificationTerm(
         self._predictions,
@@ -871,8 +952,7 @@ class BinaryClassificationTerm(Term):
         different keys.
     """
     if self.key != other.key:
-      raise ValueError("binary terms can only be subtracted if they have the "
-                       "same key")
+      raise ValueError("Terms can only be subtracted if they have the same key")
 
     return BinaryClassificationTerm(
         self._predictions,
@@ -886,24 +966,17 @@ class BinaryClassificationTerm(Term):
       memoizer: dict, which memoizes portions of the calculation to simplify the
         resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
-        values being the minimum allowed value of a rate denominator (a python
-        float), and the current iterate (starting at zero), respectively.
+        values being the minimum allowed value of a rate denominator (a float),
+        and the current iterate (a non-negative integer, starting at zero),
+        respectively.
 
     Returns:
-      A (`DeferredTensor`, list) pair containing (i) the value of this
-      `BinaryClassificationTerm`, and (ii) a list of `DeferredVariable`s
-      containing the internal state upon which the `BinaryClassificationTerm`
-      evaluation depends.
+      A `DeferredTensor` containing the value of this
+      `BinaryClassificationTerm`.
     """
-    variables = deferred_tensor.DeferredVariableList()
-
     # Evalaute the weights on the positive and negative approximate indicators.
-    positive_weights, positive_variables = (
-        self._positive_ratio_weights.evaluate(memoizer))
-    negative_weights, negative_variables = (
-        self._negative_ratio_weights.evaluate(memoizer))
-    variables += positive_variables
-    variables += negative_variables
+    positive_weights = self._positive_ratio_weights.evaluate(memoizer)
+    negative_weights = self._negative_ratio_weights.evaluate(memoizer)
 
     def average_loss_fn(positive_weights_value, negative_weights_value,
                         predictions_value):
@@ -922,6 +995,7 @@ class BinaryClassificationTerm(Term):
 
       return tf.reduce_mean(losses)
 
-    return deferred_tensor.DeferredTensor.apply(
-        average_loss_fn, positive_weights, negative_weights,
-        self._predictions), variables.list
+    return deferred_tensor.DeferredTensor.apply(average_loss_fn,
+                                                positive_weights,
+                                                negative_weights,
+                                                self._predictions)

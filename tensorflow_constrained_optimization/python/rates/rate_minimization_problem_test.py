@@ -25,6 +25,7 @@ import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import binary_rates
+from tensorflow_constrained_optimization.python.rates import expression
 from tensorflow_constrained_optimization.python.rates import rate_minimization_problem
 from tensorflow_constrained_optimization.python.rates import subsettable_context
 # Placeholder for internal import.
@@ -141,10 +142,13 @@ class RateMinimizationProblemTest(
     # once in the resulting optimization problem.
     constraint3 = constraint3 <= 0
     constraint1 = (
-        constraint1.add_dependencies(extra_constraints=[constraint3]) <= 0)
+        expression.ConstrainedExpression(
+            constraint1, extra_constraints=[constraint3]) <= 0)
     constraint2 = (
-        constraint2.add_dependencies(extra_constraints=[constraint3]) <= 0)
-    objective = objective.add_dependencies(extra_constraints=[constraint2])
+        expression.ConstrainedExpression(
+            constraint2, extra_constraints=[constraint3]) <= 0)
+    objective = expression.ConstrainedExpression(
+        objective, extra_constraints=[constraint2])
 
     problem = rate_minimization_problem.RateMinimizationProblem(
         objective, [constraint1],

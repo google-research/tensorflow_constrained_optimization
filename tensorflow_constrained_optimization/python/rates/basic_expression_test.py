@@ -20,7 +20,6 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
@@ -39,10 +38,10 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_merging(self):
     """Checks that `BasicExpression`s merge compatible `Term`s."""
-    predictions = deferred_tensor.DeferredTensor(
+    predictions = deferred_tensor.ExplicitDeferredTensor(
         tf.constant([1.0, -1.0, 0.5], dtype=tf.float32))
-    weights1 = deferred_tensor.DeferredTensor(1.0)
-    weights2 = deferred_tensor.DeferredTensor(
+    weights1 = deferred_tensor.ExplicitDeferredTensor(1.0)
+    weights2 = deferred_tensor.ExplicitDeferredTensor(
         tf.constant([0.7, 0.3, 1.0], dtype=tf.float32))
     numerator_predicate1 = predicate.Predicate(True)
     numerator_predicate2 = predicate.Predicate(
@@ -81,10 +80,10 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_not_merging(self):
     """Checks that `BasicExpression`s don't merge incompatible `Term`s."""
-    predictions = deferred_tensor.DeferredTensor(
+    predictions = deferred_tensor.ExplicitDeferredTensor(
         tf.constant([1.0, -1.0, 0.5], dtype=tf.float32))
-    weights1 = deferred_tensor.DeferredTensor(1.0)
-    weights2 = deferred_tensor.DeferredTensor(
+    weights1 = deferred_tensor.ExplicitDeferredTensor(1.0)
+    weights2 = deferred_tensor.ExplicitDeferredTensor(
         tf.constant([0.7, 0.3, 1.0], dtype=tf.float32))
     numerator_predicate1 = predicate.Predicate(True)
     numerator_predicate2 = predicate.Predicate(
@@ -128,34 +127,40 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    positive_coefficients = np.array([1.0, 0.5, 0.0], dtype=np.float32)
-    negative_coefficients = np.array([0.0, 0.5, 1.0], dtype=np.float32)
-    losses = [loss.ZeroOneLoss(), loss.HingeLoss(), loss.ZeroOneLoss()]
-
-    # The first and third terms will have the same losses (and everything else
-    # except the coefficients, and will therefore be compatible. The second has
-    # a different loss, and will be incompatible with the other two.
-    dummy_predictions = deferred_tensor.DeferredTensor(
+    dummy_predictions = deferred_tensor.ExplicitDeferredTensor(
         tf.constant(0, dtype=tf.float32, shape=(1,)))
-    dummy_weights = deferred_tensor.DeferredTensor(1.0)
+    dummy_weights = deferred_tensor.ExplicitDeferredTensor(1.0)
     true_predicate = predicate.Predicate(True)
-    expression_objects = []
-    for ii in xrange(3):
-      term_object = term.BinaryClassificationTerm.ratio(
-          positive_coefficients[ii], negative_coefficients[ii],
-          dummy_predictions, dummy_weights, true_predicate, true_predicate,
-          losses[ii])
-      expression_objects.append(basic_expression.BasicExpression([term_object]))
 
-    # This expression exercises all of the operators.
+    def ratio_expression(positive_coefficient, negative_coefficient,
+                         loss_function):
+      term_object = term.BinaryClassificationTerm.ratio(
+          positive_coefficient, negative_coefficient, dummy_predictions,
+          dummy_weights, true_predicate, true_predicate, loss_function)
+      return basic_expression.BasicExpression([term_object])
+
+    def constant_expression(constant):
+      return basic_expression.BasicExpression(
+          [term.TensorTerm(tf.constant(constant, dtype=tf.float32))])
+
+    # This expression exercises all of the operators. The first and third
+    # ratio_expression()s will have the same losses (and everything else except
+    # the coefficients), and will therefore be compatible. The second has a
+    # different loss, and will be incompatible with the other two.
     expression_object = (
-        0.3 - (expression_objects[0] / 2.3 + 0.7 * expression_objects[1]) +
-        (1.2 + expression_objects[2] - 0.1) * 0.6 + 0.8)
+        constant_expression(0.3) -
+        (ratio_expression(1.0, 0.0, loss.ZeroOneLoss()) / 2.3 +
+         0.7 * ratio_expression(0.5, 0.5, loss.HingeLoss())) +
+        (constant_expression(1.2) + ratio_expression(
+            0.0, 1.0, loss.ZeroOneLoss()) - constant_expression(0.1)) * 0.6 +
+        constant_expression(0.8))
 
     expected_constant = 0.3 + (1.2 - 0.1) * 0.6 + 0.8
     coefficients = np.array([-1.0 / 2.3, -0.7, 0.6], dtype=np.float32)
-    positive_coefficients *= coefficients
-    negative_coefficients *= coefficients
+    positive_coefficients = np.array([1.0, 0.5, 0.0],
+                                     dtype=np.float32) * coefficients
+    negative_coefficients = np.array([0.0, 0.5, 1.0],
+                                     dtype=np.float32) * coefficients
     # The expected weights for the two zero-one terms will be merged, since
     # they're compatible. There is only one hinge term.
     expected_zero_one_positive_weights = (
@@ -165,30 +170,42 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     expected_hinge_positive_weights = positive_coefficients[1]
     expected_hinge_negative_weights = negative_coefficients[1]
 
-    # We should have two terms, since the two compatible terms will be merged.
+    # We should have three terms, since the two compatible
+    # BinaryClassificationTerms will be merged, and we'll have one TensorTerm.
     expression_terms = expression_object._terms
-    self.assertEqual(2, len(expression_terms))
-    zero_one_term, hinge_term = expression_terms
+    expression_binary_classification_terms = [
+        tt for tt in expression_terms
+        if isinstance(tt, term.BinaryClassificationTerm)
+    ]
+    expression_tensor_terms = [
+        tt for tt in expression_terms if isinstance(tt, term.TensorTerm)
+    ]
+    self.assertEqual(3, len(expression_terms))
+    self.assertEqual(2, len(expression_binary_classification_terms))
+    self.assertEqual(1, len(expression_tensor_terms))
+    zero_one_term, hinge_term = expression_binary_classification_terms
     if zero_one_term.loss != loss.ZeroOneLoss():
       zero_one_term, hinge_term = hinge_term, zero_one_term
     self.assertEqual(zero_one_term.loss, loss.ZeroOneLoss())
     self.assertEqual(hinge_term.loss, loss.HingeLoss())
 
-    actual_constant = expression_object.tensor
-    actual_zero_one_positive_weights, zero_one_positive_variables = (
+    actual_constant = expression_tensor_terms[0].evaluate(memoizer)
+    actual_zero_one_positive_weights = (
         zero_one_term.positive_ratio_weights.evaluate(memoizer))
-    actual_zero_one_negative_weights, zero_one_negative_variables = (
+    actual_zero_one_negative_weights = (
         zero_one_term.negative_ratio_weights.evaluate(memoizer))
-    actual_hinge_positive_weights, hinge_positive_variables = (
+    actual_hinge_positive_weights = (
         hinge_term.positive_ratio_weights.evaluate(memoizer))
-    actual_hinge_negative_weights, hinge_negative_variables = (
+    actual_hinge_negative_weights = (
         hinge_term.negative_ratio_weights.evaluate(memoizer))
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
     variables = deferred_tensor.DeferredVariableList(
-        zero_one_positive_variables + zero_one_negative_variables +
-        hinge_positive_variables + hinge_negative_variables).list
+        actual_constant.variables + actual_zero_one_positive_weights.variables +
+        actual_zero_one_negative_weights.variables +
+        actual_hinge_positive_weights.variables +
+        actual_hinge_negative_weights.variables)
     for variable in variables:
       variable.create(memoizer)
 

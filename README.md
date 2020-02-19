@@ -32,8 +32,15 @@ this library, please refer to:
 > [ALT'19](http://proceedings.mlr.press/v98/cotter19a.html),
 > [arXiv](https://arxiv.org/abs/1804.06500)
 
-which will be referred to as [CoJiSr19] throughout the remainder of this
-document, and:
+and:
+
+> Narasimhan, Cotter and Gupta. "Optimizing Generalized Rate Metrics with Three
+> Players".
+> [NeurIPS'19](https://papers.nips.cc/paper/9258-optimizing-generalized-rate-metrics-with-three-players)
+
+which will be referred to as [CoJiSr19] and [NaCoGu19], respectively, throughout
+the remainder of this document. For more information on this library's optional
+"two-dataset" approach to improving generalization, please see:
 
 > Cotter, Gupta, Jiang, Srebro, Sridharan, Wang, Woodworth and You. "Training
 > Well-Generalizing Classifiers for Fairness Metrics and Other Data-Dependent
@@ -58,15 +65,35 @@ replacing the indicator functions with sigmoids. During optimization, each proxy
 constraint function will be penalized, with the magnitude of the penalty being
 chosen to satisfy the corresponding *original* (non-proxy) constraint.
 
+### Rate helpers
+
+While TFCO can optimize "low-level" constrained optimization problems
+represented in terms of `Tensor`s (by creating a
+`ConstrainedMinimizationProblem` directly), one of TFCO's main goals is to make
+it easy to configure and optimize problems based on rates. This includes both
+very simple settings, e.g. maximizing precision subject to a recall constraint,
+and more complex, e.g. maximizing ROC AUC subject to the constraint that the
+maximum and minimum error rates over some particular slices of the data should
+be within 10% of each other. To this end, we provide high-level "rate helpers",
+for which proxy constraints are handled automatically, and with which one can
+write optimization problems in simple mathematical notation (i.e. minimize
+*this* expression subject to *this* list of algebraic constraints).
+
+These helpers include a number of functions for constructing (in
+"binary_rates.py") and manipulating ("operations.py", and Python arithmetic
+operators) rates. Some of these, as described in [NaCoGu19], require introducing
+slack variables and extra implicit constraints to the resulting optimization
+problem, which, again, is handled automatically.
+
 ### Shrinking
 
 This library is designed to deal with a very flexible class of constrained
-problems, but this flexibility makes optimization considerably more difficult:
-on a non-convex problem, if one uses the "standard" approach of introducing a
-Lagrange multiplier for each constraint, and then jointly maximizing over the
-Lagrange multipliers and minimizing over the model parameters, then a stable
-stationary point might not even *exist*. Hence, in such cases, one might
-experience oscillation, instead of convergence.
+problems, but this flexibility can make optimization considerably more
+difficult: on a non-convex problem, if one uses the "standard" approach of
+introducing a Lagrange multiplier for each constraint, and then jointly
+maximizing over the Lagrange multipliers and minimizing over the model
+parameters, then a stable stationary point might not even *exist*. Hence, in
+such cases, one might experience oscillation, instead of convergence.
 
 Thankfully, it turns out that even if, over the course of optimization, no
 *particular* iterate does a good job of minimizing the objective while
@@ -80,8 +107,8 @@ objective function, and the constraints.
 
 In fact, we can do better: it's possible to post-process the set of snapshots to
 find a distribution over at most **m+1** snapshots, where **m** is the number of
-constraints, that will be at least as good (and will usually be much better)
-than the (much larger) uniform distribution described above. If you're unable or
+constraints, that will be at least as good (and will often be much better) than
+the (much larger) uniform distribution described above. If you're unable or
 unwilling to use a stochastic model at all, then you can instead use a heuristic
 to choose the single best snapshot.
 
@@ -300,20 +327,33 @@ negatively-labeled examples). Our current example (minimizing a hinge relaxation
 of the error rate subject to a recall constraint) is such a problem.
 
 ```python
-context = tfco.rate_context(predictions, labels=constant_labels)
+# Like the predictions, in eager mode, the labels should be a nullary function
+# returning a Tensor. In graph mode, you can drop the lambda.
+context = tfco.rate_context(predictions, labels=lambda: constant_labels)
 problem = tfco.RateMinimizationProblem(
     tfco.error_rate(context), [tfco.recall(context) >= recall_lower_bound])
 ```
 
-Rate-construction functions (`error_rate` and `recall`, here) take two optional
+The first argument of all rate-construction helpers (`error_rate` and `recall`
+are the ones used here) is a "context" object, which represents what we're
+taking the rate *of*. For example, in a fairness problem, we might wish to
+constrain the `positive_prediction_rate`s of two protected classes (i.e. two
+subsets of the data) to be similar. In that case, we would create a context
+representing the entire dataset, then call the context's `subset` method to
+create contexts for the two protected classes, and finally call the
+`positive_prediction_rate` helper on the two resulting contexts. Here, we only
+create a single context, representing the entire dataset, since we're only
+concerned with the error rate and recall.
+
+In addition to the context, rate-construction helpers also take two optional
 named parameters&mdash;not used here&mdash;named `penalty_loss` and
 `constraint_loss`, of which the former is used to define the proxy constraints,
 and the latter the "true" constraints. These default to the hinge and zero-one
 losses, respectively. The consequence of this is that we will attempt to
 minimize the average hinge loss (a relaxation of the error rate using the
-`penalty_loss`), while constraining the recall (using the `constraint_loss`) by
-essentially learning how much we should penalize the hinge-constrained recall
-(`penalty_loss`, again).
+`penalty_loss`), while constraining the *true* recall (using the
+`constraint_loss`) by essentially learning how much we should penalize the
+hinge-constrained recall (`penalty_loss`, again).
 
 The `RateMinimizationProblem` class implements the
 `ConstrainedMinimizationProblem` interface, and is constructed from a rate
@@ -321,7 +361,7 @@ expression to be minimized (the first parameter), subject to a list of rate
 constraints (the second). Using this class is typically more convenient and
 readable than constructing a `ConstrainedMinimizationProblem` manually: the
 objects returned by `error_rate` and `recall`&mdash;and all other
-rate-constructing and rate-combining functions&mdash;can be combined using
+rate-constructing and rate-combining functions&mdash;can be manipulated using
 python arithmetic operators (e.g. "`0.5 * tfco.error_rate(context1) -
 tfco.true_positive_rate(context2)`"), or converted into a constraint using a
 comparison operator.
@@ -447,58 +487,67 @@ minimizing the average hinge loss, but naturally doesn't approach 90% recall.
 ## More examples
 
 The
-[examples/jupyter](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/)
-and the
-[examples/colab](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/)
-directories contain several [Jupyter](https://jupyter.org/) and
-[Colaboratory](https://colab.research.google.com/) notebooks illustrating how to
-use this library:
+[examples](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/)
+directory contains several illustrations of how one can use this library:
 
-*   [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Recall_constraint.ipynb):
-    **Start here!** This is a more-comprehensive version of the above simple
-    example. In particular, it can run in either graph or eager modes, shows how
-    to manually create a `ConstrainedMinimizationProblem` instead of using the
-    rate helpers, and illustrates the use of both V1 and V2 optimizers.
+*   [Jupyter](https://jupyter.org/) notebooks:
 
-*   [Fairness_adult.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Fairness_adult.ipynb):
-    This notebook shows how to train classifiers for fairness constraints on the
-    UCI Adult dataset using the helpers for constructing rate-based optimization
-    problems.
+    1.  [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Recall_constraint.ipynb):
+        **Start here!** This is a more-comprehensive version of the above simple
+        example. In particular, it can run in either graph or eager modes, shows
+        how to manually create a `ConstrainedMinimizationProblem` instead of
+        using the rate helpers, and illustrates the use of both V1 and V2
+        optimizers.
 
-*   [Minibatch_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Minibatch_training.ipynb):
-    This notebook describes how to solve a rate-constrained training problem
-    using *minibatches*. The notebook focuses on problems where one wishes to
-    impose a constraint on a group of examples constituting an extreme minority
-    of the training set, and shows how one can speed up convergence by using
-    separate streams of minibatches for each group.
+    1.  [Fairness_adult.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Fairness_adult.ipynb):
+        This notebook shows how to train classifiers for fairness constraints on
+        the UCI Adult dataset using the helpers for constructing rate-based
+        optimization problems.
 
-*   [Oscillation_compas.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Oscillation_compas.ipynb):
-    This notebook illustrates the oscillation issue raised in the "skrinking"
-    section (above): it's possible that the individual iterates won't converge
-    when using the Lagrangian approach to training with fairness constraints,
-    even though they do converge *on average*. This motivate more careful
-    selection of solutions or the use of a stochastic classifier.
+    1.  [Minibatch_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Minibatch_training.ipynb):
+        This notebook describes how to solve a rate-constrained training problem
+        using *minibatches*. The notebook focuses on problems where one wishes
+        to impose a constraint on a group of examples constituting an extreme
+        minority of the training set, and shows how one can speed up convergence
+        by using separate streams of minibatches for each group.
 
-*   [Post_processing.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Post_processing.ipynb):
-    This notebook describes how to use the shrinking procedure of [CoJiSr19], as
-    discussed in the "shrinking" section (above), to post-process the iterates
-    of a constrained optimizer and construct a stochastic classifier from them.
-    For applications where a stochastic classifier is not acceptable, we show
-    how to use a heuristic to pick the best deterministic classifier from the
-    iterates found by the optimizer.
+    1.  [Oscillation_compas.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Oscillation_compas.ipynb):
+        This notebook illustrates the oscillation issue raised in the
+        "shrinking" section (above): it's possible that the individual iterates
+        won't converge when using the Lagrangian approach to training with
+        fairness constraints, even though they do converge *on average*. This
+        motivate more careful selection of solutions or the use of a stochastic
+        classifier.
 
-*   [Generalization_communities.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Generalization_communities.ipynb):
-    This notebook shows how to improve fairness generalization performance on
-    the UCI Communities and Crime dataset with the split dataset approach of
-    [CotterEtAl19], using the `split_rate_context` helper.
+    1.  [Post_processing.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Post_processing.ipynb):
+        This notebook describes how to use the shrinking procedure of
+        [CoJiSr19], as discussed in the "shrinking" section (above), to
+        post-process the iterates of a constrained optimizer and construct a
+        stochastic classifier from them. For applications where a stochastic
+        classifier is not acceptable, we show how to use a heuristic to pick the
+        best deterministic classifier from the iterates found by the optimizer.
 
-*   [Churn.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Churn.ipynb):
-    This notebook describes how to use rate constraints for low-churn
-    classification. That is, to train for accuracy while ensuring the
-    predictions don't differ by much compared to a baseline model.
+    1.  [Generalization_communities.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Generalization_communities.ipynb):
+        This notebook shows how to improve fairness generalization performance
+        on the UCI Communities and Crime dataset with the split dataset approach
+        of [CotterEtAl19], using the `split_rate_context` helper.
 
-*   [Wiki_toxicity_fairness.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Wiki_toxicity_fairness.ipynb):
-    This notebook shows how to train a *fair* classifier to predict whether a
-    comment posted on a Wiki Talk page contain toxic content. The notebook
-    discusses two criteria for fairness and shows how to enforce them by
-    constructing a rate-based optimization optimization problem.
+    1.  [Churn.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Churn.ipynb):
+        This notebook describes how to use rate constraints for low-churn
+        classification. That is, to train for accuracy while ensuring the
+        predictions don't differ by much compared to a baseline model.
+
+*   [Colaboratory](https://colab.research.google.com/) notebooks:
+
+    1.  [Wiki_toxicity_fairness.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Wiki_toxicity_fairness.ipynb):
+        This notebook shows how to train a *fair* classifier to predict whether
+        a comment posted on a Wiki Talk page contain toxic content. The notebook
+        discusses two criteria for fairness and shows how to enforce them by
+        constructing a rate-based optimization optimization problem.
+
+    1.  [CelebA_fairness.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/CelebA_fairness.ipynb):
+        This notebook shows how to train a *fair* classifier to predict to
+        detect a celebrity's smile in images using tf.keras and the large-scale
+        CelebFaces Attributes dataset. The model trained in this notebook is
+        evaluating for fairness across age group, with the false positive rate
+        set as the constraint.
