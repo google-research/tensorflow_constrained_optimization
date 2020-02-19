@@ -32,6 +32,22 @@ class Predicate(helpers.RateObject):
   on values between zero and one, not just the two extremes.
   """
 
+  @classmethod
+  def _convert_and_clip_fn(cls, arg):
+    """Converts the given object to a rank-one float32 `Tensor` in [0,1]."""
+    return tf.clip_by_value(
+        tf.cast(
+            helpers.convert_to_1d_tensor(arg, "predicate"), dtype=tf.float32),
+        0.0, 1.0)
+
+  @classmethod
+  def _invert_fn(cls, tensor):
+    """Returns 1 - tensor."""
+    # We have this in a class method, instead of a lambda, so that there will
+    # only be one copy of the function, causing derived DeferredTensors found by
+    # inverting the same original DeferredTensor to be considered equal.
+    return 1.0 - tensor
+
   def __init__(  # pylint: disable=invalid-name
       self, tensor, _convert_and_clip=True):
     """Creates a new `Predicate`.
@@ -48,19 +64,12 @@ class Predicate(helpers.RateObject):
     if isinstance(tensor, Predicate):
       raise ValueError("cannot create a Predicate from a Predicate")
 
-    def convert_and_clip_fn(arg):
-      """Converts the given object to a rank-one float32 `Tensor` in [0,1]."""
-      return tf.clip_by_value(
-          tf.cast(
-              helpers.convert_to_1d_tensor(arg, "predicate"), dtype=tf.float32),
-          0.0, 1.0)
-
     self._tensor = tensor
     if not isinstance(self._tensor, deferred_tensor.DeferredTensor):
       self._tensor = deferred_tensor.ExplicitDeferredTensor(self._tensor)
     if _convert_and_clip:
       self._tensor = deferred_tensor.DeferredTensor.apply(
-          convert_and_clip_fn, self._tensor)
+          Predicate._convert_and_clip_fn, self._tensor)
 
   @property
   def tensor(self):
@@ -71,6 +80,17 @@ class Predicate(helpers.RateObject):
       be in the range [0,1].
     """
     return self._tensor
+
+  def __hash__(self):
+    return hash(self._tensor)
+
+  def __eq__(self, other):
+    if not isinstance(other, Predicate):
+      return False
+    return self._tensor == other.tensor
+
+  def __ne__(self, other):
+    return not self.__eq__(other)
 
   def __invert__(self):
     """Returns the logical NOT of this `Predicate`.
@@ -85,8 +105,8 @@ class Predicate(helpers.RateObject):
     # We pass "_convert_and_clip=False" since the argument we pass to the
     # Predicate constructor is already a 1d float32 DeferredTensor in [0,1].
     return Predicate(
-        deferred_tensor.DeferredTensor.apply(
-            lambda self_tensor: 1.0 - self_tensor, self._tensor),
+        deferred_tensor.DeferredTensor.apply(Predicate._invert_fn,
+                                             self._tensor),
         _convert_and_clip=False)
 
   def __and__(self, other):

@@ -19,6 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
@@ -130,6 +131,46 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     with self.wrapped_session() as session:
       self.assertAllEqual(42, session.run(variable(memoizer)))
+
+  def test_equality(self):
+    """Tests that equal `DeferredTensor` are considered equal."""
+    # Explicit DeferredTensors.
+    tensor1 = deferred_tensor.ExplicitDeferredTensor([[1, 2], [-2, -1]])
+    tensor2 = deferred_tensor.ExplicitDeferredTensor(
+        np.array([[1.0, 2.0], [-2.0, -1.0]]))
+    self.assertEqual(hash(tensor1), hash(tensor2))
+    self.assertEqual(tensor1, tensor2)
+
+    # Derived DeferredTensors.
+    tensor3 = (tensor1 > 0)
+    tensor4 = (tensor2 > 0)
+    self.assertEqual(hash(tensor3), hash(tensor4))
+    self.assertEqual(tensor3, tensor4)
+
+  def test_non_equality(self):
+    """Tests that unequal `DeferredTensor` are considered unequal."""
+    # Explicit DeferredTensors.
+    tensor1 = deferred_tensor.ExplicitDeferredTensor(
+        np.array([[1.0, 2.0], [-2.0, -1.1]]))
+    tensor2 = deferred_tensor.ExplicitDeferredTensor(
+        np.array([[1.0, 2.0], [-2.0, -1.0]]))
+    self.assertNotEqual(tensor1, tensor2)
+
+    def zero(*args):
+      del args
+      return 0
+
+    def one(*args):
+      del args
+      return 1
+
+    # Derived DeferredTensors.
+    tensor3 = deferred_tensor.DeferredTensor.apply(zero, tensor1, tensor2)
+    tensor4 = deferred_tensor.DeferredTensor.apply(zero, tensor2, tensor1)
+    tensor5 = deferred_tensor.DeferredTensor.apply(one, tensor1, tensor2)
+    self.assertNotEqual(tensor3, tensor4)
+    self.assertNotEqual(tensor4, tensor5)
+    self.assertNotEqual(tensor3, tensor5)
 
 
 if __name__ == "__main__":

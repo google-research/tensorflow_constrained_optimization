@@ -20,6 +20,8 @@ from __future__ import division
 from __future__ import print_function
 
 import abc
+import copy
+import operator
 import numpy as np
 import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
@@ -61,6 +63,16 @@ class _ExplicitDeferredTensorState(helpers.RateObject):
 class _StaticExplicitDeferredTensorState(_ExplicitDeferredTensorState):
   """Internal state for an `ExplicitDeferredTensor` wrapping a `Tensor."""
 
+  @classmethod
+  def _list_to_tuple(cls, arg):
+    """Recursively converts lists into tuples."""
+    if not isinstance(arg, list):
+      return arg
+    return tuple([
+        _StaticExplicitDeferredTensorState._list_to_tuple(element)
+        for element in arg
+    ])
+
   def __init__(self, value, auto_cast):
     """Creates a new `_StaticExplicitDeferredTensorState`.
 
@@ -73,6 +85,14 @@ class _StaticExplicitDeferredTensorState(_ExplicitDeferredTensorState):
     assert not callable(value)
     self._value = value
     self._auto_cast = auto_cast
+
+    # For non-Tensor types, we make a deep copy to make extra-certain that it is
+    # immutable (since we'll hash it).
+    if not tf.is_tensor(self._value):
+      self._value = copy.deepcopy(self._value)
+
+    # We memoize the hash, since it can be expensive to compute.
+    self._hash = None
 
   @property
   def value(self):
@@ -87,20 +107,31 @@ class _StaticExplicitDeferredTensorState(_ExplicitDeferredTensorState):
     return self._value, self._auto_cast
 
   def __hash__(self):
-    # We return a triple containing (i) the value, or None if the value is a
-    # Tensor, (ii) the id of the value, or None if the value is not a Tensor,
-    # and (iii) the auto_cast flag.
-    #
-    # The reason for the first two fields being laid out like they are is that
-    # __eq__() compares Tensors by id (using "is"), and non-Tensors by value.
-    if tf.is_tensor(self.value):
-      identifier = (None, id(self.value), self._auto_cast)
-    else:
-      # We cast to a numpy array and then to a list so that, even if we're given
-      # a numpy type (which is not necesarily hashable), we'll wind up with a
-      # hashable type.
-      identifier = (np.array(self.value).tolist(), None, self._auto_cast)
-    return hash(identifier)
+    # We memoize the hash, since it can be expensive to compute.
+    if self._hash is None:
+      # We return the hash of a triple containing (i) the value, or None if the
+      # value is a Tensor, (ii) the id of the value, or None if the value is not
+      # a Tensor, and (iii) the auto_cast flag.
+      #
+      # The reason for the first two fields being laid out like they are is that
+      # __eq__() compares Tensors by id (using "is"), and non-Tensors by value.
+      if tf.is_tensor(self.value):
+        identifier = (None, id(self.value), self._auto_cast)
+      else:
+        # We cast to a numpy array, then to a list (of lists of lists...), and
+        # finally to a tuple (of tuples of tuples...) so that, even if we're
+        # given a numpy type (which is not necessarily hashable), we'll wind up
+        # with a hashable type.
+        #
+        # TODO: is there are more efficient way to do this? Notice that
+        # we can't just hash a numpy array's storage, since arrays of different
+        # types might be considered equal (e.g. [1.0, 2.0] == [1, 2]).
+        identifier = (_StaticExplicitDeferredTensorState._list_to_tuple(
+            np.array(self.value).tolist()), None, self._auto_cast)
+
+      self._hash = hash(identifier)
+
+    return self._hash
 
   def __eq__(self, other):
     if not isinstance(other, _StaticExplicitDeferredTensorState):
@@ -331,148 +362,69 @@ class DeferredTensor(helpers.RateObject):
       TypeError: if any of the arguments are not `DeferredTensor`s or
         `Tensor`-like objects.
     """
+    if not callable(callback):
+      raise TypeError("apply's callback argument must be callable")
+
     deferred_args = []
-    variables = []
     for arg in args:
       if isinstance(arg, DeferredTensor):
         deferred_args.append(arg)
-        variables += arg.variables
       elif not isinstance(arg, helpers.RateObject):
         deferred_args.append(ExplicitDeferredTensor(arg))
       else:
         raise TypeError("apply can only be called on DeferredTensor or "
                         "Tensor-like arguments")
 
-    def value_and_auto_cast_fn(memoizer):
-      """Returns the application value, and whether it should be auto-casted."""
-      values_and_auto_casts = [
-          # pylint: disable=protected-access
-          arg._value_and_auto_cast(memoizer) for arg in deferred_args
-          # pylint: enable=protected-access
-      ]
-      values = [value for value, _ in values_and_auto_casts]
-      # The auto_cast flag is only meaningful for Tensors. For all other types,
-      # we take auto_cast to be False by convention (but don't be misled: all
-      # non-Tensor types will undergo type promotion automatically).
-      auto_casts = [
-          tf.is_tensor(value) and auto_cast
-          for value, auto_cast in values_and_auto_casts
-      ]
-
-      # If any of the input arguments are auto-castable `Tensor`s, then we have
-      # to figure out what type we should cast them to. Otherwise, we don't need
-      # to bother with all of this, and can set the auto_cast flag (for the
-      # result) to False (this is safe: observe that all non-Tensor types are
-      # automatically auto-castable, regardless of the value of the auto_cast
-      # flag).
-      auto_cast = False
-      if any(auto_casts):
-        # Get the dtype of every Tensor, and take the dtype of every non-Tensor
-        # to be None (for python scalars and numpy objects, type promotion will
-        # be performed automatically, so the only types that "matter" are those
-        # of the Tensors).
-        value_dtypes = []
-        for value in values:
-          if tf.is_tensor(value):
-            value_dtypes.append(value.dtype.base_dtype)
-          else:
-            value_dtypes.append(None)
-
-        # Here, we'll fill in "non_auto_cast_dtypes" with the dtypes of
-        # non-auto-castable Tensors. If all non-auto-castable Tensors have the
-        # same dtype, then we'll cast every auto-castable Tensor to have this
-        # dtype. If there are non-auto-castable Tensors with different dtypes,
-        # then we won't perform any casting at all.
-        non_auto_cast_dtypes = set(
-            value_dtypes[ii]
-            for ii in xrange(len(deferred_args))
-            if value_dtypes[ii] is not None and not auto_casts[ii])
-
-        dtype = None
-        if len(non_auto_cast_dtypes) == 1:
-          # If we have exactly one non-auto-castable Tensor, then it determines
-          # the dtype.
-          dtype = non_auto_cast_dtypes.pop()
-        elif not non_auto_cast_dtypes:
-          # If we don't have any non-auto-castable Tensors, then the result of
-          # this method should be auto-casted (ultimately, this will be the
-          # second return value). In all other cases, it should not.
-          auto_cast = True
-
-          # Since every input argument is either an auto-castable Tensor, or a
-          # non-Tensor, we do not have a hard dtype requirement, so we'll use
-          # numpy's type promotion rules to figure out the dtype.
-          numpy_dtypes = [
-              value_dtype for value_dtype in value_dtypes
-              if value_dtype is not None
-          ]
-          if not all(
-              numpy_dtype.is_numpy_compatible for numpy_dtype in numpy_dtypes):
-            raise ValueError("auto-castable DeferredTensors must use numpy "
-                             "compatible dtypes")
-          numpy_dtypes = [
-              numpy_dtype.as_numpy_dtype for numpy_dtype in numpy_dtypes
-          ]
-          if numpy_dtypes:
-            dtype = tf.as_dtype(np.result_type(*numpy_dtypes))
-
-        if dtype is not None:
-          for ii in xrange(len(values_and_auto_casts)):
-            value_dtype = value_dtypes[ii]
-            if (auto_casts[ii] and value_dtype is not None and
-                value_dtype != dtype):
-              values[ii] = tf.cast(values[ii], dtype=dtype)
-
-      return callback(*values), auto_cast
-
-    # FUTURE WORK: if all of the inputs are static, then the memoizer will be
-    # ignored, and we could just construct a new static DeferredTensor here.
-    return _DerivedDeferredTensor(value_and_auto_cast_fn, variables=variables)
+    return _DerivedDeferredTensor(callback, deferred_args)
 
   def __neg__(self):
-    return DeferredTensor.apply(lambda arg: -arg, self)
+    return DeferredTensor.apply(operator.neg, self)
 
   # We need to override "both sides" of the below operators (e.g. both __add__
   # and __radd__) since other might not be a DeferredTensor (but will be casted
   # to one inside apply()).
 
   def __lt__(self, other):
-    return DeferredTensor.apply(lambda left, right: left < right, self, other)
+    return DeferredTensor.apply(operator.lt, self, other)
 
   def __le__(self, other):
-    return DeferredTensor.apply(lambda left, right: left <= right, self, other)
+    return DeferredTensor.apply(operator.le, self, other)
 
   def __gt__(self, other):
-    return DeferredTensor.apply(lambda left, right: left > right, self, other)
+    return DeferredTensor.apply(operator.gt, self, other)
 
   def __ge__(self, other):
-    return DeferredTensor.apply(lambda left, right: left >= right, self, other)
+    return DeferredTensor.apply(operator.ge, self, other)
 
   def __add__(self, other):
-    return DeferredTensor.apply(lambda left, right: left + right, self, other)
+    return DeferredTensor.apply(operator.add, self, other)
 
   def __radd__(self, other):
-    return DeferredTensor.apply(lambda left, right: left + right, other, self)
+    return DeferredTensor.apply(operator.add, other, self)
 
   def __sub__(self, other):
-    return DeferredTensor.apply(lambda left, right: left - right, self, other)
+    return DeferredTensor.apply(operator.sub, self, other)
 
   def __rsub__(self, other):
-    return DeferredTensor.apply(lambda left, right: left - right, other, self)
+    return DeferredTensor.apply(operator.sub, other, self)
 
   def __mul__(self, other):
-    return DeferredTensor.apply(lambda left, right: left * right, self, other)
+    return DeferredTensor.apply(operator.mul, self, other)
 
   def __rmul__(self, other):
-    return DeferredTensor.apply(lambda left, right: left * right, other, self)
+    return DeferredTensor.apply(operator.mul, other, self)
 
   def __truediv__(self, other):
-    return DeferredTensor.apply(lambda left, right: left / right, self, other)
+    return DeferredTensor.apply(operator.truediv, self, other)
 
   def __rtruediv__(self, other):
-    return DeferredTensor.apply(lambda left, right: left / right, other, self)
+    return DeferredTensor.apply(operator.truediv, other, self)
 
   def __getitem__(self, slice_spec):
+    # Notice that because the slice_spec is a part of the callback, we can't use
+    # operator.getitem, and therefore derived DeferredTensors created by
+    # indexing the same DeferredTensor in the same way will not be considered
+    # equal.
     return DeferredTensor.apply(lambda arg: arg[slice_spec], self)
 
 
@@ -480,53 +432,138 @@ class _DerivedDeferredTensor(DeferredTensor):
   """A `DeferredTensor` representing an expression.
 
   If we interpret a `DeferredTensor` as an expression tree, then
-  `ExplicitDeferredTensor`s and `VariableDeferredTensor`s will be the leaves,
-  and `_DerivedDeferredTensor`s will be the internal nodes. Specifically, a
+  `ExplicitDeferredTensor`s and `DeferredVariable`s will be the leaves, and
+  `_DerivedDeferredTensor`s will be the internal nodes. Specifically, a
   `_DerivedDeferredTensor` represents an expression written in terms of other
   `DeferredTensor`s.
   """
 
-  def __init__(self, callback, variables=None):
+  def __init__(self, callback, args):
     """Constructs a new `_DerivedDeferredTensor`.
 
     Args:
-      callback: nullary function returning a (`Tensor`-like, `Boolean`) pair,
-        the first element of which is the `DeferredTensor`, with the second
-        indicating whether the value should be automatically type-promoted, if
-        necessary.
-      variables: collection of `DeferredVariable`s upon which this expression
-        depends.
+      callback: an n-ary function mapping `Tensor`-like objects to a
+        `Tensor`-like object.
+      args: list of `DeferredTensor`s to evaluate, and pass to the callback.
 
     Raises:
       TypeError: if value is neither a `Tensor`-like object nor a nullary
         function returning such an object.
     """
-    assert callable(callback)
+    # We cast args to a tuple so that it's immutable, and can therefore be
+    # hashed.
     self._callback = callback
-    self._variables = DeferredVariableList(variables)
+    self._args = tuple(args)
+
+    self._variables = DeferredVariableList()
+    for arg in self._args:
+      self._variables += arg.variables
 
   def _value_and_auto_cast(self, memoizer):
-    return self._callback(memoizer)
+    values_and_auto_casts = [
+        # pylint: disable=protected-access
+        arg._value_and_auto_cast(memoizer) for arg in self._args
+        # pylint: enable=protected-access
+    ]
+    values = [value for value, _ in values_and_auto_casts]
+    # The auto_cast flag is only meaningful for Tensors. For all other types,
+    # we take auto_cast to be False by convention (but don't be misled: all
+    # non-Tensor types will undergo type promotion automatically).
+    auto_casts = [
+        tf.is_tensor(value) and auto_cast
+        for value, auto_cast in values_and_auto_casts
+    ]
+
+    # If any of the input arguments are auto-castable `Tensor`s, then we have
+    # to figure out what type we should cast them to. Otherwise, we don't need
+    # to bother with all of this, and can set the auto_cast flag (for the
+    # result) to False (this is safe: observe that all non-Tensor types are
+    # automatically auto-castable, regardless of the value of the auto_cast
+    # flag).
+    auto_cast = False
+    if any(auto_casts):
+      # Get the dtype of every Tensor, and take the dtype of every non-Tensor
+      # to be None (for python scalars and numpy objects, type promotion will
+      # be performed automatically, so the only types that "matter" are those
+      # of the Tensors).
+      value_dtypes = []
+      for value in values:
+        if tf.is_tensor(value):
+          value_dtypes.append(value.dtype.base_dtype)
+        else:
+          value_dtypes.append(None)
+
+      # Here, we'll fill in "non_auto_cast_dtypes" with the dtypes of
+      # non-auto-castable Tensors. If all non-auto-castable Tensors have the
+      # same dtype, then we'll cast every auto-castable Tensor to have this
+      # dtype. If there are non-auto-castable Tensors with different dtypes,
+      # then we won't perform any casting at all.
+      non_auto_cast_dtypes = set(
+          value_dtypes[ii]
+          for ii in xrange(len(self._args))
+          if value_dtypes[ii] is not None and not auto_casts[ii])
+
+      dtype = None
+      if len(non_auto_cast_dtypes) == 1:
+        # If we have exactly one non-auto-castable Tensor, then it determines
+        # the dtype.
+        dtype = non_auto_cast_dtypes.pop()
+      elif not non_auto_cast_dtypes:
+        # If we don't have any non-auto-castable Tensors, then the result of
+        # this method should be auto-casted (ultimately, this will be the
+        # second return value). In all other cases, it should not (the dtype is
+        # fixed as that of the non-auto-castable Tensor).
+        auto_cast = True
+
+        # Since every input argument is either an auto-castable Tensor, or a
+        # non-Tensor, we do not have a hard dtype requirement, so we'll use
+        # numpy's type promotion rules to figure out the dtype.
+        numpy_dtypes = [
+            value_dtype for value_dtype in value_dtypes
+            if value_dtype is not None
+        ]
+        if not all(
+            numpy_dtype.is_numpy_compatible for numpy_dtype in numpy_dtypes):
+          raise ValueError("auto-castable DeferredTensors must use numpy "
+                           "compatible dtypes")
+        numpy_dtypes = [
+            numpy_dtype.as_numpy_dtype for numpy_dtype in numpy_dtypes
+        ]
+        if numpy_dtypes:
+          dtype = tf.as_dtype(np.result_type(*numpy_dtypes))
+
+      if dtype is not None:
+        for ii in xrange(len(values_and_auto_casts)):
+          value_dtype = value_dtypes[ii]
+          if (auto_casts[ii] and value_dtype is not None and
+              value_dtype != dtype):
+            values[ii] = tf.cast(values[ii], dtype=dtype)
+
+    return self._callback(*values), auto_cast
 
   @property
   def variables(self):
     return self._variables.list
 
   def __hash__(self):
-    return hash(id(self))
+    return hash((self._callback, self._args))
 
   def __eq__(self, other):
-    return self is other
+    if not isinstance(other, _DerivedDeferredTensor):
+      return False
+    # pylint: disable=protected-access
+    return self._callback == other._callback and self._args == other._args
+    # pylint: enable=protected-access
 
 
 class ExplicitDeferredTensor(DeferredTensor):
   """A `DeferredTensor` representing an explicit `Tensor`.
 
   If we interpret a `DeferredTensor` as an expression tree, then
-  `ExplicitDeferredTensor`s and `VariableDeferredTensor`s will be the leaves,
-  and `_DerivedDeferredTensor`s will be the internal nodes. Unlike a
-  `VariableDeferredTensor`, which represents a `tf.Variable`, this class
-  represents either a `Tensor`, or a nullary function returning such.
+  `ExplicitDeferredTensor`s and `DeferredVariable`s will be the leaves, and
+  `_DerivedDeferredTensor`s will be the internal nodes. Unlike a
+  `DeferredVariable`, which represents a `tf.Variable`, this class represents
+  either a `Tensor`, or a nullary function returning such.
 
   These two cases (`Tensor`, or callable) are handled by the two internal
   "state" classes `_StaticExplicitDeferredTensorState` and
@@ -576,8 +613,6 @@ class ExplicitDeferredTensor(DeferredTensor):
   def __eq__(self, other):
     if not isinstance(other, helpers.RateObject):
       other = ExplicitDeferredTensor(other)
-    elif not isinstance(other, DeferredTensor):
-      return NotImplemented
     elif not isinstance(other, ExplicitDeferredTensor):
       return False
     return self._state == other._state  # pylint: disable=protected-access
@@ -587,8 +622,8 @@ class DeferredVariable(DeferredTensor):
   """A `DeferredTensor` representing a variable.
 
   If we interpret a `DeferredTensor` as an expression tree, then
-  `ExplicitDeferredTensor`s and `VariableDeferredTensor`s will be the leaves,
-  and `_DerivedDeferredTensor`s will be the internal nodes. Unlike an
+  `ExplicitDeferredTensor`s and `DeferredVariable`s will be the leaves, and
+  `_DerivedDeferredTensor`s will be the internal nodes. Unlike an
   `ExplicitDeferredTensor`, which wraps a normal `Tensor` (or a nullary function
   returning such), this class is intended as a substitute for `tf.Variable`.
 

@@ -206,6 +206,7 @@ py_test(
     deps = [
         ":defaults",
         ":deferred_tensor",
+        # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,
