@@ -154,18 +154,18 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_ratio_weights_zero(self):
     """Tests `_RatioWeights` with all-zero weights class method."""
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
     ratio_weights = term._RatioWeights({})
-    actual_weights = ratio_weights.evaluate(memoizer)
+    actual_weights = ratio_weights.evaluate(structure_memoizer)
     self.assertEqual(0, len(actual_weights.variables))
 
     # We don't need to run this in a session, since the expected weights are a
     # constant (zero).
-    self.assertAllEqual([0], actual_weights(memoizer))
+    self.assertAllEqual([0], actual_weights(structure_memoizer))
 
   def test_ratio_weights_ratio(self):
     """Tests `_RatioWeights`'s ratio() class method."""
@@ -174,7 +174,7 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         tf.bool, shape=(None,))
     denominator_predicate_placeholder = self.wrapped_placeholder(
         tf.bool, shape=(None,))
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -185,17 +185,17 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     ratio_weights = term._RatioWeights.ratio(
         deferred_tensor.ExplicitDeferredTensor(weights_placeholder),
         numerator_predicate, denominator_predicate)
-    actual_weights = ratio_weights.evaluate(memoizer)
+    actual_weights = ratio_weights.evaluate(structure_memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
     for variable in actual_weights.variables:
-      variable.create(memoizer)
+      variable.create(structure_memoizer)
 
     def update_ops_fn():
       update_ops = []
       for variable in actual_weights.variables:
-        update_ops += variable.update_ops(memoizer)
+        update_ops += variable.update_ops(structure_memoizer)
       return update_ops
 
     with self.wrapped_session() as session:
@@ -233,7 +233,7 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
             })
         # Now we can calculate the weights.
         actual_weights_value = session.run(
-            lambda: actual_weights(memoizer),
+            lambda: actual_weights(structure_memoizer),
             feed_dict={
                 weights_placeholder:
                     weights_subarray,
@@ -247,11 +247,11 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
             expected_weights, actual_weights_value, rtol=0, atol=1e-6)
 
         session.run_ops(
-            lambda: memoizer[defaults.GLOBAL_STEP_KEY].assign_add(1))
+            lambda: structure_memoizer[defaults.GLOBAL_STEP_KEY].assign_add(1))
 
   def test_ratio_weights_arithmetic(self):
     """Tests `_RatioWeights`'s arithmetic operators."""
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -275,21 +275,21 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     expected_weights = (-self._weights[:, 0] + 0.3 * self._weights[:, 1] -
                         self._weights[:, 2] / 3.1 + self._weights[:, 0] * 0.5)
 
-    actual_weights = ratio_weights.evaluate(memoizer)
+    actual_weights = ratio_weights.evaluate(structure_memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
     for variable in actual_weights.variables:
-      variable.create(memoizer)
+      variable.create(structure_memoizer)
 
     with self.wrapped_session() as session:
-      actual_weights_value = session.run(actual_weights(memoizer))
+      actual_weights_value = session.run(actual_weights(structure_memoizer))
       self.assertAllClose(
           expected_weights, actual_weights_value, rtol=0, atol=1e-6)
 
   def test_ratio_weights_memoizer(self):
     """Tests memoization."""
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -310,8 +310,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     ratio_weights2 = term._RatioWeights.ratio(weights_tensor,
                                               numerator2_predicate,
                                               denominator_predicate)
-    result1 = ratio_weights1.evaluate(memoizer)
-    result2 = ratio_weights2.evaluate(memoizer)
+    result1 = ratio_weights1.evaluate(structure_memoizer)
+    result2 = ratio_weights2.evaluate(structure_memoizer)
 
     # The numerators differ, so the results should be different, but the
     # weights and denominators match, so the variables should be the same.
@@ -320,7 +320,7 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_binary_classification_term(self):
     """Tests `BinaryClassificationTerm`."""
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -384,15 +384,15 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                                                      expected_negative_weights,
                                                      self._predictions)
 
-    actual_term = term_object.evaluate(memoizer)
+    actual_term = term_object.evaluate(structure_memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
     for variable in actual_term.variables:
-      variable.create(memoizer)
+      variable.create(structure_memoizer)
 
     with self.wrapped_session() as session:
-      actual_term_value = session.run(actual_term(memoizer))
+      actual_term_value = session.run(actual_term(structure_memoizer))
       self.assertAllClose(expected_term, actual_term_value, rtol=0, atol=1e-6)
 
 

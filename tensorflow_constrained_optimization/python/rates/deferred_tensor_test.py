@@ -34,7 +34,7 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_type_promotion(self):
     """Tests that automatic type promotion works as expected."""
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -52,13 +52,13 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     expression6 = tensor3 / tensor4
     expression7 = expression5 * expression6
 
-    value1 = tensor1(memoizer)
-    value2 = tensor2(memoizer)
-    value3 = tensor3(memoizer)
-    value4 = tensor4(memoizer)
-    value5 = expression5(memoizer)
-    value6 = expression6(memoizer)
-    value7 = expression7(memoizer)
+    value1 = tensor1(structure_memoizer)
+    value2 = tensor2(structure_memoizer)
+    value3 = tensor3(structure_memoizer)
+    value4 = tensor4(structure_memoizer)
+    value5 = expression5(structure_memoizer)
+    value6 = expression6(structure_memoizer)
+    value7 = expression7(structure_memoizer)
 
     self.assertEqual(tf.int16, value1.dtype.base_dtype)
     self.assertEqual(tf.float32, value2.dtype.base_dtype)
@@ -80,7 +80,7 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   def test_callable(self):
     """Tests that callbacks are not called until needed."""
     # Keeps track of whether the callbacks have been called.
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -104,15 +104,15 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     self.assertEmpty(callback_list)
 
     # We don't need to use a Session here, since the callbacks return scalars.
-    self.assertAllEqual(0.785, expression(memoizer))
+    self.assertAllEqual(0.785, expression(structure_memoizer))
 
-    # Now that we've called expression(memoizer), the callbacks should each have
-    # been called once.
+    # Now that we've called expression(structure_memoizer), the callbacks should
+    # each have been called once.
     self.assertAllEqual(["callback1", "callback2"], sorted(callback_list))
 
   def test_deferred_variable(self):
     """Tests that `DeferredVariable`s are created correctly."""
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -121,16 +121,16 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     # We should raise if we try to read a variable that hasn't been created.
     with self.assertRaises(RuntimeError):
-      _ = variable(memoizer)
+      _ = variable(structure_memoizer)
 
-    variable.create(memoizer)
+    variable.create(structure_memoizer)
 
     # We should raise if we try to create the same variable a second time.
     with self.assertRaises(RuntimeError):
-      variable.create(memoizer)
+      variable.create(structure_memoizer)
 
     with self.wrapped_session() as session:
-      self.assertAllEqual(42, session.run(variable(memoizer)))
+      self.assertAllEqual(42, session.run(variable(structure_memoizer)))
 
   def test_equality(self):
     """Tests that equal `DeferredTensor` are considered equal."""

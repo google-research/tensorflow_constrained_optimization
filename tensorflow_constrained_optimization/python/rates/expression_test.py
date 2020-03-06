@@ -37,7 +37,7 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_arithmetic(self):
     """Tests `Expression`'s arithmetic operators."""
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -62,16 +62,16 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
          constant_expression(0.1)) * 0.6 + constant_expression(0.8))
 
     actual_penalty_value = expression_object.penalty_expression.evaluate(
-        memoizer)
+        structure_memoizer)
     actual_constraint_value = expression_object.constraint_expression.evaluate(
-        memoizer)
+        structure_memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
     variables = deferred_tensor.DeferredVariableList(
         actual_penalty_value.variables + actual_constraint_value.variables)
     for variable in variables:
-      variable.create(memoizer)
+      variable.create(structure_memoizer)
 
     # This is the same expression as above, applied directly to the python
     # floats.
@@ -83,16 +83,16 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     with self.wrapped_session() as session:
       self.assertNear(
           expected_penalty_value,
-          session.run(actual_penalty_value(memoizer)),
+          session.run(actual_penalty_value(structure_memoizer)),
           err=1e-6)
       self.assertNear(
           expected_constraint_value,
-          session.run(actual_constraint_value(memoizer)),
+          session.run(actual_constraint_value(structure_memoizer)),
           err=1e-6)
 
   def test_variables(self):
     """Tests that `Expression`s propagate extra variables correctly."""
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -124,18 +124,18 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     expression123 = -expression12 + 0.6 * expression23
 
     expression12_penalty_value = (
-        expression12.penalty_expression.evaluate(memoizer))
+        expression12.penalty_expression.evaluate(structure_memoizer))
     expression23_penalty_value = (
-        expression23.penalty_expression.evaluate(memoizer))
+        expression23.penalty_expression.evaluate(structure_memoizer))
     expression123_penalty_value = (
-        expression123.penalty_expression.evaluate(memoizer))
+        expression123.penalty_expression.evaluate(structure_memoizer))
 
     expression12_constraint_value = (
-        expression12.constraint_expression.evaluate(memoizer))
+        expression12.constraint_expression.evaluate(structure_memoizer))
     expression23_constraint_value = (
-        expression23.constraint_expression.evaluate(memoizer))
+        expression23.constraint_expression.evaluate(structure_memoizer))
     expression123_constraint_value = (
-        expression123.constraint_expression.evaluate(memoizer))
+        expression123.constraint_expression.evaluate(structure_memoizer))
 
     self.assertEqual(expression12_penalty_value.variables,
                      [penalty_variable1, penalty_variable2])
@@ -186,7 +186,7 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # The logic of SumExpression is checked in the above tests (which include
     # addition and subtraction). Here, we only check that constructing a
     # SumExpression flattens the list.
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -207,7 +207,7 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     def term_value(expression_object):
       terms = expression_object.penalty_expression._terms
       self.assertEqual(1, len(terms))
-      return terms[0].tensor(memoizer)
+      return terms[0].tensor(structure_memoizer)
 
     sum1 = expression.SumExpression([expressions[0], expressions[1]])
     sum2 = expression.SumExpression([expressions[2]])
@@ -224,7 +224,7 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_bounded_expression(self):
     """Tests that `BoundedExpression`s select their components correctly."""
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -254,7 +254,7 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     def term_value(expression_object):
       terms = expression_object.penalty_expression._terms
       self.assertEqual(1, len(terms))
-      return abs(terms[0].tensor(memoizer))
+      return abs(terms[0].tensor(structure_memoizer))
 
     bounded_expression1 = expression.BoundedExpression(
         lower_bound=expression1, upper_bound=expression2)

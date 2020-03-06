@@ -530,15 +530,23 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
 
       distribution = self._distribution(state)
       zero_and_constraints = tf.pad(constraints, [[1, 0]])
-      objective_and_proxy_constraints = tf.concat(
-          (tf.expand_dims(objective, 0), proxy_constraints), axis=0)
 
-      output = tf.tensordot(
-          tf.cast(
-              distribution,
-              dtype=objective_and_proxy_constraints.dtype.base_dtype),
-          objective_and_proxy_constraints,
-          axes=1)
+      # The proxy-Lagrangian is defined as:
+      #   objective_and_proxy_constraints = tf.concat(
+      #       (tf.expand_dims(objective, 0), proxy_constraints), axis=0)
+      #   output = tf.tensordot(
+      #       distribution, objective_and_proxy_constraints, axes=1)
+      # when updating the model parameters, and as:
+      #   output = tf.tensordot(
+      #       distribution, zero_and_constraints, axes=1)
+      # when updating the internal state.
+      #
+      # However, while these quantities are what we differentiate, we do *not*
+      # return either of their values (since they aren't terribly meaningful,
+      # thanks to being simultaneously minimized over the model parameters and
+      # maximized over the internal state). Instead, we just return the value
+      # of the objective.
+      output = objective
 
       wrt_objective = tf.cast(distribution[0], dtype=objective.dtype.base_dtype)
       wrt_proxy_constraints = tf.cast(
@@ -564,16 +572,15 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
     # We don't use functools.partial since we need the arguments to be evaluated
     # when the loss is called, not when we construct the partial application.
     def partial_loss_gradient_fn():
-      constraints = tf.reshape(
-          minimization_problem.constraints(), shape=(num_constraints,))
-      proxy_constraints = minimization_problem.proxy_constraints()
+      objective, constraints, proxy_constraints = (
+          minimization_problem.components())
+      constraints = tf.reshape(constraints, shape=(num_constraints,))
       if proxy_constraints is None:
         proxy_constraints = constraints
       else:
         proxy_constraints = tf.reshape(
             proxy_constraints, shape=(num_constraints,))
-      return loss_gradient_fn(minimization_problem.objective(), constraints,
-                              proxy_constraints, state)
+      return loss_gradient_fn(objective, constraints, proxy_constraints, state)
 
     return partial_loss_gradient_fn
 

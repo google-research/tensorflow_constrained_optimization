@@ -74,22 +74,3 @@ recall = true_positive_rate
 ConstrainedOptimizer = ConstrainedOptimizerV2
 LagrangianOptimizer = LagrangianOptimizerV2
 ProxyLagrangianOptimizer = ProxyLagrangianOptimizerV2
-
-# Temporary aliases to support the old explicit lower_bound/upper_bound naming
-# scheme.
-#
-# TODO: remove these once they're not needed.
-f_score_lower_bound = f_score
-f_score_upper_bound = f_score
-inverse_precision_at_recall_lower_bound = inverse_precision_at_recall
-inverse_precision_at_recall_upper_bound = inverse_precision_at_recall
-pr_auc_lower_bound = pr_auc
-pr_auc_upper_bound = pr_auc
-precision_at_recall_lower_bound = precision_at_recall
-precision_at_recall_upper_bound = precision_at_recall
-precision_lower_bound = precision
-precision_upper_bound = precision
-recall_at_precision_lower_bound = recall_at_precision
-recall_at_precision_upper_bound = recall_at_precision
-roc_auc_lower_bound = roc_auc
-roc_auc_upper_bound = roc_auc

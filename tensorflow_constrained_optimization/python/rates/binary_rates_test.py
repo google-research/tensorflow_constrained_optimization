@@ -274,27 +274,27 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def _check_rates(self, expected_penalty_value, expected_constraint_value,
                    actual_expression):
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
     actual_penalty_value = actual_expression.penalty_expression.evaluate(
-        memoizer)
+        structure_memoizer)
     actual_constraint_value = actual_expression.constraint_expression.evaluate(
-        memoizer)
+        structure_memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
     variables = deferred_tensor.DeferredVariableList(
         actual_penalty_value.variables + actual_constraint_value.variables).list
     for variable in variables:
-      variable.create(memoizer)
+      variable.create(structure_memoizer)
 
     def update_ops_fn():
       update_ops = []
       for variable in variables:
-        update_ops += variable.update_ops(memoizer)
+        update_ops += variable.update_ops(structure_memoizer)
       return update_ops
 
     with self.wrapped_session() as session:
@@ -304,12 +304,12 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
       self.assertAllClose(
           expected_penalty_value,
-          session.run(actual_penalty_value(memoizer)),
+          session.run(actual_penalty_value(structure_memoizer)),
           rtol=0,
           atol=1e-6)
       self.assertAllClose(
           expected_constraint_value,
-          session.run(actual_constraint_value(memoizer)),
+          session.run(actual_constraint_value(structure_memoizer)),
           rtol=0,
           atol=1e-6)
 
@@ -698,7 +698,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   def test_precision(self):
     """Checks that `precision` calculates the right quantities."""
     bisection_epsilon = 1e-6
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -710,7 +710,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     variables = deferred_tensor.DeferredVariableList()
     for constraint in expression.extra_constraints:
       constraint_value = constraint.expression.constraint_expression.evaluate(
-          memoizer)
+          structure_memoizer)
       constraint_list.append(constraint_value)
       variables += constraint_value.variables
     variables = variables.list
@@ -721,14 +721,14 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # We need to explicitly create all variables included in the expression
     # before we can try to extract the ratio_bounds.
     for variable in variables:
-      variable.create(memoizer)
+      variable.create(structure_memoizer)
 
     # The find_zeros_of_functions() helper will perform a bisection search over
     # the ratio_bounds, so we need to extract the Tensor containing them from
     # the graph.
     ratio_bounds = None
     for variable in variables:
-      tensor = variable(memoizer)
+      tensor = variable(structure_memoizer)
       if tensor.name.startswith("tfco_ratio_bounds"):
         self.assertIsNone(ratio_bounds)
         ratio_bounds = tensor
@@ -737,7 +737,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     def update_ops_fn():
       update_ops = []
       for variable in variables:
-        update_ops += variable.update_ops(memoizer)
+        update_ops += variable.update_ops(structure_memoizer)
       return update_ops
 
     with self.wrapped_session() as session:
@@ -746,7 +746,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       def evaluate_fn(values):
         """Assigns the variables and evaluates the constraints."""
         session.run_ops(lambda: ratio_bounds.assign(values))
-        return session.run(constraints(memoizer))
+        return session.run(constraints(structure_memoizer))
 
       actual_ratio_bounds = find_zeros_of_functions(
           2, evaluate_fn, epsilon=bisection_epsilon)
@@ -861,7 +861,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Checks that `f_score` calculates the right quantities."""
     beta = 1.6
     bisection_epsilon = 1e-6
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -873,7 +873,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     variables = deferred_tensor.DeferredVariableList()
     for constraint in expression.extra_constraints:
       constraint_value = constraint.expression.constraint_expression.evaluate(
-          memoizer)
+          structure_memoizer)
       constraint_list.append(constraint_value)
       variables += constraint_value.variables
     variables = variables.list
@@ -884,14 +884,14 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # We need to explicitly create all variables included in the expression
     # before we can try to extract the ratio_bounds.
     for variable in variables:
-      variable.create(memoizer)
+      variable.create(structure_memoizer)
 
     # The find_zeros_of_functions() helper will perform a bisection search over
     # the ratio_bounds, so we need to extract the Tensor containing them from
     # the graph.
     ratio_bounds = None
     for variable in variables:
-      tensor = variable(memoizer)
+      tensor = variable(structure_memoizer)
       if tensor.name.startswith("tfco_ratio_bounds"):
         self.assertIsNone(ratio_bounds)
         ratio_bounds = tensor
@@ -900,7 +900,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     def update_ops_fn():
       update_ops = []
       for variable in variables:
-        update_ops += variable.update_ops(memoizer)
+        update_ops += variable.update_ops(structure_memoizer)
       return update_ops
 
     with self.wrapped_session() as session:
@@ -909,7 +909,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       def evaluate_fn(values):
         """Assigns the variables and evaluates the constraints."""
         session.run_ops(lambda: ratio_bounds.assign(values))
-        return session.run(constraints(memoizer))
+        return session.run(constraints(structure_memoizer))
 
       actual_ratio_bounds = find_zeros_of_functions(
           2, evaluate_fn, epsilon=bisection_epsilon)
@@ -980,7 +980,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # the test is too slow already.
     bins = 3
     bisection_epsilon = 1e-6
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -992,7 +992,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     variables = deferred_tensor.DeferredVariableList()
     for constraint in expression.extra_constraints:
       constraint_value = constraint.expression.constraint_expression.evaluate(
-          memoizer)
+          structure_memoizer)
       constraint_list.append(constraint_value)
       variables += constraint_value.variables
     variables = variables.list
@@ -1003,14 +1003,14 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # We need to explicitly create all variables included in the expression
     # before we can try to extract the roc_auc_thresholds.
     for variable in variables:
-      variable.create(memoizer)
+      variable.create(structure_memoizer)
 
     # The find_zeros_of_functions() helper will perform a bisection search over
     # the roc_auc_thresholds, so we need to extract the Tensor containing them
     # from the graph.
     roc_auc_thresholds = None
     for variable in variables:
-      tensor = variable(memoizer)
+      tensor = variable(structure_memoizer)
       if tensor.name.startswith("tfco_roc_auc_thresholds"):
         self.assertIsNone(roc_auc_thresholds)
         roc_auc_thresholds = tensor
@@ -1019,7 +1019,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     def update_ops_fn():
       update_ops = []
       for variable in variables:
-        update_ops += variable.update_ops(memoizer)
+        update_ops += variable.update_ops(structure_memoizer)
       return update_ops
 
     with self.wrapped_session() as session:
@@ -1028,7 +1028,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       def evaluate_fn(values):
         """Assigns the variables and evaluates the constraints."""
         session.run_ops(lambda: roc_auc_thresholds.assign(values))
-        return session.run(constraints(memoizer))
+        return session.run(constraints(structure_memoizer))
 
       actual_thresholds = find_zeros_of_functions(
           bins, evaluate_fn, epsilon=bisection_epsilon)

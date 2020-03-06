@@ -229,9 +229,20 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
         raise TypeError("objective, constraints and proxy_constraints must all "
                         "have the same dtypes")
 
-      output = objective + tf.tensordot(
-          tf.cast(multipliers, dtype=proxy_constraints.dtype.base_dtype),
-          proxy_constraints, 1)
+      # The Lagrangian is defined as:
+      #   output = objective + tf.tensordot(
+      #       tf.cast(multipliers), proxy_constraints, 1)
+      # when updating the model parameters, and as:
+      #   output = objective + tf.tensordot(
+      #       tf.cast(multipliers), constraints, 1)
+      # when updating the Lagrange multipliers.
+      #
+      # However, while these quantities are what we differentiate, we do *not*
+      # return either of their values (since they aren't terribly meaningful,
+      # thanks to being simultaneously minimized over the model parameters and
+      # maximized over the Lagrange multipliers). Instead, we just return the
+      # value of the objective.
+      output = objective
 
       wrt_objective = 1
       wrt_proxy_constraints = tf.cast(
@@ -257,16 +268,16 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
     # We don't use functools.partial since we need the arguments to be evaluated
     # when the loss is called, not when we construct the partial application.
     def partial_loss_gradient_fn():
-      constraints = tf.reshape(
-          minimization_problem.constraints(), shape=(num_constraints,))
-      proxy_constraints = minimization_problem.proxy_constraints()
+      objective, constraints, proxy_constraints = (
+          minimization_problem.components())
+      constraints = tf.reshape(constraints, shape=(num_constraints,))
       if proxy_constraints is None:
         proxy_constraints = constraints
       else:
         proxy_constraints = tf.reshape(
             proxy_constraints, shape=(num_constraints,))
-      return loss_gradient_fn(minimization_problem.objective(), constraints,
-                              proxy_constraints, multipliers)
+      return loss_gradient_fn(objective, constraints, proxy_constraints,
+                              multipliers)
 
     return partial_loss_gradient_fn
 

@@ -201,12 +201,12 @@ class BasicExpression(helpers.RateObject):
     # pylint: enable=protected-access
     return result
 
-  def evaluate(self, memoizer):
+  def evaluate(self, structure_memoizer):
     """Computes and returns the value of this `BasicExpression`.
 
     Args:
-      memoizer: dict, which memoizes portions of the calculation to simplify the
-        resulting TensorFlow graph. It must contain the keys
+      structure_memoizer: dict, which memoizes portions of the calculation to
+        simplify the resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
         values being the minimum allowed value of a rate denominator (a float),
         and the current iterate (a non-negative integer, starting at zero),
@@ -217,7 +217,7 @@ class BasicExpression(helpers.RateObject):
     """
     values = []
     for tt in self._terms:
-      term_value = tt.evaluate(memoizer)
+      term_value = tt.evaluate(structure_memoizer)
       values.append(term_value)
 
     # We create a list of values, and sum them all-at-once (instead of adding

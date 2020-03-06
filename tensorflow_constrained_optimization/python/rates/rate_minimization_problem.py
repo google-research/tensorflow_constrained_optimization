@@ -148,19 +148,20 @@ class RateMinimizationProblem(
         dtype=tf.int64,
         aggregation=tf.VariableAggregation.ONLY_FIRST_REPLICA)
 
-    # This memoizer will remember and re-use certain intermediate values,
-    # causing the TensorFlow graph we construct to contain fewer redundancies
-    # than it would otherwise. Additionally, it will store any slack variables
-    # or denominator variables that need to be created for the optimization
-    # problem.
-    self._memoizer = {
+    # This structure_memoizer will remember and re-use certain intermediate
+    # values, causing the TensorFlow graph we construct to contain fewer
+    # redundancies than it would otherwise. Additionally, it will store any
+    # slack variables or denominator variables that need to be created for the
+    # optimization problem.
+    self._structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: denominator_lower_bound,
         defaults.GLOBAL_STEP_KEY: self._global_step
     }
 
     # We ignore the "constraint_expression" field here, since we're not inside a
     # constraint (this is the objective function).
-    self._objective = objective.penalty_expression.evaluate(self._memoizer)
+    self._objective = objective.penalty_expression.evaluate(
+        self._structure_memoizer)
     variables += self._objective.variables
     constraints += objective.extra_constraints
 
@@ -185,9 +186,9 @@ class RateMinimizationProblem(
           raise ValueError("non-differentiable losses (e.g. the zero-one loss) "
                            "cannot be optimized--they can only be constrained")
         penalty_value = new_constraint.expression.penalty_expression.evaluate(
-            self._memoizer)
+            self._structure_memoizer)
         constraint_value = new_constraint.expression.constraint_expression.evaluate(
-            self._memoizer)
+            self._structure_memoizer)
         self._proxy_constraints.append(penalty_value)
         self._constraints.append(constraint_value)
         variables += penalty_value.variables
@@ -200,7 +201,7 @@ class RateMinimizationProblem(
     # been.
     self._variables = variables.list
     for variable in self._variables:
-      variable.create(self._memoizer)
+      variable.create(self._structure_memoizer)
 
   def objective(self):
     """Returns the objective function.
@@ -208,7 +209,7 @@ class RateMinimizationProblem(
     Returns:
       A scalar `Tensor` that should be minimized.
     """
-    return self._objective(self._memoizer)
+    return self._objective(self._structure_memoizer, {})
 
   @property
   def num_constraints(self):
@@ -231,7 +232,10 @@ class RateMinimizationProblem(
     Returns:
       A rank-1 `Tensor` of constraint functions.
     """
-    return tf.stack([cc(self._memoizer) for cc in self._constraints])
+    value_memoizer = {}
+    return tf.stack([
+        cc(self._structure_memoizer, value_memoizer) for cc in self._constraints
+    ])
 
   def proxy_constraints(self):
     """Returns the optional `Tensor` of proxy constraint functions.
@@ -243,7 +247,32 @@ class RateMinimizationProblem(
     Returns:
       A rank-1 `Tensor` of proxy constraint functions.
     """
-    return tf.stack([cc(self._memoizer) for cc in self._proxy_constraints])
+    value_memoizer = {}
+    return tf.stack([
+        cc(self._structure_memoizer, value_memoizer)
+        for cc in self._proxy_constraints
+    ])
+
+  def components(self):
+    """Returns all three of the objective, constraints and proxy constraints.
+
+    Returns:
+      A tuple of three `Tensors`, analagous to the results of objective(),
+      constraints() and proxy_constraints(), respectively. If there are no proxy
+      constraints, then the third component should be `None`.
+    """
+    # We use the same value_memoizer for each component, ensuring that the model
+    # will be evaluated (differentiated) only once.
+    value_memoizer = {}
+    objective = self._objective(self._structure_memoizer, value_memoizer)
+    constraints = tf.stack([
+        cc(self._structure_memoizer, value_memoizer) for cc in self._constraints
+    ])
+    proxy_constraints = tf.stack([
+        cc(self._structure_memoizer, value_memoizer)
+        for cc in self._proxy_constraints
+    ])
+    return objective, constraints, proxy_constraints
 
   @property
   def variables(self):
@@ -256,7 +285,10 @@ class RateMinimizationProblem(
     Returns:
       A list of variables.
     """
-    return [vv(self._memoizer) for vv in self._variables] + [self._global_step]
+    # Variables do not have their values memoized, so there's no real need to
+    # include a value_memoizer.
+    return ([vv(self._structure_memoizer) for vv in self._variables] +
+            [self._global_step])
 
   def update_ops(self):
     """Creates and returns a list of ops to run at the start of train_op.
@@ -268,9 +300,12 @@ class RateMinimizationProblem(
     Returns:
       A list of ops.
     """
+    value_memoizer = {}
+
     update_ops = []
     for variable in self._variables:
-      update_ops += variable.update_ops(self._memoizer)
+      update_ops += variable.update_ops(self._structure_memoizer,
+                                        value_memoizer)
 
     # Increment our internal global_step after all of the other update_ops.
     with tf.control_dependencies(update_ops):

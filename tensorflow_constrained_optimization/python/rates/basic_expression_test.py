@@ -122,7 +122,7 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_arithmetic(self):
     """Tests `BasicExpression`'s arithmetic operators."""
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -189,15 +189,15 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     self.assertEqual(zero_one_term.loss, loss.ZeroOneLoss())
     self.assertEqual(hinge_term.loss, loss.HingeLoss())
 
-    actual_constant = expression_tensor_terms[0].evaluate(memoizer)
+    actual_constant = expression_tensor_terms[0].evaluate(structure_memoizer)
     actual_zero_one_positive_weights = (
-        zero_one_term.positive_ratio_weights.evaluate(memoizer))
+        zero_one_term.positive_ratio_weights.evaluate(structure_memoizer))
     actual_zero_one_negative_weights = (
-        zero_one_term.negative_ratio_weights.evaluate(memoizer))
+        zero_one_term.negative_ratio_weights.evaluate(structure_memoizer))
     actual_hinge_positive_weights = (
-        hinge_term.positive_ratio_weights.evaluate(memoizer))
+        hinge_term.positive_ratio_weights.evaluate(structure_memoizer))
     actual_hinge_negative_weights = (
-        hinge_term.negative_ratio_weights.evaluate(memoizer))
+        hinge_term.negative_ratio_weights.evaluate(structure_memoizer))
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
@@ -207,30 +207,33 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         actual_hinge_positive_weights.variables +
         actual_hinge_negative_weights.variables)
     for variable in variables:
-      variable.create(memoizer)
+      variable.create(structure_memoizer)
 
     with self.wrapped_session() as session:
       self.assertAllClose(
-          expected_constant, actual_constant(memoizer), rtol=0, atol=1e-6)
+          expected_constant,
+          actual_constant(structure_memoizer),
+          rtol=0,
+          atol=1e-6)
 
       self.assertAllClose(
           np.array([expected_zero_one_positive_weights]),
-          session.run(actual_zero_one_positive_weights(memoizer)),
+          session.run(actual_zero_one_positive_weights(structure_memoizer)),
           rtol=0,
           atol=1e-6)
       self.assertAllClose(
           np.array([expected_zero_one_negative_weights]),
-          session.run(actual_zero_one_negative_weights(memoizer)),
+          session.run(actual_zero_one_negative_weights(structure_memoizer)),
           rtol=0,
           atol=1e-6)
       self.assertAllClose(
           np.array([expected_hinge_positive_weights]),
-          session.run(actual_hinge_positive_weights(memoizer)),
+          session.run(actual_hinge_positive_weights(structure_memoizer)),
           rtol=0,
           atol=1e-6)
       self.assertAllClose(
           np.array([expected_hinge_negative_weights]),
-          session.run(actual_hinge_negative_weights(memoizer)),
+          session.run(actual_hinge_negative_weights(structure_memoizer)),
           rtol=0,
           atol=1e-6)
 

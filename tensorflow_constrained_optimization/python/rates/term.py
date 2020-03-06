@@ -261,7 +261,7 @@ class _RatioWeights(helpers.RateObject):
 
     return _RatioWeights(ratios)
 
-  def _evaluate_denominator(self, denominator, memoizer):
+  def _evaluate_denominator(self, denominator, structure_memoizer):
     """Evaluates the denominator portion of a ratio.
 
     Recall that a `_RatioWeights` object is responsible for computing:
@@ -284,8 +284,8 @@ class _RatioWeights(helpers.RateObject):
       denominator: (`DeferredTensor`, `Predicate`) pair, the first being the
         example weights, and the second the predicate indicating which examples
         are included in the denominator.
-      memoizer: dict, which memoizes portions of the calculation to simplify the
-        resulting TensorFlow graph. It must contain the keys
+      structure_memoizer: dict, which memoizes portions of the calculation to
+        simplify the resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
         values being the minimum allowed value of a rate denominator (a float),
         and the current iterate (a non-negative integer, starting at zero),
@@ -295,17 +295,18 @@ class _RatioWeights(helpers.RateObject):
       A `DeferredTensor` containing the (approximate) denominator.
     """
     key = (_RatioWeights, denominator)
-    if key not in memoizer:
+    if key not in structure_memoizer:
       # We use double precision arithmetic for the running sums because we
       # don't want numerical errors to ruin our estimates if we perform a very
       # large number of iterations.
       running_dtype = tf.float64
 
-      def update_ops_fn(running_averages_variable, memoizer):
+      def update_ops_fn(running_averages_variable, structure_memoizer,
+                        value_memoizer):
         """Updates the running sums before each call to the train_op."""
         weights, denominator_predicate = denominator
         weights = helpers.convert_to_1d_tensor(
-            weights(memoizer), name="weights")
+            weights(structure_memoizer, value_memoizer), name="weights")
         dtype = weights.dtype.base_dtype
         if not dtype.is_floating:
           raise TypeError("weights must be floating-point")
@@ -316,7 +317,8 @@ class _RatioWeights(helpers.RateObject):
                 weights, message="weights must be non-negative"))
 
         denominator_weights = weights * tf.cast(
-            denominator_predicate.tensor(memoizer), dtype=dtype)
+            denominator_predicate.tensor(structure_memoizer, value_memoizer),
+            dtype=dtype)
 
         # We take convex combinations (with parameter running_proportion) to
         # make sure that both running_average_sum and running_average_count
@@ -324,8 +326,8 @@ class _RatioWeights(helpers.RateObject):
         running_proportion = 1.0 / (
             tf.maximum(
                 tf.cast(
-                    memoizer[defaults.GLOBAL_STEP_KEY], dtype=running_dtype),
-                0.0) + 1.0)
+                    structure_memoizer[defaults.GLOBAL_STEP_KEY],
+                    dtype=running_dtype), 0.0) + 1.0)
         running_average_sum = (
             running_averages_variable[0] * (1.0 - running_proportion) +
             tf.cast(tf.reduce_sum(denominator_weights), dtype=running_dtype) *
@@ -366,7 +368,8 @@ class _RatioWeights(helpers.RateObject):
         # sure that we only perform the division if we know that it will result
         # in a quantity larger than denominator_lower_bound.
         running_denominator_lower_bound = tf.cast(
-            memoizer[defaults.DENOMINATOR_LOWER_BOUND_KEY], dtype=running_dtype)
+            structure_memoizer[defaults.DENOMINATOR_LOWER_BOUND_KEY],
+            dtype=running_dtype)
         running_average_sum = running_averages_variable[0]
         running_average_count = running_averages_variable[1]
         return tf.cond(
@@ -375,17 +378,17 @@ class _RatioWeights(helpers.RateObject):
             true_fn=lambda: running_average_sum / running_average_count,
             false_fn=lambda: running_denominator_lower_bound)
 
-      memoizer[key] = deferred_tensor.DeferredTensor.apply(
+      structure_memoizer[key] = deferred_tensor.DeferredTensor.apply(
           average_denominator_weight_fn, running_averages)
 
-    return memoizer[key]
+    return structure_memoizer[key]
 
-  def evaluate(self, memoizer):
+  def evaluate(self, structure_memoizer):
     """Computes and returns the `Tensor` of ratio weights.
 
     Args:
-      memoizer: dict, which memoizes portions of the calculation to simplify the
-        resulting TensorFlow graph. It must contain the keys
+      structure_memoizer: dict, which memoizes portions of the calculation to
+        simplify the resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
         values being the minimum allowed value of a rate denominator (a float),
         and the current iterate (a non-negative integer, starting at zero),
@@ -396,7 +399,8 @@ class _RatioWeights(helpers.RateObject):
     """
     ratios = []
     for denominator_key, numerator in six.iteritems(self._ratios):
-      denominator = self._evaluate_denominator(denominator_key, memoizer)
+      denominator = self._evaluate_denominator(denominator_key,
+                                               structure_memoizer)
 
       def ratio_fn(numerator_value, denominator_value):
         """Returns the value of the current ratio as a `Tensor`."""
@@ -503,12 +507,12 @@ class Term(helpers.RateObject):
     """
 
   @abc.abstractmethod
-  def evaluate(self, memoizer):
+  def evaluate(self, structure_memoizer):
     """Computes and returns the value of this `Term`.
 
     Args:
-      memoizer: dict, which memoizes portions of the calculation to simplify the
-        resulting TensorFlow graph. It must contain the keys
+      structure_memoizer: dict, which memoizes portions of the calculation to
+        simplify the resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
         values being the minimum allowed value of a rate denominator (a float),
         and the current iterate (a non-negative integer, starting at zero),
@@ -608,12 +612,12 @@ class TensorTerm(Term):
 
     return TensorTerm(self._tensor - other.tensor)
 
-  def evaluate(self, memoizer):
+  def evaluate(self, structure_memoizer):
     """Computes and returns the value of this `TensorTerm`.
 
     Args:
-      memoizer: dict, which memoizes portions of the calculation to simplify the
-        resulting TensorFlow graph. It must contain the keys
+      structure_memoizer: dict, which memoizes portions of the calculation to
+        simplify the resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
         values being the minimum allowed value of a rate denominator (a float),
         and the current iterate (a non-negative integer, starting at zero),
@@ -959,12 +963,12 @@ class BinaryClassificationTerm(Term):
         self._positive_ratio_weights - other.positive_ratio_weights,
         self._negative_ratio_weights - other.negative_ratio_weights, self._loss)
 
-  def evaluate(self, memoizer):
+  def evaluate(self, structure_memoizer):
     """Computes and returns the value of this `BinaryClassificationTerm`.
 
     Args:
-      memoizer: dict, which memoizes portions of the calculation to simplify the
-        resulting TensorFlow graph. It must contain the keys
+      structure_memoizer: dict, which memoizes portions of the calculation to
+        simplify the resulting TensorFlow graph. It must contain the keys
         "denominator_lower_bound" and "global_step", with the corresponding
         values being the minimum allowed value of a rate denominator (a float),
         and the current iterate (a non-negative integer, starting at zero),
@@ -975,8 +979,8 @@ class BinaryClassificationTerm(Term):
       `BinaryClassificationTerm`.
     """
     # Evalaute the weights on the positive and negative approximate indicators.
-    positive_weights = self._positive_ratio_weights.evaluate(memoizer)
-    negative_weights = self._negative_ratio_weights.evaluate(memoizer)
+    positive_weights = self._positive_ratio_weights.evaluate(structure_memoizer)
+    negative_weights = self._negative_ratio_weights.evaluate(structure_memoizer)
 
     def average_loss_fn(positive_weights_value, negative_weights_value,
                         predictions_value):
