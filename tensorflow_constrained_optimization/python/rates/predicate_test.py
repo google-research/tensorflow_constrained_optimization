@@ -33,7 +33,7 @@ class PredicateTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_predicate(self):
     """Tests the `Predicate` class."""
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -51,11 +51,20 @@ class PredicateTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     with self.wrapped_session() as session:
       self.assertAllClose(
-          expected, session.run(actual1.tensor(memoizer)), rtol=0, atol=1e-6)
+          expected,
+          session.run(actual1.tensor(structure_memoizer)),
+          rtol=0,
+          atol=1e-6)
       self.assertAllClose(
-          expected, session.run(actual2.tensor(memoizer)), rtol=0, atol=1e-6)
+          expected,
+          session.run(actual2.tensor(structure_memoizer)),
+          rtol=0,
+          atol=1e-6)
       self.assertAllClose(
-          expected, session.run(actual3.tensor(memoizer)), rtol=0, atol=1e-6)
+          expected,
+          session.run(actual3.tensor(structure_memoizer)),
+          rtol=0,
+          atol=1e-6)
 
 
 if __name__ == "__main__":

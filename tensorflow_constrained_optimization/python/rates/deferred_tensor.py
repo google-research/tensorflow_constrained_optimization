@@ -35,11 +35,19 @@ class _ExplicitDeferredTensorState(helpers.RateObject):
   """Base class for internal state of an `ExplicitDeferredTensor`."""
 
   @abc.abstractmethod
-  def value_and_auto_cast(self, memoizer):
+  def value_and_auto_cast(self, structure_memoizer, value_memoizer):
     """Returns the value of the `Tensor`, and whether it has no fixed type.
 
+    The difference between the two memoizer parameters is that the
+    "structure_memoizer" is responsible for memoizing quantities relating to the
+    *structure* of the problem, whereas the "value_memoizer" remembers
+    particular computed *values*. Whereas we have only one "structure_memoizer"
+    per RateMinimizationProblem, we should be given a fresh "value_memoizer"
+    every time the inputs change (i.e. at each iteration).
+
     Args:
-      memoizer: dict, which memoizes variables (among other things).
+      structure_memoizer: dict, which memoizes variables (among other things).
+      value_memoizer: dict, which memoizes DeferredTensor values.
 
     Returns:
       A (`Tensor`-like, `Boolean`) pair containing the value of the
@@ -102,8 +110,8 @@ class _StaticExplicitDeferredTensorState(_ExplicitDeferredTensorState):
   def auto_cast(self):
     return self._auto_cast
 
-  def value_and_auto_cast(self, memoizer):
-    del memoizer
+  def value_and_auto_cast(self, structure_memoizer, value_memoizer):
+    del structure_memoizer, value_memoizer
     return self._value, self._auto_cast
 
   def __hash__(self):
@@ -188,9 +196,19 @@ class _CallableExplicitDeferredTensorState(_ExplicitDeferredTensorState):
   def auto_cast(self):
     return self._auto_cast
 
-  def value_and_auto_cast(self, memoizer):
-    del memoizer
-    return self._callback(), self._auto_cast
+  def value_and_auto_cast(self, structure_memoizer, value_memoizer):
+    del structure_memoizer
+
+    result = None
+    if value_memoizer is not None:
+      key = (_CallableExplicitDeferredTensorState, self)
+      if key not in value_memoizer:
+        value_memoizer[key] = (self._callback(), self._auto_cast)
+      result = value_memoizer[key]
+    else:
+      result = (self._callback(), self._auto_cast)
+
+    return result
 
   def __hash__(self):
     return hash((self._callback, self._auto_cast))
@@ -223,12 +241,13 @@ class DeferredTensor(helpers.RateObject):
   function that returns a `Tensor`, in which other
   functions-that-return-`Tensor`s are called. To look like a function returning
   a `Tensor`, instances of this class are evaluated by calling them (but the
-  __call__ method takes one extra parameter: a "memoizer" dict that is used to
-  store the TensorFlow `Variable`s associated with `DeferredVariable`s). To make
-  this class more easy-to-use than normal functions returning `Tensor`s, it also
-  includes the `apply` function, which can be used to create new
-  `DeferredTensor`s by performing operations on existing ones. Several standard
-  operators are also overloaded to use `apply`.
+  __call__ method takes two extra parameters: "structure_memoizer" and
+  "value_memoizer" dicts that are used to memoize the TensorFlow `Variable`s
+  associated with `DeferredVariable`s, and the values of certain
+  `DeferredTensor`s, respectively). To make this class more easy-to-use than
+  normal functions returning `Tensor`s, it also includes the `apply` function,
+  which can be used to create new `DeferredTensor`s by performing operations on
+  existing ones. Several standard operators are also overloaded to use `apply`.
 
   The most important property of the `apply` function is that it creates a
   `DeferredTensor` representing a *closure*, i.e. a function that computes the
@@ -265,11 +284,19 @@ class DeferredTensor(helpers.RateObject):
   """
 
   @abc.abstractmethod
-  def _value_and_auto_cast(self, memoizer):
+  def _value_and_auto_cast(self, structure_memoizer, value_memoizer):
     """Returns the value of the `Tensor`, and whether it has no fixed type.
 
+    The difference between the two memoizer parameters is that the
+    "structure_memoizer" is responsible for memoizing quantities relating to the
+    *structure* of the problem, whereas the "value_memoizer" remembers
+    particular computed *values*. Whereas we have only one "structure_memoizer"
+    per RateMinimizationProblem, we should be given a fresh "value_memoizer"
+    every time the inputs change (i.e. at each iteration).
+
     Args:
-      memoizer: dict, which memoizes variables (among other things).
+      structure_memoizer: dict, which memoizes variables (among other things).
+      value_memoizer: dict, which memoizes DeferredTensor values.
 
     Returns:
       A (`Tensor`-like, `Boolean`) pair containing the value of the
@@ -306,7 +333,7 @@ class DeferredTensor(helpers.RateObject):
   def __ne__(self, other):
     return not self.__eq__(other)
 
-  def __call__(self, memoizer):
+  def __call__(self, structure_memoizer, value_memoizer=None):
     """Returns the value of this `DeferredTensor`.
 
     This is the *only* place (aside from `DeferredVariable.update_ops`) that the
@@ -314,13 +341,21 @@ class DeferredTensor(helpers.RateObject):
     constructed from a nullary function, this is the only place that this
     function will be called.
 
+    The difference between the two memoizer parameters is that the
+    "structure_memoizer" is responsible for memoizing quantities relating to the
+    *structure* of the problem, whereas the "value_memoizer" remembers
+    particular computed *values*. Whereas we have only one "structure_memoizer"
+    per RateMinimizationProblem, we should be given a fresh "value_memoizer"
+    every time the inputs change (i.e. at each iteration).
+
     Args:
-      memoizer: dict, which memoizes variables (among other things).
+      structure_memoizer: dict, which memoizes variables (among other things).
+      value_memoizer: dict, which memoizes DeferredTensor values.
 
     Returns:
       A `Tensor`-like object containing the value of this `DeferredTensor`.
     """
-    value, _ = self._value_and_auto_cast(memoizer)
+    value, _ = self._value_and_auto_cast(structure_memoizer, value_memoizer)
     return value
 
   @classmethod
@@ -459,87 +494,100 @@ class _DerivedDeferredTensor(DeferredTensor):
     for arg in self._args:
       self._variables += arg.variables
 
-  def _value_and_auto_cast(self, memoizer):
-    values_and_auto_casts = [
-        # pylint: disable=protected-access
-        arg._value_and_auto_cast(memoizer) for arg in self._args
-        # pylint: enable=protected-access
-    ]
-    values = [value for value, _ in values_and_auto_casts]
-    # The auto_cast flag is only meaningful for Tensors. For all other types,
-    # we take auto_cast to be False by convention (but don't be misled: all
-    # non-Tensor types will undergo type promotion automatically).
-    auto_casts = [
-        tf.is_tensor(value) and auto_cast
-        for value, auto_cast in values_and_auto_casts
-    ]
+  def _value_and_auto_cast(self, structure_memoizer, value_memoizer):
+    result = None
 
-    # If any of the input arguments are auto-castable `Tensor`s, then we have
-    # to figure out what type we should cast them to. Otherwise, we don't need
-    # to bother with all of this, and can set the auto_cast flag (for the
-    # result) to False (this is safe: observe that all non-Tensor types are
-    # automatically auto-castable, regardless of the value of the auto_cast
-    # flag).
-    auto_cast = False
-    if any(auto_casts):
-      # Get the dtype of every Tensor, and take the dtype of every non-Tensor
-      # to be None (for python scalars and numpy objects, type promotion will
-      # be performed automatically, so the only types that "matter" are those
-      # of the Tensors).
-      value_dtypes = []
-      for value in values:
-        if tf.is_tensor(value):
-          value_dtypes.append(value.dtype.base_dtype)
-        else:
-          value_dtypes.append(None)
+    key = (_DerivedDeferredTensor, self)
+    if value_memoizer is not None and key in value_memoizer:
+      result = value_memoizer[key]
 
-      # Here, we'll fill in "non_auto_cast_dtypes" with the dtypes of
-      # non-auto-castable Tensors. If all non-auto-castable Tensors have the
-      # same dtype, then we'll cast every auto-castable Tensor to have this
-      # dtype. If there are non-auto-castable Tensors with different dtypes,
-      # then we won't perform any casting at all.
-      non_auto_cast_dtypes = set(
-          value_dtypes[ii]
-          for ii in xrange(len(self._args))
-          if value_dtypes[ii] is not None and not auto_casts[ii])
+    if result is None:
+      values_and_auto_casts = [
+          # pylint: disable=protected-access
+          arg._value_and_auto_cast(structure_memoizer, value_memoizer)
+          for arg in self._args
+          # pylint: enable=protected-access
+      ]
+      values = [value for value, _ in values_and_auto_casts]
+      # The auto_cast flag is only meaningful for Tensors. For all other types,
+      # we take auto_cast to be False by convention (but don't be misled: all
+      # non-Tensor types will undergo type promotion automatically).
+      auto_casts = [
+          tf.is_tensor(value) and auto_cast
+          for value, auto_cast in values_and_auto_casts
+      ]
 
-      dtype = None
-      if len(non_auto_cast_dtypes) == 1:
-        # If we have exactly one non-auto-castable Tensor, then it determines
-        # the dtype.
-        dtype = non_auto_cast_dtypes.pop()
-      elif not non_auto_cast_dtypes:
-        # If we don't have any non-auto-castable Tensors, then the result of
-        # this method should be auto-casted (ultimately, this will be the
-        # second return value). In all other cases, it should not (the dtype is
-        # fixed as that of the non-auto-castable Tensor).
-        auto_cast = True
+      # If any of the input arguments are auto-castable `Tensor`s, then we have
+      # to figure out what type we should cast them to. Otherwise, we don't need
+      # to bother with all of this, and can set the auto_cast flag (for the
+      # result) to False (this is safe: observe that all non-Tensor types are
+      # automatically auto-castable, regardless of the value of the auto_cast
+      # flag).
+      auto_cast = False
+      if any(auto_casts):
+        # Get the dtype of every Tensor, and take the dtype of every non-Tensor
+        # to be None (for python scalars and numpy objects, type promotion will
+        # be performed automatically, so the only types that "matter" are those
+        # of the Tensors).
+        value_dtypes = []
+        for value in values:
+          if tf.is_tensor(value):
+            value_dtypes.append(value.dtype.base_dtype)
+          else:
+            value_dtypes.append(None)
 
-        # Since every input argument is either an auto-castable Tensor, or a
-        # non-Tensor, we do not have a hard dtype requirement, so we'll use
-        # numpy's type promotion rules to figure out the dtype.
-        numpy_dtypes = [
-            value_dtype for value_dtype in value_dtypes
-            if value_dtype is not None
-        ]
-        if not all(
-            numpy_dtype.is_numpy_compatible for numpy_dtype in numpy_dtypes):
-          raise ValueError("auto-castable DeferredTensors must use numpy "
-                           "compatible dtypes")
-        numpy_dtypes = [
-            numpy_dtype.as_numpy_dtype for numpy_dtype in numpy_dtypes
-        ]
-        if numpy_dtypes:
-          dtype = tf.as_dtype(np.result_type(*numpy_dtypes))
+        # Here, we'll fill in "non_auto_cast_dtypes" with the dtypes of
+        # non-auto-castable Tensors. If all non-auto-castable Tensors have the
+        # same dtype, then we'll cast every auto-castable Tensor to have this
+        # dtype. If there are non-auto-castable Tensors with different dtypes,
+        # then we won't perform any casting at all.
+        non_auto_cast_dtypes = set(
+            value_dtypes[ii]
+            for ii in xrange(len(self._args))
+            if value_dtypes[ii] is not None and not auto_casts[ii])
 
-      if dtype is not None:
-        for ii in xrange(len(values_and_auto_casts)):
-          value_dtype = value_dtypes[ii]
-          if (auto_casts[ii] and value_dtype is not None and
-              value_dtype != dtype):
-            values[ii] = tf.cast(values[ii], dtype=dtype)
+        dtype = None
+        if len(non_auto_cast_dtypes) == 1:
+          # If we have exactly one non-auto-castable Tensor, then it determines
+          # the dtype.
+          dtype = non_auto_cast_dtypes.pop()
+        elif not non_auto_cast_dtypes:
+          # If we don't have any non-auto-castable Tensors, then the result of
+          # this method should be auto-casted (ultimately, this will be the
+          # second return value). In all other cases, it should not (the dtype
+          # is fixed as that of the non-auto-castable Tensor).
+          auto_cast = True
 
-    return self._callback(*values), auto_cast
+          # Since every input argument is either an auto-castable Tensor, or a
+          # non-Tensor, we do not have a hard dtype requirement, so we'll use
+          # numpy's type promotion rules to figure out the dtype.
+          numpy_dtypes = [
+              value_dtype for value_dtype in value_dtypes
+              if value_dtype is not None
+          ]
+          if not all(
+              numpy_dtype.is_numpy_compatible for numpy_dtype in numpy_dtypes):
+            raise ValueError("auto-castable DeferredTensors must use numpy "
+                             "compatible dtypes")
+          numpy_dtypes = [
+              numpy_dtype.as_numpy_dtype for numpy_dtype in numpy_dtypes
+          ]
+          if numpy_dtypes:
+            dtype = tf.as_dtype(np.result_type(*numpy_dtypes))
+
+        if dtype is not None:
+          for ii in xrange(len(values_and_auto_casts)):
+            value_dtype = value_dtypes[ii]
+            if (auto_casts[ii] and value_dtype is not None and
+                value_dtype != dtype):
+              values[ii] = tf.cast(values[ii], dtype=dtype)
+
+      result = (self._callback(*values), auto_cast)
+
+    if value_memoizer is not None and key not in value_memoizer:
+      value_memoizer[key] = result
+
+    return result
 
   @property
   def variables(self):
@@ -598,8 +646,8 @@ class ExplicitDeferredTensor(DeferredTensor):
       # object.
       self._state = _StaticExplicitDeferredTensorState(value, auto_cast)
 
-  def _value_and_auto_cast(self, memoizer):
-    return self._state.value_and_auto_cast(memoizer)
+  def _value_and_auto_cast(self, structure_memoizer, value_memoizer):
+    return self._state.value_and_auto_cast(structure_memoizer, value_memoizer)
 
   @property
   def variables(self):
@@ -634,10 +682,10 @@ class DeferredVariable(DeferredTensor):
 
   The storage for all `DeferredVariables` must be *explicitly* created by
   calling `create` (this will happen inside the `RateMinimizationProblem`
-  constructor). The resulting `tf.Variable` will be stored in the "memoizer"
-  dict owned by the `RateMinimizationProblem`. After it's created, the value can
-  be accessed as usual for a `DeferredTensor`: by calling it (`DeferredTensor`'s
-  __call__ method).
+  constructor). The resulting `tf.Variable` will be stored in the
+  "structure_memoizer" dict owned by the `RateMinimizationProblem`. After it's
+  created, the value can be accessed as usual for a `DeferredTensor`: by calling
+  it (`DeferredTensor`'s __call__ method).
   """
 
   def __init__(self,
@@ -656,10 +704,10 @@ class DeferredVariable(DeferredTensor):
       name: as in `tf.Variable`'s constructor.
       dtype: as in `tf.Variable`'s constructor.
       constraint: as in `tf.Variable`'s constructor.
-      update_ops_fn: an optional function taking the two parameters: the
-        `tf.Variable` corresponding to this `DeferredVariable`, and a "memoizer"
-        dict; and returning a list of ops that should be executed before each
-        training iteration.
+      update_ops_fn: an optional function taking three parameters: the
+        `tf.Variable` corresponding to this `DeferredVariable`, a
+        "structure_memoizer" dict, and a "value_memoizer" dict; it returns a
+        list of ops that should be executed before each training iteration.
       auto_cast: if `True`, then calls to `DeferredTensor.apply` will attempt to
         perform automatic type promotion on the resulting `DeferredVariable`.
     """
@@ -671,12 +719,13 @@ class DeferredVariable(DeferredTensor):
     self._update_ops_fn = update_ops_fn
     self._auto_cast = auto_cast
 
-  def _value_and_auto_cast(self, memoizer):
+  def _value_and_auto_cast(self, structure_memoizer, value_memoizer):
+    del value_memoizer
     key = (DeferredVariable, self)
-    if key not in memoizer:
+    if key not in structure_memoizer:
       raise RuntimeError("attempted to read a DeferredVariable that has not "
                          "yet been created")
-    return memoizer[key], self._auto_cast
+    return structure_memoizer[key], self._auto_cast
 
   @property
   def variables(self):
@@ -690,34 +739,44 @@ class DeferredVariable(DeferredTensor):
   def __eq__(self, other):
     return self is other
 
-  def create(self, memoizer):
+  def create(self, structure_memoizer):
     """Creates the `tf.Variable` owned by this `DeferredVariable`."""
     key = (DeferredVariable, self)
-    if key in memoizer:
+    if key in structure_memoizer:
       raise RuntimeError("attempted to create a DeferredVariable that has "
                          "already been created")
-    memoizer[key] = tf.compat.v2.Variable(
+    structure_memoizer[key] = tf.compat.v2.Variable(
         initial_value=self._initial_value,
         trainable=self._trainable,
         name=self._name,
         dtype=self._dtype,
         constraint=self._constraint)
 
-  def update_ops(self, memoizer):
+  def update_ops(self, structure_memoizer, value_memoizer=None):
     """Creates and returns a list of ops to run at the start of train_op.
 
     Aside from `DeferredTensor`'s __call__ method, this is the only place that
     the value of the `DeferredVariable` will be accessed.
 
+    The difference between the two memoizer parameters is that the
+    "structure_memoizer" is responsible for memoizing quantities relating to the
+    *structure* of the problem, whereas the "value_memoizer" remembers
+    particular computed *values*. Whereas we have only one "structure_memoizer"
+    per RateMinimizationProblem, we should be given a fresh "value_memoizer"
+    every time the inputs change (i.e. at each iteration).
+
     Args:
-      memoizer: dict, which memoizes variables (among other things).
+      structure_memoizer: dict, which memoizes variables (among other things).
+      value_memoizer: dict, which memoizes DeferredTensor values.
 
     Returns:
       A list of ops.
     """
     if self._update_ops_fn is None:
       return []
-    return self._update_ops_fn(self.__call__(memoizer), memoizer)
+    return self._update_ops_fn(
+        self.__call__(structure_memoizer, value_memoizer), structure_memoizer,
+        value_memoizer)
 
 
 class DeferredVariableList(helpers.UniqueList):

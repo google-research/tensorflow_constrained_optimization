@@ -87,7 +87,7 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
   def test_subset_of_subset(self):
     """Tests that taking the subset-of-a-subset works correctly."""
     context1, context2 = create_contexts()
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -101,10 +101,10 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                                                dtype=np.float32)
       self.assertAllEqual(
           expected_penalty_predicate,
-          session.run(context1.penalty_predicate.tensor(memoizer)))
+          session.run(context1.penalty_predicate.tensor(structure_memoizer)))
       self.assertAllEqual(
           expected_constraint_predicate,
-          session.run(context1.constraint_predicate.tensor(memoizer)))
+          session.run(context1.constraint_predicate.tensor(structure_memoizer)))
       # Likewise in condition2.
       expected_penalty_predicate = np.array([0, 0, 0, 0, 1, 0, 1, 0, 0, 0],
                                             dtype=np.float32)
@@ -112,15 +112,15 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                                                dtype=np.float32)
       self.assertAllEqual(
           expected_penalty_predicate,
-          session.run(context2.penalty_predicate.tensor(memoizer)))
+          session.run(context2.penalty_predicate.tensor(structure_memoizer)))
       self.assertAllEqual(
           expected_constraint_predicate,
-          session.run(context2.constraint_predicate.tensor(memoizer)))
+          session.run(context2.constraint_predicate.tensor(structure_memoizer)))
 
   def test_and(self):
     """Tests `SubsettableContext`'s logical AND operator."""
     context1, context2 = create_contexts()
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -135,15 +135,16 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                                                dtype=np.float32)
       self.assertAllEqual(
           expected_penalty_predicate,
-          session.run(and_context.penalty_predicate.tensor(memoizer)))
+          session.run(and_context.penalty_predicate.tensor(structure_memoizer)))
       self.assertAllEqual(
           expected_constraint_predicate,
-          session.run(and_context.constraint_predicate.tensor(memoizer)))
+          session.run(
+              and_context.constraint_predicate.tensor(structure_memoizer)))
 
   def test_or(self):
     """Tests `SubsettableContext`'s logical OR operator."""
     context1, context2 = create_contexts()
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
@@ -158,10 +159,11 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                                                dtype=np.float32)
       self.assertAllEqual(
           expected_penalty_predicate,
-          session.run(or_context.penalty_predicate.tensor(memoizer)))
+          session.run(or_context.penalty_predicate.tensor(structure_memoizer)))
       self.assertAllEqual(
           expected_constraint_predicate,
-          session.run(or_context.constraint_predicate.tensor(memoizer)))
+          session.run(
+              or_context.constraint_predicate.tensor(structure_memoizer)))
 
 
 if __name__ == "__main__":

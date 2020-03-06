@@ -118,6 +118,26 @@ class ConstrainedMinimizationProblem(object):
     """
     return
 
+  def components(self):
+    """Returns all three of the objective, constraints and proxy constraints.
+
+    The default implementation of this method simply calls objective(),
+    constraints() and proxy_constraints(), and returns the results in a tuple.
+    In eager mode, however, this could be unnecessarily wasteful, since it could
+    cause the model to be evaluated (and differentiated) three separate times,
+    once for each component.
+
+    To avoid this, users can override this method, and evaluate the model only
+    once. They can then use the same cached evaluation as an input to each of
+    the three components.
+
+    Returns:
+      A tuple of three `Tensors`, analagous to the results of objective(),
+      constraints() and proxy_constraints(), respectively. If there are no proxy
+      constraints, then the third component should be `None`.
+    """
+    return self.objective(), self.constraints(), self.proxy_constraints()
+
   # This is a method, instead of an abstract method, since it doesn't need to be
   # overridden: if variables returns [], then there are no Variables owned by
   # this problem.

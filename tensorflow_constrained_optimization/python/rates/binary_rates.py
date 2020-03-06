@@ -227,9 +227,11 @@ def _ratio_bound(numerator_expression, denominator_expression, lower_bound,
 
   # We use a "update_ops_fn" instead of a "constraint" (which we would usually
   # prefer) to perform the projection because we want to grab the denominator
-  # lower bound out of the memoizer.
-  def update_ops_fn(ratio_bounds_variable, memoizer):
+  # lower bound out of the structure_memoizer.
+  def update_ops_fn(ratio_bounds_variable, structure_memoizer, value_memoizer):
     """Projects ratio_bounds onto the feasible region."""
+    del value_memoizer
+
     numerator = ratio_bounds_variable[0]
     denominator = ratio_bounds_variable[1]
 
@@ -241,8 +243,9 @@ def _ratio_bound(numerator_expression, denominator_expression, lower_bound,
     # Next make sure that the numerator is in [0, 1] and the denominator is in
     # [denominator_lower_bound, 1].
     numerator = tf.maximum(0.0, tf.minimum(1.0, numerator))
-    denominator = tf.maximum(memoizer[defaults.DENOMINATOR_LOWER_BOUND_KEY],
-                             tf.minimum(1.0, denominator))
+    denominator = tf.maximum(
+        structure_memoizer[defaults.DENOMINATOR_LOWER_BOUND_KEY],
+        tf.minimum(1.0, denominator))
 
     return [ratio_bounds_variable.assign([numerator, denominator])]
 

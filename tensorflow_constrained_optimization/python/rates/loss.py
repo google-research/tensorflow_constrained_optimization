@@ -246,14 +246,14 @@ class HingeLoss(BinaryClassificationLoss):
     the hinge loss upper bounds the zero-one loss.
 
     Args:
-      margin: positive float, the margin of the hinge loss. Defaults to 1.
+      margin: non-negative float, the margin of the hinge loss. Defaults to 1.
 
     Raises:
-      ValueError: if the margin is non-positive.
+      ValueError: if the margin is negative.
     """
     self._margin = float(margin)
-    if margin <= 0.0:
-      raise ValueError("margin must be positive")
+    if margin < 0.0:
+      raise ValueError("margin must be non-negative")
 
   @property
   def margin(self):

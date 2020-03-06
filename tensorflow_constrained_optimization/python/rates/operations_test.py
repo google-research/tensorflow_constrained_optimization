@@ -45,35 +45,36 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       A pair (penalty,constraint) containing the values of the penalty and
       constraint portions of the `Expression`.
     """
-    memoizer = {
+    structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    penalty_value = expression.penalty_expression.evaluate(memoizer)
-    constraint_value = expression.constraint_expression.evaluate(memoizer)
+    penalty_value = expression.penalty_expression.evaluate(structure_memoizer)
+    constraint_value = expression.constraint_expression.evaluate(
+        structure_memoizer)
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
     variables = deferred_tensor.DeferredVariableList(
         penalty_value.variables + constraint_value.variables).list
     for variable in variables:
-      variable.create(memoizer)
+      variable.create(structure_memoizer)
 
     def update_ops_fn():
       if not extra_update_ops_fn:
         update_ops = []
       else:
-        update_ops = extra_update_ops_fn(memoizer, variables)
+        update_ops = extra_update_ops_fn(structure_memoizer, variables)
       for variable in variables:
-        update_ops += variable.update_ops(memoizer)
+        update_ops += variable.update_ops(structure_memoizer)
       return update_ops
 
     with self.wrapped_session() as session:
       session.run_ops(update_ops_fn)
       return [
-          session.run(penalty_value(memoizer)),
-          session.run(constraint_value(memoizer))
+          session.run(penalty_value(structure_memoizer)),
+          session.run(constraint_value(structure_memoizer))
       ]
 
   def test_wrap_rate_raises(self):
@@ -159,10 +160,10 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # Before evaluating any expressions, we'll assign "bound_value" to the slack
     # variable, so that we can make sure that the same slack variable is being
     # used for all of the constraints.
-    def update_ops_fn(memoizer, variables):
+    def update_ops_fn(structure_memoizer, variables):
       upper_bound_tensor = None
       for variable in variables:
-        tensor = variable(memoizer)
+        tensor = variable(structure_memoizer)
         if tensor.name.startswith("tfco_upper_bound"):
           self.assertIsNone(upper_bound_tensor)
           upper_bound_tensor = tensor
@@ -233,10 +234,10 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # Before evaluating any expressions, we'll assign "bound_value" to the slack
     # variable, so that we can make sure that the same slack variable is being
     # used for all of the constraints.
-    def update_ops_fn(memoizer, variables):
+    def update_ops_fn(structure_memoizer, variables):
       lower_bound_tensor = None
       for variable in variables:
-        tensor = variable(memoizer)
+        tensor = variable(structure_memoizer)
         if tensor.name.startswith("tfco_lower_bound"):
           self.assertIsNone(lower_bound_tensor)
           lower_bound_tensor = tensor
