@@ -102,6 +102,7 @@ py_library(
         ":deferred_tensor",
         ":helpers",
         ":predicate",
+        # numpy dep,
         # six dep,
         # tensorflow dep,
     ],

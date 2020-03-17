@@ -93,6 +93,30 @@ class HelpersTest(tf.test.TestCase):
     tensor = tf.convert_to_tensor([[1, 2, 3]])
     self.assertEqual(3, helpers.get_num_columns_of_2d_tensor(tensor))
 
+  def test_get_num_elements_of_tensor(self):
+    """Tests the "get_num_elements_of_tensor" function."""
+    self.assertFalse(tf.executing_eagerly())
+
+    # Trying to get the number of elements of a non-tensor should fail.
+    with self.assertRaises(TypeError):
+      _ = helpers.get_num_elements_of_tensor([[1, 2], [3, 4]])
+
+    # Trying to get the number of elements of a tensor with unknown shape should
+    # fail.
+    tensor = tf.compat.v1.placeholder(tf.float32, shape=None)
+    with self.assertRaises(ValueError):
+      _ = helpers.get_num_elements_of_tensor(tensor)
+
+    # Trying to get the number of elements of a tensor with partially-unknown
+    # shape should fail.
+    tensor = tf.compat.v1.placeholder(tf.float32, shape=(1, None, 1))
+    with self.assertRaises(ValueError):
+      _ = helpers.get_num_elements_of_tensor(tensor)
+
+    # Make sure that we successfully get the number of elements.
+    tensor = tf.convert_to_tensor([[1, 2, 3], [4, 5, 6]])
+    self.assertEqual(6, helpers.get_num_elements_of_tensor(tensor))
+
 
 class UniqueListTest(tf.test.TestCase):
   """Tests for `UniqueList` classes."""

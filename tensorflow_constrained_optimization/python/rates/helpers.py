@@ -104,6 +104,36 @@ def get_num_columns_of_2d_tensor(tensor, name="tensor"):
   return columns
 
 
+def get_num_elements_of_tensor(tensor, name="tensor"):
+  """Gets the number of elements in a `Tensor`.
+
+  Args:
+    tensor: a `Tensor` with a fully-known shape.
+    name: str, how to refer to the tensor in error messages.
+
+  Returns:
+    The number of elements in the tensor.
+
+  Raises:
+    TypeError: if "tensor" is not a `Tensor`.
+    ValueError: if "tensor" does not have a fully-known shape.
+  """
+  if not tf.is_tensor(tensor):
+    raise TypeError("%s must be a Tensor" % name)
+
+  dims = tensor.shape.dims
+  if dims is None:
+    raise ValueError("%s must have a known rank" % name)
+
+  result = 1
+  for dim in dims:
+    if dim.value is None:
+      raise ValueError("%s must have a fully-known shape" % name)
+    result *= dim.value
+
+  return result
+
+
 class UniqueList(RateObject):
   """Represents a list of unique elements.
 

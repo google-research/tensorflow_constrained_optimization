@@ -163,12 +163,13 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                                      dtype=np.float32) * coefficients
     # The expected weights for the two zero-one terms will be merged, since
     # they're compatible. There is only one hinge term.
-    expected_zero_one_positive_weights = (
-        positive_coefficients[0] + positive_coefficients[2])
-    expected_zero_one_negative_weights = (
-        negative_coefficients[0] + negative_coefficients[2])
-    expected_hinge_positive_weights = positive_coefficients[1]
-    expected_hinge_negative_weights = negative_coefficients[1]
+    expected_zero_one_weights = [[
+        positive_coefficients[0] + positive_coefficients[2],
+        negative_coefficients[0] + negative_coefficients[2]
+    ]]
+    expected_hinge_weights = [[
+        positive_coefficients[1], negative_coefficients[1]
+    ]]
 
     # We should have three terms, since the two compatible
     # BinaryClassificationTerms will be merged, and we'll have one TensorTerm.
@@ -190,22 +191,16 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     self.assertEqual(hinge_term.loss, loss.HingeLoss())
 
     actual_constant = expression_tensor_terms[0].evaluate(structure_memoizer)
-    actual_zero_one_positive_weights = (
-        zero_one_term.positive_ratio_weights.evaluate(structure_memoizer))
-    actual_zero_one_negative_weights = (
-        zero_one_term.negative_ratio_weights.evaluate(structure_memoizer))
-    actual_hinge_positive_weights = (
-        hinge_term.positive_ratio_weights.evaluate(structure_memoizer))
-    actual_hinge_negative_weights = (
-        hinge_term.negative_ratio_weights.evaluate(structure_memoizer))
+    actual_zero_one_weights = (
+        zero_one_term.ratio_weights.evaluate(structure_memoizer))
+    actual_hinge_weights = (
+        hinge_term.ratio_weights.evaluate(structure_memoizer))
 
     # We need to explicitly create the variables before creating the wrapped
     # session.
     variables = deferred_tensor.DeferredVariableList(
-        actual_constant.variables + actual_zero_one_positive_weights.variables +
-        actual_zero_one_negative_weights.variables +
-        actual_hinge_positive_weights.variables +
-        actual_hinge_negative_weights.variables)
+        actual_constant.variables + actual_zero_one_weights.variables +
+        actual_hinge_weights.variables)
     for variable in variables:
       variable.create(structure_memoizer)
 
@@ -217,23 +212,13 @@ class BasicExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
           atol=1e-6)
 
       self.assertAllClose(
-          np.array([expected_zero_one_positive_weights]),
-          session.run(actual_zero_one_positive_weights(structure_memoizer)),
+          np.array(expected_zero_one_weights),
+          session.run(actual_zero_one_weights(structure_memoizer)),
           rtol=0,
           atol=1e-6)
       self.assertAllClose(
-          np.array([expected_zero_one_negative_weights]),
-          session.run(actual_zero_one_negative_weights(structure_memoizer)),
-          rtol=0,
-          atol=1e-6)
-      self.assertAllClose(
-          np.array([expected_hinge_positive_weights]),
-          session.run(actual_hinge_positive_weights(structure_memoizer)),
-          rtol=0,
-          atol=1e-6)
-      self.assertAllClose(
-          np.array([expected_hinge_negative_weights]),
-          session.run(actual_hinge_negative_weights(structure_memoizer)),
+          np.array(expected_hinge_weights),
+          session.run(actual_hinge_weights(structure_memoizer)),
           rtol=0,
           atol=1e-6)
 

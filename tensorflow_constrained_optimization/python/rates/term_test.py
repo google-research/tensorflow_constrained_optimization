@@ -159,13 +159,13 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    ratio_weights = term._RatioWeights({})
+    ratio_weights = term._RatioWeights({}, 1)
     actual_weights = ratio_weights.evaluate(structure_memoizer)
     self.assertEqual(0, len(actual_weights.variables))
 
     # We don't need to run this in a session, since the expected weights are a
     # constant (zero).
-    self.assertAllEqual([0], actual_weights(structure_memoizer))
+    self.assertAllEqual([[0]], actual_weights(structure_memoizer))
 
   def test_ratio_weights_ratio(self):
     """Tests `_RatioWeights`'s ratio() class method."""
@@ -183,7 +183,7 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     denominator_predicate = predicate.Predicate(
         denominator_predicate_placeholder)
     ratio_weights = term._RatioWeights.ratio(
-        deferred_tensor.ExplicitDeferredTensor(weights_placeholder),
+        deferred_tensor.ExplicitDeferredTensor(weights_placeholder), [1.0],
         numerator_predicate, denominator_predicate)
     actual_weights = ratio_weights.evaluate(structure_memoizer)
 
@@ -215,7 +215,6 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         running_count += size
         running_sum += np.sum(weights_subarray * denominator_predicate_subarray)
         average_denominator = running_sum / running_count
-        expected_weights = np.zeros(size)
         expected_weights = (weights_subarray * numerator_predicate_subarray)
         expected_weights /= average_denominator
 
@@ -244,7 +243,10 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
             })
 
         self.assertAllClose(
-            expected_weights, actual_weights_value, rtol=0, atol=1e-6)
+            np.expand_dims(expected_weights, axis=1),
+            actual_weights_value,
+            rtol=0,
+            atol=1e-6)
 
         session.run_ops(
             lambda: structure_memoizer[defaults.GLOBAL_STEP_KEY].assign_add(1))
@@ -258,7 +260,7 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
     def create_ratio_weights(weights_tensor):
       return term._RatioWeights.ratio(
-          deferred_tensor.ExplicitDeferredTensor(weights_tensor),
+          deferred_tensor.ExplicitDeferredTensor(weights_tensor), [1.0],
           predicate.Predicate(True), predicate.Predicate(True))
 
     weights_tensors = [
@@ -285,7 +287,10 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     with self.wrapped_session() as session:
       actual_weights_value = session.run(actual_weights(structure_memoizer))
       self.assertAllClose(
-          expected_weights, actual_weights_value, rtol=0, atol=1e-6)
+          np.expand_dims(expected_weights, axis=1),
+          actual_weights_value,
+          rtol=0,
+          atol=1e-6)
 
   def test_ratio_weights_memoizer(self):
     """Tests memoization."""
@@ -304,10 +309,10 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     numerator2_predicate = predicate.Predicate(numerator2_tensor)
     denominator_predicate = predicate.Predicate(True)
 
-    ratio_weights1 = term._RatioWeights.ratio(weights_tensor,
+    ratio_weights1 = term._RatioWeights.ratio(weights_tensor, [1.0],
                                               numerator1_predicate,
                                               denominator_predicate)
-    ratio_weights2 = term._RatioWeights.ratio(weights_tensor,
+    ratio_weights2 = term._RatioWeights.ratio(weights_tensor, [1.0],
                                               numerator2_predicate,
                                               denominator_predicate)
     result1 = ratio_weights1.evaluate(structure_memoizer)
@@ -325,9 +330,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
     }
 
-    def numpy_binary_classification_loss(positive_weights_array,
-                                         negative_weights_array,
-                                         predictions_array):
+    def numpy_loss(positive_weights_array, negative_weights_array,
+                   predictions_array):
       constant_weights = np.minimum(positive_weights_array,
                                     negative_weights_array)
       positive_weights = positive_weights_array - constant_weights
@@ -340,17 +344,15 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     def create_binary_classification_term(predictions_tensor,
                                           positive_weights_tensor,
                                           negative_weights_tensor):
-      positive_ratio_weights = term._RatioWeights.ratio(
-          deferred_tensor.ExplicitDeferredTensor(positive_weights_tensor),
-          predicate.Predicate(True), predicate.Predicate(True))
-      negative_ratio_weights = term._RatioWeights.ratio(
-          deferred_tensor.ExplicitDeferredTensor(negative_weights_tensor),
-          predicate.Predicate(True), predicate.Predicate(True))
+      key = (1.0, predicate.Predicate(True))
+      value = deferred_tensor.ExplicitDeferredTensor(
+          tf.stack([positive_weights_tensor, negative_weights_tensor], axis=1))
+      ratio_weights = term._RatioWeights({key: value}, 2)
       return term.BinaryClassificationTerm(
           deferred_tensor.ExplicitDeferredTensor(predictions_tensor),
-          positive_ratio_weights, negative_ratio_weights, loss.HingeLoss())
+          ratio_weights, loss.HingeLoss())
 
-    # Randomly construct arrays of predictions and weights.
+    # Use randomly constructed arrays of predictions and weights.
     predictions_tensor = tf.constant(self._predictions, dtype=tf.float32)
     positive_weights_tensors = [
         tf.constant(self._positive_weights[:, ii], dtype=tf.float32)
@@ -380,9 +382,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                                  0.3 * self._negative_weights[:, 1] -
                                  self._negative_weights[:, 2] / 3.1 +
                                  self._negative_weights[:, 0] * 0.5)
-    expected_term = numpy_binary_classification_loss(expected_positive_weights,
-                                                     expected_negative_weights,
-                                                     self._predictions)
+    expected_term = numpy_loss(expected_positive_weights,
+                               expected_negative_weights, self._predictions)
 
     actual_term = term_object.evaluate(structure_memoizer)
 
