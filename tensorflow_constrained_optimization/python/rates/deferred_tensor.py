@@ -131,7 +131,7 @@ class _StaticExplicitDeferredTensorState(_ExplicitDeferredTensorState):
         # given a numpy type (which is not necessarily hashable), we'll wind up
         # with a hashable type.
         #
-        # TODO: is there are more efficient way to do this? Notice that
+        # TODO: is there a more efficient way to do this? Notice that
         # we can't just hash a numpy array's storage, since arrays of different
         # types might be considered equal (e.g. [1.0, 2.0] == [1, 2]).
         identifier = (_StaticExplicitDeferredTensorState._list_to_tuple(

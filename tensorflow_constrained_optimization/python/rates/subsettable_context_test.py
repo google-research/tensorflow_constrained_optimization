@@ -165,6 +165,51 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
           session.run(
               or_context.constraint_predicate.tensor(structure_memoizer)))
 
+  def test_one_hot_labels(self):
+    """Tests "_one_hot_labels" function."""
+    structure_memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+    }
+    one_hot_labels = [[0.1, 0.9], [0.4, 0.6]]
+    index_labels = [0, 1, 3, 2, 3, 0]
+    index_one_hot_labels = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 0.0],
+    ]
+
+    # Trying to convert a Tensor with <2 columns should fail.
+    with self.assertRaises(ValueError):
+      with self.wrapped_session() as session:
+        _ = session.run(
+            subsettable_context._one_hot_labels(one_hot_labels,
+                                                1)(structure_memoizer))
+
+    # Trying to convert a Tensor with too many columns should fail.
+    with self.assertRaises(ValueError):
+      with self.wrapped_session() as session:
+        _ = session.run(
+            subsettable_context._one_hot_labels(one_hot_labels,
+                                                3)(structure_memoizer))
+
+    # The above cases with num_classes=0 should succeed.
+    with self.wrapped_session() as session:
+      actual = session.run(
+          subsettable_context._one_hot_labels(one_hot_labels,
+                                              2)(structure_memoizer))
+    self.assertAllClose(one_hot_labels, actual, rtol=0, atol=1e-6)
+
+    # Converting from index sets should succeed.
+    with self.wrapped_session() as session:
+      actual = session.run(
+          subsettable_context._one_hot_labels(index_labels,
+                                              4)(structure_memoizer))
+    self.assertAllClose(index_one_hot_labels, actual, rtol=0, atol=1e-6)
+
 
 if __name__ == "__main__":
   tf.test.main()

@@ -82,6 +82,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numbers
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
@@ -105,35 +106,60 @@ class _RawContext(helpers.RateObject):
   """
 
   def __init__(self, penalty_predictions, penalty_labels, penalty_weights,
-               constraint_predictions, constraint_labels, constraint_weights):
+               constraint_predictions, constraint_labels, constraint_weights,
+               num_classes):
     """Creates a new `_RawContext`.
 
     Args:
-      penalty_predictions: rank-1 floating-point `DeferredTensor`, for which the
-        ith element is the output of the model on the ith training example, for
-        the training dataset associated with the penalties.
-      penalty_labels: optional rank-1 `DeferredTensor`, for which the ith
-        element is the label of the ith training example, for the training
-        dataset associated with the penalties.
+      penalty_predictions: floating-point `DeferredTensor`. For a binary
+        classification problem, this will be rank-1, for which the ith element
+        is the output of the model on the ith training example. For a multiclass
+        problem, this will be rank-2, for which the i,jth element is the output
+        of the model on the ith training example, for the jth class. In either
+        case, these predictions should be for the training dataset associated
+        with the penalties.
+      penalty_labels: optional `DeferredTensor`. For a binary classification
+        problem, this will be rank-1, for which the ith element is the label of
+        the ith training example. For a multiclass problem, this will be rank-2,
+        for which the i,jth element is the probability that the ith training
+        example belongs to the jth class. In either case, these labels should be
+        for the training dataset associated with the penalties.
       penalty_weights: rank-1 floating-point `DeferredTensor`, for which the ith
-        element is the weight of the ith training example, for the training
+        element is the weight of the ith training example, on the training
         dataset associated with the penalties.
-      constraint_predictions: rank-1 floating-point `DeferredTensor`, for which
-        the ith element is the output of the model on the ith training example,
+      constraint_predictions: floating-point `DeferredTensor`. For a binary
+        classification problem, this will be rank-1, for which the ith element
+        is the output of the model on the ith training example. For a multiclass
+        problem, this will be rank-2, for which the i,jth element is the output
+        of the model on the ith training example, for the jth class. In either
+        case, these predictions should be for the training dataset associated
+        with the constraints.
+      constraint_labels: optional `DeferredTensor`. For a binary classification
+        problem, this will be rank-1, for which the ith element is the label of
+        the ith training example. For a multiclass problem, this will be rank-2,
+        for which the i,jth element is the probability that the ith training
+        example belongs to the jth class. In either case, these labels should be
         for the training dataset associated with the constraints.
-      constraint_labels: optional rank-1 `DeferredTensor`, for which the ith
-        element is the label of the ith training example, for the training
-        dataset associated with the constraints.
       constraint_weights: rank-1 floating-point `DeferredTensor`, for which the
-        ith element is the weight of the ith training example, for the training
+        ith element is the weight of the ith training example, on the training
         dataset associated with the constraints.
+      num_classes: int or None, the number of classes of a multiclass context,
+        or None if this isn't a multiclass context.
     """
+    if num_classes is not None:
+      if not isinstance(num_classes, numbers.Integral):
+        raise TypeError("multiclass problems must have an integer number of "
+                        "classes")
+      if num_classes < 2:
+        raise ValueError("multiclass problems must have at least two classes")
+
     self._penalty_predictions = penalty_predictions
     self._penalty_labels = penalty_labels
     self._penalty_weights = penalty_weights
     self._constraint_predictions = constraint_predictions
     self._constraint_labels = constraint_labels
     self._constraint_weights = constraint_weights
+    self._num_classes = num_classes
 
   def __eq__(self, other):
     """Returns True if two `_RawContext`s are equal."""
@@ -141,7 +167,8 @@ class _RawContext(helpers.RateObject):
       return False
     attr_names = [
         "penalty_predictions", "penalty_labels", "penalty_weights",
-        "constraint_predictions", "constraint_labels", "constraint_weights"
+        "constraint_predictions", "constraint_labels", "constraint_weights",
+        "num_classes"
     ]
     return all(
         getattr(self, attr_name) == getattr(other, attr_name)
@@ -196,6 +223,11 @@ class _RawContext(helpers.RateObject):
     """Returns the weights `DeferredTensor` for the constraints."""
     return self._constraint_weights
 
+  @property
+  def num_classes(self):
+    """Returns the number of classes, or None if a non-multiclass context."""
+    return self._num_classes
+
   def _transform_predictions(self, transformation):
     """Returns a new `_RawContext` with transformed predictions.
 
@@ -216,7 +248,8 @@ class _RawContext(helpers.RateObject):
       constraint_predictions = transformation(self._constraint_predictions)
     return _RawContext(penalty_predictions, self._penalty_labels,
                        self._penalty_weights, constraint_predictions,
-                       self._constraint_labels, self._constraint_weights)
+                       self._constraint_labels, self._constraint_weights,
+                       self._num_classes)
 
 
 class SubsettableContext(helpers.RateObject):
@@ -480,26 +513,80 @@ class SubsettableContext(helpers.RateObject):
         constraint_predicate=constraint_predicate)
 
 
-def rate_context(predictions, labels=None, weights=1.0):
-  """Creates a new context.
+def _one_hot_labels(labels, num_classes):
+  """Converts the given labels to a "one-hot" format.
+
+  Internally, for multiclass problems, the labels have shape (num_examples,
+  num_classes), with each element being interpreted as the probability that the
+  given example is labeled as belonging to the given class. We call this the
+  "one-hot" format.
+
+  While we accept input labels in the above format, we *also* accept
+  one-dimensional labels with num_examples elements, where each element is the
+  index (in {0, 1, 2, ..., num_classes-1}) of the class to which the
+  corresponding example belongs.
+
+  This function converts the latter format to the former, if necessary, and
+  otherwise checks that the labels have the correct shape.
 
   Args:
-    predictions: rank-1 floating-point `Tensor`, for which the ith element is
-      the output of the model on the ith training example.
-    labels: optional rank-1 `Tensor`, for which the ith element is the label of
-      the ith training example.
-    weights: optional rank-1 floating-point `Tensor`, for which the ith element
-      is the weight of the ith training example. If not specified, the weights
-      default to being all-one.
+    labels: `DeferredTensor` of labels, in either of the two formats described
+      above.
+    num_classes: int, the number of classes.
 
   Returns:
-    `SubsettableContext` representing the given predictions, labels and weights.
+    Equivalent `DeferredTensor` of labels in the "one-hot" format described
+    above.
 
   Raises:
-    ValueError: if we're in eager mode, but predictions is not callable.
-    TypeError: if any arguments are internal rate library objects, instead of
-      `Tensor`s or scalars.
+    ValueError: if num_classes is less than two, or if the labels `Tensor` has
+      unknown rank, an unknown number of columns, or the wrong number of columns
+      (not num_classes).
   """
+  if num_classes < 2:
+    raise ValueError("multiclass problems must have at least two classes")
+
+  def one_hot_labels_fn(labels_value):
+    """Converts and returns a one-hot version of the given labels."""
+    labels_value = tf.convert_to_tensor(labels_value, name="labels")
+
+    dims = labels_value.shape.dims
+    if dims is None:
+      raise ValueError("labels Tensor must have a known rank")
+    if len(dims) == 1:
+      # If the labels are rank-1, then they're class indices in {0, 1, ...,
+      # num_classes - 1}. Convert them to the equivalent one-hot labels.
+      #
+      # FUTURE WORK: we might want to check that the given labels_value has an
+      # integral type, and raise our own error message, since tf.one_hot()'s
+      # isn't too descriptive.
+      labels_value = tf.one_hot(
+          labels_value,
+          num_classes,
+          on_value=True,
+          off_value=False,
+          dtype=tf.bool)
+    elif len(dims) == 2:
+      # If the labels are already one-hot (or represent distributions), then
+      # just check that they're the correct shape.
+      num_columns = dims[1].value
+      if num_columns is None:
+        raise ValueError("labels Tensor must have a known number of columns")
+      if num_columns != num_classes:
+        raise ValueError("labels Tensor is expected to have %d columns (it "
+                         "has %d)" % (num_classes, num_columns))
+    else:
+      raise ValueError("labels Tensor must be rank 1 or 2 (it is rank %d)" %
+                       len(dims))
+
+    return labels_value
+
+  return deferred_tensor.DeferredTensor.apply(one_hot_labels_fn, labels)
+
+
+def _rate_context_helper(predictions, labels, weights, num_classes):
+  """Helper for rate_context() and multiclass_rate_context()."""
+
   # Ideally, we'd check that these objects are Tensors, or are types that can be
   # converted to Tensors. Unfortunately, this includes a lot of possible types,
   # so the easiest solution would be to actually perform the conversion, and
@@ -519,27 +606,34 @@ def rate_context(predictions, labels=None, weights=1.0):
 
   if tf.executing_eagerly():
     if not callable(predictions):
-      raise ValueError("in eager mode, the predictions provided to a context "
-                       "must be a nullary function returning a Tensor (to fix "
-                       "this, consider wrapping it in a lambda)")
+      raise TypeError("in eager mode, the predictions provided to a context "
+                      "must be a nullary function returning a Tensor (to fix "
+                      "this, consider wrapping it in a lambda)")
     # Unlike the predictions, which *must* be callable, we allow non-Tensor
     # constants (e.g. python scalars or numpy arrays) for the labels and
     # weights. However, they cannot be ordinary Tensors.
     if tf.is_tensor(labels):
-      raise ValueError("in eager mode, the labels provided to a context must "
-                       "either be a constant, or a nullary function returning "
-                       "a Tensor: it cannot be a plain Tensor (to fix this, "
-                       "consider wrapping it in a lambda)")
+      raise TypeError("in eager mode, the labels provided to a context must "
+                      "either be a constant, or a nullary function returning "
+                      "a Tensor: it cannot be a plain Tensor (to fix this, "
+                      "consider wrapping it in a lambda)")
     if tf.is_tensor(weights):
-      raise ValueError("in eager mode, the weights provided to a context must "
-                       "either be a constant, or a nullary function returning "
-                       "a Tensor: it cannot be a plain Tensor (to fix this, "
-                       "consider wrapping it in a lambda)")
+      raise TypeError("in eager mode, the weights provided to a context must "
+                      "either be a constant, or a nullary function returning "
+                      "a Tensor: it cannot be a plain Tensor (to fix this, "
+                      "consider wrapping it in a lambda)")
 
   predictions = deferred_tensor.ExplicitDeferredTensor(predictions)
   if labels is not None:
     labels = deferred_tensor.ExplicitDeferredTensor(labels)
   weights = deferred_tensor.ExplicitDeferredTensor(weights)
+
+  if num_classes is not None and labels is not None:
+    # Internally, for multiclass problems, the labels have shape (num_examples,
+    # num_classes), with each element being interpreted as the probability that
+    # the given example is labeled as belonging to the given class. The
+    # _one_hot_labels() function converts to this format.
+    labels = _one_hot_labels(labels, num_classes)
 
   raw_context = _RawContext(
       penalty_predictions=predictions,
@@ -547,99 +641,121 @@ def rate_context(predictions, labels=None, weights=1.0):
       penalty_weights=weights,
       constraint_predictions=predictions,
       constraint_labels=labels,
-      constraint_weights=weights)
+      constraint_weights=weights,
+      num_classes=num_classes)
   true_predicate = predicate.Predicate(True)
   return SubsettableContext(raw_context, true_predicate, true_predicate)
 
 
-def split_rate_context(penalty_predictions,
-                       constraint_predictions,
-                       penalty_labels=None,
-                       constraint_labels=None,
-                       penalty_weights=1.0,
-                       constraint_weights=1.0):
-  """Creates a new split context.
+def rate_context(predictions, labels=None, weights=1.0):
+  """Creates a new binary classification context.
 
-  A "split context", unlike a normal context, has separate predictions, labels,
-  weights and subset for the "penalty" and "constraint" portions of the problem.
-  This is an advanced option, and is not needed in most circumstances.
+  For multiclass problems, use multiclass_rate_context() instead.
 
   Args:
-    penalty_predictions: rank-1 floating-point `Tensor`, for which the ith
-      element is the output of the model on the ith training example, for the
-      training dataset associated with the penalties.
-    constraint_predictions: rank-1 floating-point `Tensor`, for which the ith
-      element is the output of the model on the ith training example, for the
-      training dataset associated with the constraints.
-    penalty_labels: optional rank-1 `Tensor`, for which the ith element is the
-      label of the ith training example, for the training dataset associated
-      with the penalties.
-    constraint_labels: optional rank-1 `Tensor`, for which the ith element is
-      the label of the ith training example, for the training dataset associated
-      with the constraints.
-    penalty_weights: optional rank-1 floating-point `Tensor`, for which the ith
-      element is the weight of the ith training example, for the training
-      dataset associated with the penalties. If not specified, the weights
-      default to being all-one.
-    constraint_weights: optional rank-1 floating-point `Tensor`, for which the
-      ith element is the weight of the ith training example, for the training
-      dataset associated with the constraints. If not specified, the weights
+    predictions: rank-1 floating-point `Tensor`, for which the ith element is
+      the output of the model on the ith training example.
+    labels: optional rank-1 `Tensor`, for which the ith element is the label of
+      the ith training example.
+    weights: optional rank-1 floating-point `Tensor`, for which the ith element
+      is the weight of the ith training example. If not specified, the weights
       default to being all-one.
 
   Returns:
     `SubsettableContext` representing the given predictions, labels and weights.
 
   Raises:
-    ValueError: if we're in eager mode, but either penalty_predictions or
-      constraint_predictions is not callable.
-    TypeError: if any arguments are internal rate library objects, instead of
-      `Tensor`s or scalars.
+    TypeError: if we're in eager mode, but any of predictions, labels or weights
+      are not callable, *or* if any arguments are internal rate library objects,
+      instead of `Tensor`s or scalars.
   """
-  # See comment in rate_context.
+  return _rate_context_helper(
+      predictions=predictions, labels=labels, weights=weights, num_classes=None)
+
+
+def multiclass_rate_context(num_classes, predictions, labels=None, weights=1.0):
+  """Creates a new binary classification context.
+
+  For binary classification problems, use split_rate_context() instead.
+
+  Args:
+    num_classes: int, the number of classes.
+    predictions: rank-2 floating-point `Tensor`, for which the i,jth element is
+      the output of the model on the ith training example, for the jth class.
+    labels: optional rank-1 `Tensor`, for which the ith element is the label of
+      the ith training example, *or* a rank-2 `Tensor`, for which the i,jth
+      element is the probability that the ith training example belongs to the
+      jth class.
+    weights: optional rank-1 floating-point `Tensor`, for which the ith element
+      is the weight of the ith training example. If not specified, the weights
+      default to being all-one.
+
+  Returns:
+    `SubsettableContext` representing the given predictions, labels and weights.
+
+  Raises:
+    ValueError: if labels isn't structured correctly.
+    TypeError: if we're in eager mode, but any of predictions, labels or weights
+      are not callable, *or* if any arguments are internal rate library objects,
+      instead of `Tensor`s or scalars.
+  """
+  return _rate_context_helper(
+      predictions=predictions,
+      labels=labels,
+      weights=weights,
+      num_classes=num_classes)
+
+
+def _split_rate_context_helper(penalty_predictions, constraint_predictions,
+                               penalty_labels, constraint_labels,
+                               penalty_weights, constraint_weights,
+                               num_classes):
+  """Helper for split_rate_context() and multiclass_split_rate_context()."""
+
+  # See comment in _rate_context_helper.
   if isinstance(penalty_predictions, helpers.RateObject):
-    raise TypeError(
-        "penalty_predictions parameter to split_rate_context() "
-        "should be a Tensor-like object, or a nullary function returning such")
+    raise TypeError("penalty_predictions parameter to split_rate_context() "
+                    "should be a Tensor-like object, or a nullary function "
+                    "returning such")
   if isinstance(constraint_predictions, helpers.RateObject):
-    raise TypeError(
-        "constraint_predictions parameter to "
-        "split_rate_context() should be a Tensor-like object, or a nullary "
-        "function returning such")
+    raise TypeError("constraint_predictions parameter to split_rate_context() "
+                    "should be a Tensor-like object, or a nullary function "
+                    "returning such")
   if isinstance(penalty_labels, helpers.RateObject):
-    raise TypeError(
-        "penalty_labels parameter to split_rate_context() should "
-        "be a Tensor-like object, or a nullary function returning such")
+    raise TypeError("penalty_labels parameter to split_rate_context() should "
+                    "be a Tensor-like object, or a nullary function returning "
+                    "such")
   if isinstance(constraint_labels, helpers.RateObject):
-    raise TypeError(
-        "constraint_labels parameter to split_rate_context() "
-        "should be a Tensor-like object, or a nullary function returning such")
+    raise TypeError("constraint_labels parameter to split_rate_context() "
+                    "should be a Tensor-like object, or a nullary function "
+                    "returning such")
   if isinstance(penalty_weights, helpers.RateObject):
-    raise TypeError(
-        "penalty_weights parameter to split_rate_context() "
-        "should be a Tensor-like object, or a nullary function returning such")
+    raise TypeError("penalty_weights parameter to split_rate_context() should "
+                    "be a Tensor-like object, or a nullary function returning "
+                    "such")
   if isinstance(constraint_weights, helpers.RateObject):
-    raise TypeError(
-        "constraint_weights parameter to split_rate_context() "
-        "should be a Tensor-like object, or a nullary function returning such")
+    raise TypeError("constraint_weights parameter to split_rate_context() "
+                    "should be a Tensor-like object, or a nullary function "
+                    "returning such")
 
   if tf.executing_eagerly():
     if not (callable(penalty_predictions) and callable(constraint_predictions)):
-      raise ValueError("in eager mode, the predictions provided to a context "
-                       "must be a nullary function returning a Tensor (to fix "
-                       "this, consider wrapping it in a lambda)")
+      raise TypeError("in eager mode, the predictions provided to a context "
+                      "must be a nullary function returning a Tensor (to fix "
+                      "this, consider wrapping it in a lambda)")
     # Unlike the predictions, which *must* be callable, we allow non-Tensor
     # constants (e.g. python scalars or numpy arrays) for the labels and
     # weights. However, they cannot be ordinary Tensors.
     if tf.is_tensor(penalty_labels) or tf.is_tensor(constraint_labels):
-      raise ValueError("in eager mode, the labels provided to a context must "
-                       "either be a constant, or a nullary function returning "
-                       "a Tensor: it cannot be a plain Tensor (to fix this, "
-                       "consider wrapping it in a lambda)")
+      raise TypeError("in eager mode, the labels provided to a context must "
+                      "either be a constant, or a nullary function returning "
+                      "a Tensor: it cannot be a plain Tensor (to fix this, "
+                      "consider wrapping it in a lambda)")
     if tf.is_tensor(penalty_weights) or tf.is_tensor(constraint_weights):
-      raise ValueError("in eager mode, the weights provided to a context must "
-                       "either be a constant, or a nullary function returning "
-                       "a Tensor: it cannot be a plain Tensor (to fix this, "
-                       "consider wrapping it in a lambda)")
+      raise TypeError("in eager mode, the weights provided to a context must "
+                      "either be a constant, or a nullary function returning "
+                      "a Tensor: it cannot be a plain Tensor (to fix this, "
+                      "consider wrapping it in a lambda)")
 
   penalty_predictions = deferred_tensor.ExplicitDeferredTensor(
       penalty_predictions)
@@ -655,12 +771,141 @@ def split_rate_context(penalty_predictions,
   constraint_weights = deferred_tensor.ExplicitDeferredTensor(
       constraint_weights)
 
+  if num_classes is not None:
+    # Internally, for multiclass problems, the labels have shape (num_examples,
+    # num_classes), with each element being interpreted as the probability that
+    # the given example is labeled as belonging to the given class. The
+    # _one_hot_labels() function converts to this format.
+    if penalty_labels is not None:
+      penalty_labels = _one_hot_labels(penalty_labels, num_classes)
+    if constraint_labels is not None:
+      constraint_labels = _one_hot_labels(constraint_labels, num_classes)
+
   raw_context = _RawContext(
       penalty_predictions=penalty_predictions,
       penalty_labels=penalty_labels,
       penalty_weights=penalty_weights,
       constraint_predictions=constraint_predictions,
       constraint_labels=constraint_labels,
-      constraint_weights=constraint_weights)
+      constraint_weights=constraint_weights,
+      num_classes=num_classes)
   true_predicate = predicate.Predicate(True)
   return SubsettableContext(raw_context, true_predicate, true_predicate)
+
+
+def split_rate_context(penalty_predictions,
+                       constraint_predictions,
+                       penalty_labels=None,
+                       constraint_labels=None,
+                       penalty_weights=1.0,
+                       constraint_weights=1.0):
+  """Creates a new split binary classification context.
+
+  A "split context", unlike a normal context, has separate predictions, labels,
+  weights and subset for the "penalty" and "constraint" portions of the problem.
+  This is an advanced option, and is not needed in most circumstances.
+
+  For multiclass problems, use multiclass_split_rate_context() instead.
+
+  Args:
+    penalty_predictions: rank-1 floating-point `Tensor`, for which the ith
+      element is the output of the model on the ith training example, on the
+      training dataset associated with the penalties.
+    constraint_predictions: rank-1 floating-point `Tensor`, for which the ith
+      element is the output of the model on the ith training example, on the
+      training dataset associated with the constraints.
+    penalty_labels: optional rank-1 `Tensor`, for which the ith element is the
+      label of the ith training example, on the training dataset associated with
+      the penalties.
+    constraint_labels: optional rank-1 `Tensor`, for which the ith element is
+      the label of the ith training example, on the training dataset associated
+      with the constraints.
+    penalty_weights: optional rank-1 floating-point `Tensor`, for which the ith
+      element is the weight of the ith training example, on the training dataset
+      associated with the penalties. If not specified, the weights default to
+      being all-one.
+    constraint_weights: optional rank-1 floating-point `Tensor`, for which the
+      ith element is the weight of the ith training example, on the training
+      dataset associated with the constraints. If not specified, the weights
+      default to being all-one.
+
+  Returns:
+    `SubsettableContext` representing the given predictions, labels and weights.
+
+  Raises:
+    TypeError: if we're in eager mode, but any of penalty_predictions,
+      constraint_predictions, penalty_labels, constraint_labels, penalty_weights
+      or constraint_weights are not callable, *or* if any arguments are internal
+      rate library objects, instead of `Tensor`s or scalars.
+  """
+  return _split_rate_context_helper(
+      penalty_predictions=penalty_predictions,
+      constraint_predictions=constraint_predictions,
+      penalty_labels=penalty_labels,
+      constraint_labels=constraint_labels,
+      penalty_weights=penalty_weights,
+      constraint_weights=constraint_weights,
+      num_classes=None)
+
+
+def multiclass_split_rate_context(num_classes,
+                                  penalty_predictions,
+                                  constraint_predictions,
+                                  penalty_labels=None,
+                                  constraint_labels=None,
+                                  penalty_weights=1.0,
+                                  constraint_weights=1.0):
+  """Creates a new split multiclass context.
+
+  A "split context", unlike a normal context, has separate predictions, labels,
+  weights and subset for the "penalty" and "constraint" portions of the problem.
+  This is an advanced option, and is not needed in most circumstances.
+
+  For binary classification problems, use split_rate_context() instead.
+
+  Args:
+    num_classes: int, the number of classes.
+    penalty_predictions: rank-2 floating-point `Tensor`, for which the i,jth
+      element is the output of the model on the ith training example, for the
+      jth class, on the training dataset associated with the penalties.
+    constraint_predictions: rank-2 floating-point `Tensor`, for which the i,jth
+      element is the output of the model on the ith training example, for the
+      jth class, on the training dataset associated with the constraints.
+    penalty_labels: optional rank-1 `Tensor`, for which the ith element is the
+      label of the ith training example, *or* a rank-2 `Tensor`, for which the
+      i,jth element is the probability that the ith training example belongs to
+      the jth class. In either case, these labels should be for the training
+      dataset associated with the penalties.
+    constraint_labels: optional rank-1 `Tensor`, for which the ith element is
+      the label of the ith training example, *or* a rank-2 `Tensor`, for which
+      the i,jth element is the probability that the ith training example belongs
+      to the jth class. In either case, these labels should be for the training
+      dataset associated with the constraints.
+    penalty_weights: optional rank-1 floating-point `Tensor`, for which the ith
+      element is the weight of the ith training example, on the training dataset
+      associated with the penalties. If not specified, the weights default to
+      being all-one.
+    constraint_weights: optional rank-1 floating-point `Tensor`, for which the
+      ith element is the weight of the ith training example, on the training
+      dataset associated with the constraints. If not specified, the weights
+      default to being all-one.
+
+  Returns:
+    `SubsettableContext` representing the given predictions, labels and weights.
+
+  Raises:
+    ValueError: if penalty_labels or constraint_labels isn't structured
+      correctly.
+    TypeError: if we're in eager mode, but any of penalty_predictions,
+      constraint_predictions, penalty_labels, constraint_labels, penalty_weights
+      or constraint_weights are not callable, *or* if any arguments are internal
+      rate library objects, instead of `Tensor`s or scalars.
+  """
+  return _split_rate_context_helper(
+      penalty_predictions=penalty_predictions,
+      constraint_predictions=constraint_predictions,
+      penalty_labels=penalty_labels,
+      constraint_labels=constraint_labels,
+      penalty_weights=penalty_weights,
+      constraint_weights=constraint_weights,
+      num_classes=num_classes)
