@@ -1019,3 +1019,330 @@ class BinaryClassificationTerm(Term):
     return deferred_tensor.DeferredTensor.apply(average_loss_fn,
                                                 self._predictions,
                                                 ratio_weights)
+
+
+class MulticlassTerm(Term):
+  """`Term` object representing a multiclass classification rate.
+
+  This class represents a rate (and linear combinations of "compatible" rates,
+  which will be discussed later). Every rate is represented in terms of
+  prediction rates (i.e. how often the classifier predicts class j) on a subset
+  of the dataset:
+    pr[j] = (mean_i weights[i] 1{i in numerator_subset} *
+             1{predictions[i, j] > predictions[i, k] forall k != j})
+         / (mean_i weights[i] 1{i in denominator_subset})
+  Here, pr[j] is the prediction rate of class j, i.e. the (weighted) proportion
+  of "numerator" elements on which we predict class j, divided by the (weighted)
+  proportion of denominator elements.  The overall rate is a linear combination
+  of these prediction rates (the coefficients are a constructor parameter):
+    rate = sum_j coefficient[j] * pr[j]
+  We actually represent the above expression a bit differently, internally,
+  using a `_RatioWeights` object:
+    term[j] = coefficient[j] * pr[j]
+        = (mean_i ratio_weights[i, j] *
+           1{predictions[i, j] > predictions[i, k] forall k != j})
+    rate = sum_j term[j]
+  where:
+    ratio_weights[i, j] = coefficient[j] * weights[i] * 1{i in numerator_subset}
+        / (mean_k weights[k] 1{k in denominator_subset})
+  A `MulticlassTerm` contains a `_RatioWeights` object with one column for every
+  class (i.e. every possible j, above). When constructed using the "ratio"
+  method, the columns of this object will be exactly the "ratio_weights" weights
+  defined above (things get more complicated, however, once we take linear
+  combinations of `MulticlassTerm`s into account).
+
+  In addition to the predictions and weights discussed above, a `MulticlassTerm`
+  also has an associated loss object (of type `MulticlassLoss`), which is used
+  to approximate the positive and negative prediction indicators. For example,
+  if we're using the hinge loss, then instead of defining ppr and npr in terms
+  of "1{predictions[i, j] > predictions[i, k] forall k != j}", a hinge
+  approximation to these indicators will be used instead.
+
+  Several arithmetic operations are overloaded: scalar multiplication, scalar
+  division, and negation of `MulticlassTerm`s yields new `MulticlassTerm`s on
+  which the specified operation has been performed. Binary operations (addition
+  and subtraction) are more complicated: they can *only* be applied to
+  "compatible" objects, i.e. the objects to be added or subtracted must both be
+  `MulticlassTerm`s, both have the same set of predictions, and both use the
+  same loss function. If these conditions are satisfied, then the
+  `MulticlassTerm`s can be added or subtracted by simply adding or subtracting
+  the contained `_RatioWeights` objects.
+
+  This "compatibility" condition is checked using the "key" method. If two
+  `Term`s have the same keys, then they may be combined using a binary
+  arithmetic operation. This is used by the `BasicExpression` object, which
+  represents arbitrary linear combinations of `Term`s, to identify compatible
+  `Term`s by storing its `Term`s in a dictionary, with its keys taken from the
+  "key" method.
+
+  The benefit of combining compatible terms is that, when using a relaxed loss
+  (e.g. a hinge) it enables us to use a tighter approximation to the true
+  (zero-one based) rate, since we're only performing the loss approximation
+  *once*, after we've simplified as much as possible, instead of performing a
+  separate approximation for each component rate.
+  """
+
+  def __init__(self, predictions, ratio_weights, loss):
+    """Creates a new `MulticlassTerm`.
+
+    As explained in the class docstring, a `MulticlassTerm` represents a "rate"
+    approximating:
+      term[j] = coefficient[j] * pr[j]
+          = (mean_i ratio_weights[i, j] *
+             1{predictions[i, j] > predictions[i, k] forall k != j})
+      rate = sum_j term[j]
+    where "ratio_weights" is a parameter to this constructor, with one column j
+    per class, and the "loss" parameter defines how to approximate the
+    indicators "1{predictions[i] > 0}" and "1{predictions[i] < 0}".
+
+    Args:
+      predictions: `DeferredTensor` of shape (n,), where n is the number of
+        examples.
+      ratio_weights: `_RatioWeights` object with one column per class,
+        representing the per-example weights associated with predictions of this
+        class.
+      loss: `MulticlassLoss`, the loss function to use.
+
+    Raises:
+      TypeError: if predictions or ratio_weights has the wrong type.
+    """
+    if not isinstance(predictions, deferred_tensor.DeferredTensor):
+      raise TypeError("predictions must be a DeferredTensor object")
+    if not isinstance(ratio_weights, _RatioWeights):
+      raise TypeError("ratio_weights must be a _RatioWeights object")
+
+    self._predictions = predictions
+    self._ratio_weights = ratio_weights
+    self._loss = loss
+
+  @classmethod
+  def ratio(cls, coefficients, predictions, weights, numerator_predicate,
+            denominator_predicate, loss):
+    """Creates a new `MulticlassTerm` representing a rate.
+
+    This method is used to create a single rate using the given loss on the
+    given predictions, for which "numerator_predicate" indicates which examples
+    should be included in the numerator of the ratio, and
+    "denominator_predicate" which should be included in the denominator.
+
+    The result of this method represents the "rate":
+      ppr = (mean_i weights[i] 1{i in numerator_subset} ploss(predictions[i]))
+          / (mean_i weights[i] 1{i in denominator_subset})
+      npr = (mean_i weights[i] 1{i in numerator_subset} nloss(predictions[i]))
+          / (mean_i weights[i] 1{i in denominator_subset})
+      rate = positive_coefficient * ppr + negative_coefficient * npr
+      pr[j] = (mean_i weights[i] 1{i in numerator_subset} *
+               lossj(predictions[i, :]))
+           / (mean_i weights[i] 1{i in denominator_subset})
+      rate = sum_j coefficient[j] * pr[j]
+    where "lossj(predictions[i, :])" represents an approximation to the
+    indicator "1{predictions[i, j] > predictions[i, k] forall k != j}".  The
+    particular approximation used depends on the "loss" parameter to this
+    method.
+
+    Args:
+      coefficients: collection of floats, one per class, containing the amount
+        of weight to place on the predictions of this class.
+      predictions: `DeferredTensor` of shape (n,k), where n is the number of
+        examples and k is the number of classes.
+      weights: `DeferredTensor` of example weights, with shape (m,), where m is
+        broadcastable to n.
+      numerator_predicate: `Predicate` object representing whether each example
+        should be included in the ratio's numerator.
+      denominator_predicate: `Predicate` object representing whether each
+        example should be included in the ratio's denominator.
+      loss: `MulticlassLoss`, the loss function to use.
+
+    Returns:
+      A new `MulticlassTerm` representing the rate.
+
+    Raises:
+      TypeError: if any of predictions, weights, numerator_predicate, or
+        denominator_predicate has the wrong type.
+    """
+    if not (isinstance(predictions, deferred_tensor.DeferredTensor) and
+            isinstance(weights, deferred_tensor.DeferredTensor)):
+      raise TypeError("predictions and weights must be DeferredTensor objects")
+    if not (isinstance(numerator_predicate, predicate.Predicate) and
+            isinstance(denominator_predicate, predicate.Predicate)):
+      raise TypeError("numerator_predicate and denominator_predictate must "
+                      "be Predicate objects")
+
+    ratio_weights = _RatioWeights.ratio(weights, coefficients,
+                                        numerator_predicate,
+                                        denominator_predicate)
+
+    return MulticlassTerm(predictions, ratio_weights, loss)
+
+  @property
+  def predictions(self):
+    """Returns the predictions `DeferredTensor`.
+
+    Every `MulticlassTerm` consists of three main parts: the predictions (i.e.
+    the model outputs) on which the term is calculated, the per-example weights
+    associated with predictions (a `_RatioWeights` object), and the loss
+    function to use to approximate the rate(s). This method returns the
+    predictions.
+
+    Returns:
+      `DeferredTensor` of per-example predictions with shape (n,k), where n is
+      the number of examples and k is the number of classes.
+    """
+    return self._predictions
+
+  @property
+  def ratio_weights(self):
+    """Returns the ratio weights.
+
+    Every `MulticlassTerm` consists of three main parts: the predictions (i.e.
+    the model outputs) on which the term is calculated, the per-example weights
+    associated with predictions (a `_RatioWeights` object), and the loss
+    function to use to approximate the rate(s). This method returns the
+    `_RatioWeights` object associated with the per-example weights.
+
+    Returns:
+      `_RatioWeights` object representing the weights on predictions, containing
+      one column per class.
+    """
+    return self._ratio_weights
+
+  @property
+  def loss(self):
+    """Returns the loss.
+
+    Every `MulticlassTerm` consists of three main parts: the predictions (i.e.
+    the model outputs) on which the term is calculated, the per-example weights
+    associated with predictions (a `_RatioWeights` object), and the loss
+    function to use to approximate the rate(s). This method returns the loss.
+
+    Returns:
+      `MulticlassLoss` object associated with this `MulticlassTerm`.
+    """
+    return self._loss
+
+  @property
+  def is_differentiable(self):
+    """Returns true only if the loss is {sub,super}differentiable.
+
+    This property is used to check that non-differentiable losses (e.g. the
+    zero-one loss) aren't used in contexts in which we will try to optimize over
+    them. Non-differentiable losses, however, can be *evaluated* safely.
+
+    Returns:
+      True if this `MulticlassTerm`'s loss is {sub,super}differentiable. False
+      otherwise.
+    """
+    return self._loss.is_differentiable
+
+  @property
+  def key(self):
+    """A key used to determine whether different `Term`s are compatible.
+
+    The result of this function is used to determine whether two `Term`s are
+    compatible: `Term`s with the same key can be added and subtracted, and those
+    with different keys cannot. Each key can therefore be identified with a set
+    of `Term`s that can be added and subtracted to/from each other.
+
+    `MulticlassTerm`s are compatible iff they have the same predictions and
+    loss--they may, however, have different sets of weights. Hence, the key
+    returned by this method contains the predictions and loss, in addition to
+    the type (`MulticlassTerm`). We also include the number of classes as an
+    extra safety check (although it's redundant with the predictions).
+
+    Returns:
+      A 4-tuple, containing the `MulticlassTerm` type, predictions
+      `DeferredTensor`, number of classes, and the loss `MulticlassLoss`.
+    """
+    return (MulticlassTerm, self._predictions, self._ratio_weights.num_columns,
+            self._loss)
+
+  # The Term base class overloads __rmul__, which will fall-back to this
+  # function.
+  def __mul__(self, scalar):
+    """Returns the result of multiplying by a scalar."""
+    if not isinstance(scalar, numbers.Number):
+      raise TypeError("Term objects only support *scalar* multiplication")
+
+    return MulticlassTerm(self._predictions, self._ratio_weights * scalar,
+                          self._loss)
+
+  def __truediv__(self, scalar):
+    """Returns the result of dividing by a scalar."""
+    if not isinstance(scalar, numbers.Number):
+      raise TypeError("Term objects only support *scalar* division")
+
+    return MulticlassTerm(self._predictions, self._ratio_weights / scalar,
+                          self._loss)
+
+  # __rtruediv__ is not implemented since we only allow *scalar* division, i.e.
+  # (Term / scalar) is allowed, but (scalar / Term) is not.
+
+  def __neg__(self):
+    """Returns the result of negating this `MulticlassTerm`."""
+    return MulticlassTerm(self._predictions, -self._ratio_weights, self._loss)
+
+  def __add__(self, other):
+    """Returns the result of adding two `MulticlassTerm`s.
+
+    Args:
+      other: `MulticlassTerm` with the same key as self.
+
+    Returns:
+      A new `MulticlassTerm` representing the sum of self and other.
+
+    Raises:
+      ValueError: if self and other are not compatible, i.e. if they have
+        different keys.
+    """
+    if self.key != other.key:
+      raise ValueError("Terms can only be added if they have the same key")
+
+    return MulticlassTerm(self._predictions,
+                          self._ratio_weights + other.ratio_weights, self._loss)
+
+  def __sub__(self, other):
+    """Returns the result of subtracting two `MulticlassTerm`s.
+
+    Args:
+      other: `MulticlassTerm` with the same key as self.
+
+    Returns:
+      A new `MulticlassTerm` representing the difference of self and
+      other.
+
+    Raises:
+      ValueError: if self and other are not compatible, i.e. if they have
+        different keys.
+    """
+    if self.key != other.key:
+      raise ValueError("Terms can only be subtracted if they have the same key")
+
+    return MulticlassTerm(self._predictions,
+                          self._ratio_weights - other.ratio_weights, self._loss)
+
+  def evaluate(self, structure_memoizer):
+    """Computes and returns the value of this `MulticlassTerm`.
+
+    Args:
+      structure_memoizer: dict, which memoizes portions of the calculation to
+        simplify the resulting TensorFlow graph. It must contain the keys
+        "denominator_lower_bound" and "global_step", with the corresponding
+        values being the minimum allowed value of a rate denominator (a float),
+        and the current iterate (a non-negative integer, starting at zero),
+        respectively.
+
+    Returns:
+      A `DeferredTensor` containing the value of this `MulticlassTerm`.
+    """
+    # Evalaute the weights on the positive and negative approximate indicators.
+    ratio_weights = self._ratio_weights.evaluate(structure_memoizer)
+
+    def average_loss_fn(predictions_value, ratio_weights_value):
+      """Returns the average loss."""
+      losses = self._loss.evaluate_multiclass(predictions_value,
+                                              ratio_weights_value)
+      return tf.reduce_mean(losses)
+
+    return deferred_tensor.DeferredTensor.apply(average_loss_fn,
+                                                self._predictions,
+                                                ratio_weights)

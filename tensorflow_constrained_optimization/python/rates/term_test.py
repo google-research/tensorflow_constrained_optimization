@@ -396,6 +396,83 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       actual_term_value = session.run(actual_term(structure_memoizer))
       self.assertAllClose(expected_term, actual_term_value, rtol=0, atol=1e-6)
 
+  def test_multiclass_term(self):
+    """Tests `MulticlassTerm`."""
+    # This test is pretty much identical to test_binary_classification_term,
+    # except that instead of using a BinaryClassificationTerm, we use a
+    # MulticlassTerm with two classes.
+    structure_memoizer = {
+        defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
+        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+    }
+
+    def numpy_loss(positive_weights_array, negative_weights_array,
+                   predictions_array):
+      constant_weights = np.minimum(positive_weights_array,
+                                    negative_weights_array)
+      positive_weights = positive_weights_array - constant_weights
+      negative_weights = negative_weights_array - constant_weights
+      positive_losses = np.maximum(0.0, 1.0 + predictions_array)
+      negative_losses = np.maximum(0.0, 1.0 - predictions_array)
+      return np.mean(constant_weights + positive_weights * positive_losses +
+                     negative_weights * negative_losses)
+
+    def create_multiclass_term(predictions_tensor, positive_weights_tensor,
+                               negative_weights_tensor):
+      key = (1.0, predicate.Predicate(True))
+      value = deferred_tensor.ExplicitDeferredTensor(
+          tf.stack([positive_weights_tensor, negative_weights_tensor], axis=1))
+      ratio_weights = term._RatioWeights({key: value}, 2)
+      return term.MulticlassTerm(
+          deferred_tensor.ExplicitDeferredTensor(predictions_tensor),
+          ratio_weights, loss.HingeLoss())
+
+    # Use randomly constructed arrays of predictions and weights.
+    predictions_tensor = tf.constant(
+        np.stack([0.5 * self._predictions, -0.5 * self._predictions], axis=1),
+        dtype=tf.float32)
+    positive_weights_tensors = [
+        tf.constant(self._positive_weights[:, ii], dtype=tf.float32)
+        for ii in xrange(3)
+    ]
+    negative_weights_tensors = [
+        tf.constant(self._negative_weights[:, ii], dtype=tf.float32)
+        for ii in xrange(3)
+    ]
+
+    term_objects = []
+    for positive_weights_tensor, negative_weights_tensor in zip(
+        positive_weights_tensors, negative_weights_tensors):
+      term_object = create_multiclass_term(predictions_tensor,
+                                           positive_weights_tensor,
+                                           negative_weights_tensor)
+      term_objects.append(term_object)
+
+    # We only check one particular expression, but all operations are exercised.
+    term_object = (-term_objects[0] + 0.3 * term_objects[1] -
+                   term_objects[2] / 3.1 + term_objects[0] * 0.5)
+    expected_positive_weights = (-self._positive_weights[:, 0] +
+                                 0.3 * self._positive_weights[:, 1] -
+                                 self._positive_weights[:, 2] / 3.1 +
+                                 self._positive_weights[:, 0] * 0.5)
+    expected_negative_weights = (-self._negative_weights[:, 0] +
+                                 0.3 * self._negative_weights[:, 1] -
+                                 self._negative_weights[:, 2] / 3.1 +
+                                 self._negative_weights[:, 0] * 0.5)
+    expected_term = numpy_loss(expected_positive_weights,
+                               expected_negative_weights, self._predictions)
+
+    actual_term = term_object.evaluate(structure_memoizer)
+
+    # We need to explicitly create the variables before creating the wrapped
+    # session.
+    for variable in actual_term.variables:
+      variable.create(structure_memoizer)
+
+    with self.wrapped_session() as session:
+      actual_term_value = session.run(actual_term(structure_memoizer))
+      self.assertAllClose(expected_term, actual_term_value, rtol=0, atol=1e-6)
+
 
 if __name__ == "__main__":
   tf.test.main()
