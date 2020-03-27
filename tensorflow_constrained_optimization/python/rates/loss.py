@@ -30,6 +30,7 @@ from __future__ import print_function
 
 import abc
 import six
+from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import helpers
@@ -156,7 +157,74 @@ class BinaryClassificationLoss(Loss):
     """
 
 
-class ZeroOneLoss(BinaryClassificationLoss):
+@six.add_metaclass(abc.ABCMeta)
+class MulticlassLoss(BinaryClassificationLoss):
+  """Abstract class for multiclass losses."""
+
+  @abc.abstractproperty
+  def is_normalized(self):
+    pass
+
+  @abc.abstractmethod
+  def evaluate_multiclass(self, predictions, weights):
+    """Evaluates a multiclass loss on the given binary predictions.
+
+    Given a rank-2 `Tensor` of predictions with shape (n, k), where n is the
+    number of examples and k is the number of classes, and another rank-2
+    `Tensor` of weights with shape (m, k), where m is broadcastable to n, this
+    method will return a `Tensor` of shape (n,) where the ith element
+    *approximates*:
+
+    ```python
+    maximum_prediction[i] = max(predictions[i, :])
+    maximum_weights[i] = [
+      weights[i, j] for j in range(k)
+      if predictions[i, j] >= maximum_prediction[i]]
+    zero_one_loss[i] = sum(maximum_weights[i]) / len(maximum_weights[i])
+    ```
+
+    For the zero-one loss, the result will equal the above quantity, while for
+    other losses, it'll instead be an approximation. For convex losses, it will
+    typically be a convex (in predictions) upper bound.
+
+    You can think of weights[:, k] as being the per-example costs associated
+    with predicting the kth class.
+
+    Args:
+      predictions: a `Tensor` of shape (n, k), where n is the number of examples
+        and k is the number of classes.
+      weights: a `Tensor` of shape (m, k), where m is broadcastable to n. This
+        `Tensor` is *not* necessarily non-negative.
+
+    Returns:
+      A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
+      losses for each example.
+    """
+    pass
+
+  def evaluate_binary_classification(self, predictions, weights):
+    """Evaluates a binary classification loss on the given predictions.
+
+    While we do provide a default implementation that thunks down to
+    evaluate_multiclass(), subclasses are advised to override this method, since
+    it's likely that a hand-written binary classification loss will be more
+    efficient that one that works indirectly through a multiclass loss.
+
+    Args:
+      predictions: a `Tensor` of shape (n,), where n is the number of examples.
+      weights: a `Tensor` of shape (m, 2), where m is broadcastable to n. This
+        `Tensor` is *not* necessarily non-negative.
+
+    Returns:
+      A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
+      losses for each example.
+    """
+    predictions = _convert_to_binary_classification_predictions(predictions)
+    return self.evaluate_multiclass(
+        tf.stack([0.5 * predictions, -0.5 * predictions], axis=1), weights)
+
+
+class ZeroOneLoss(MulticlassLoss):
   """Zero-one loss.
 
   The zero-one loss is normalized and non-differentiable (it's piecewise
@@ -181,6 +249,59 @@ class ZeroOneLoss(BinaryClassificationLoss):
 
   def __eq__(self, other):
     return type(other) is type(self)
+
+  def evaluate_multiclass(self, predictions, weights):
+    """Evaluates the multiclass zero-one loss on the given predictions.
+
+    Given a rank-2 `Tensor` of predictions with shape (n, k), where n is the
+    number of examples and k is the number of classes, and another rank-2
+    `Tensor` of weights with shape (m, k), where m is broadcastable to n, this
+    method will return a `Tensor` of shape (n,) where the ith element is:
+
+    ```python
+    maximum_prediction[i] = max(predictions[i, :])
+    maximum_weights[i] = [
+      weights[i, j] for j in range(k)
+      if predictions[i, j] >= maximum_prediction[i]]
+    zero_one_loss[i] = sum(maximum_weights[i]) / len(maximum_weights[i])
+    ```
+
+    Args:
+      predictions: a `Tensor` of shape (n, k), where n is the number of examples
+        and k is the number of classes.
+      weights: a `Tensor` of shape (m, k), where m is broadcastable to n. This
+        `Tensor` is *not* necessarily non-negative.
+
+    Returns:
+      A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
+      zero-one losses for each example.
+
+    Raises:
+      TypeError: if "predictions" is not a floating-point `Tensor`, or "weights"
+        is not a `Tensor`.
+      ValueError: if "predictions" and "weights" have different numbers of
+        columns (i.e. if the number of classes is inconsistent).
+    """
+    num_classes = helpers.get_num_columns_of_2d_tensor(
+        predictions, name="multiclass predictions")
+    weights_num_classes = helpers.get_num_columns_of_2d_tensor(
+        weights, name="weights")
+    if weights_num_classes != num_classes:
+      raise ValueError("weights must have the same number of columns as "
+                       "predictions ({} vs. {}): did you specify num_classes "
+                       "correctly when you created your context?".format(
+                           weights_num_classes, num_classes))
+    dtype = predictions.dtype.base_dtype
+    if not dtype.is_floating:
+      raise TypeError("multiclass predictions must be floating-point")
+
+    thresholded_predictions = tf.cast(
+        predictions >= tf.reduce_max(predictions, axis=1, keepdims=True),
+        dtype=dtype)
+    thresholded_predictions /= tf.reduce_sum(
+        thresholded_predictions, axis=1, keepdims=True)
+    return tf.reduce_sum(
+        tf.cast(weights, dtype=dtype) * thresholded_predictions, axis=1)
 
   def evaluate_binary_classification(self, predictions, weights):
     """Evaluates the zero-one loss on the given predictions.
@@ -231,7 +352,7 @@ class ZeroOneLoss(BinaryClassificationLoss):
                   (positive_weights - negative_weights))
 
 
-class HingeLoss(BinaryClassificationLoss):
+class HingeLoss(MulticlassLoss):
   """Hinge loss.
 
   The hinge loss is subdifferentiable and non-normalized.
@@ -275,6 +396,134 @@ class HingeLoss(BinaryClassificationLoss):
 
   def __eq__(self, other):
     return (type(other) is type(self)) and (self._margin == other.margin)
+
+  def evaluate_multiclass(self, predictions, weights):
+    """Evaluates the multiclass hinge loss on the given predictions.
+
+    Given a rank-1 `Tensor` of predictions with shape (n,), where n is the
+    number of examples, and a rank-2 `Tensor` of weights with shape (m, 2),
+    where m is broadcastable to n, this method will return a `Tensor` of shape
+    (n,) where the ith element is:
+
+    ```python
+    hinge_loss[i] = weights[i, 0] + sum_{j=0}^{num_classes - 2} (
+      (weights[i, j+1] - weights[i, j]) * mean_{k=0}^j (
+        max_{l=j+1}^{num_classes-1} (
+          max{0, margin + predictions[i, l] - predictions[i, k]} ) ) )
+    ```
+
+    where we've assumed (without loss of generality) that the weights and
+    predictions are ordered in such a way that weights[i, j] <= weights[i, j+1].
+    In the implementation, of course, we cannot simply assume this, and actually
+    perform a sort.
+
+    This is admittedly a somewhat strange-seeming formulation, and it's
+    complicated and expensive to implement. The reason it was chosen is that it
+    satisfies the following properties:
+
+    1. It's shift invariant: adding a constant to every weight will shift the
+       loss by the same constant.
+    2. It's scale invariant: multiplying every weight by a constant will scale
+       the loss by the same constant.
+    3. When there are only two classes, it's equivalent to the binary hinge loss
+       implemented in evaluate_binary_classification().
+    4. When the weights represent a misclassification rate (i.e. weights[i, 0] =
+       0 and weights[i, j] = 1 for i > 0, assuming the weights are sorted), it's
+       equivalent to the usual multiclass hinge misclassification loss.
+    5. It's convex in the predictions, and upper bounds the multiclass 0-1 loss
+       when margin >= 1.
+
+    Args:
+      predictions: a `Tensor` of shape (n, k), where n is the number of examples
+        and k is the number of classes.
+      weights: a `Tensor` of shape (m, k), where m is broadcastable to n. This
+        `Tensor` is *not* necessarily non-negative.
+
+    Returns:
+      A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
+      hinge losses for each example.
+
+    Raises:
+      TypeError: if "predictions" is not a floating-point `Tensor`, or "weights"
+        is not a `Tensor`.
+      ValueError: if "predictions" and "weights" have different numbers of
+        columns (i.e. if the number of classes is inconsistent).
+    """
+    # TODO: Hari points out that we could get a tighter surrogate by
+    # not taking the mean (formerly a min) outside the max. Try this out.
+    num_classes = helpers.get_num_columns_of_2d_tensor(
+        predictions, name="multiclass predictions")
+    weights_num_classes = helpers.get_num_columns_of_2d_tensor(
+        weights, name="weights")
+    if weights_num_classes != num_classes:
+      raise ValueError("weights must have the same number of columns as "
+                       "predictions ({} vs. {}): did you specify num_classes "
+                       "correctly when you created your context?".format(
+                           weights_num_classes, num_classes))
+    dtype = predictions.dtype.base_dtype
+    if not dtype.is_floating:
+      raise TypeError("multiclass predictions must be floating-point")
+    zero = tf.zeros(1, dtype=dtype)
+
+    weights_rows = tf.shape(weights)[0]
+    predictions_rows = tf.shape(predictions)[0]
+
+    # We start out by finding a permutation for each row that will cause the
+    # weights to be nondecreasing.
+    weights_permutation = tf.argsort(weights, axis=1)
+    # This won't work if predictions_rows isn't divisible by weights_rows
+    # (tf.stack() below will fail), but we require weights to be broadcastable
+    # to predictions (usually, weights_rows will either be 1, or equal to
+    # predictions_rows).
+    predictions_permutation = tf.tile(weights_permutation,
+                                      [predictions_rows / weights_rows, 1])
+
+    # First we create a Tensor of shape [weights_rows, num_classes, 2], for
+    # which:
+    #   weights_indices[i, j, 0] = i
+    #   weights_indices[i, j, 1] = weights_permutation[j]
+    # Next, we use gather_nd to re-organize the weights such that:
+    #   new_weights[i, j] = old_weights[i, weights_permutation[j]]
+    weights_iota = tf.range(weights_rows)
+    weights_iota = tf.expand_dims(weights_iota, axis=-1)
+    weights_iota = tf.tile(weights_iota, [1, num_classes])
+    weights_indices = tf.stack([weights_iota, weights_permutation], axis=2)
+    weights = tf.gather_nd(tf.cast(weights, dtype=dtype), weights_indices)
+
+    # First we create a Tensor of shape [predictions_rows, num_classes, 2], for
+    # which:
+    #   predictions_indices[i, j, 0] = i
+    #   predictions_indices[i, j, 1] = predictions_permutation[j]
+    # Next, we use gather_nd to re-organize the predictions such that:
+    #   new_predictions[i, j] = old_predictions[i, predictions_permutation[j]]
+    predictions_iota = tf.range(predictions_rows)
+    predictions_iota = tf.expand_dims(predictions_iota, axis=-1)
+    predictions_iota = tf.tile(predictions_iota, [1, num_classes])
+    predictions_indices = tf.stack([predictions_iota, predictions_permutation],
+                                   axis=2)
+    predictions = tf.gather_nd(predictions, predictions_indices)
+
+    # At this point, every row of weights and predictions has been sorted in
+    # such a way that the weights are nondecreasing. We wish to calculate the
+    # following:
+    #   result[i] = weights[i, 0] + \sum_{j=0}^{num_classes - 2} (
+    #     (weights[i, j+1] - weights[i, j]) * mean_{k=0}^j (
+    #       max_{l=j+1}^{num_classes-1} (
+    #         max{0, margin + predictions[i, l] - predictions[i, k]} ) ) )
+    # Notice that the innermost max is a hinge.
+    result = weights[:, 0]
+    for ii in xrange(num_classes - 1):
+      scale = weights[:, ii + 1] - weights[:, ii]
+      # The "included" predictions are those in the above max over l, and the
+      # "excluded" predictions are those in the above mean over k.
+      excluded = predictions[:, 0:(ii + 1)]
+      included = predictions[:, (ii + 1):num_classes]
+      included = tf.reduce_max(included, axis=1, keepdims=True)
+      excluded = tf.maximum(zero, self._margin + included - excluded)
+      excluded = tf.reduce_mean(excluded, axis=1)
+      result += scale * excluded
+
+    return result
 
   def evaluate_binary_classification(self, predictions, weights):
     """Evaluates the hinge loss on the given predictions.
@@ -332,7 +581,7 @@ class HingeLoss(BinaryClassificationLoss):
         positive_weights * is_positive + negative_weights * is_negative)
 
 
-class SoftmaxLoss(BinaryClassificationLoss):
+class SoftmaxLoss(MulticlassLoss):
   """Softmax loss.
 
   The softmax loss is subdifferentiable and normalized.
@@ -353,6 +602,56 @@ class SoftmaxLoss(BinaryClassificationLoss):
 
   def __eq__(self, other):
     return type(other) is type(self)
+
+  def evaluate_multiclass(self, predictions, weights):
+    """Evaluates the multiclass softmax loss on the given predictions.
+
+    Given a rank-1 `Tensor` of predictions with shape (n,), where n is the
+    number of examples, and a rank-2 `Tensor` of weights with shape (m, 2),
+    where m is broadcastable to n, this method will return a `Tensor` of shape
+    (n,) where the ith element is:
+
+    ```python
+    softmax_loss[i] = sum_j ( weights[i, j] * (
+        exp(predictions[i, j]) / sum_k exp(predictions[i, k]) ) )
+    ```
+
+    Args:
+      predictions: a `Tensor` of shape (n, k), where n is the number of examples
+        and k is the number of classes.
+      weights: a `Tensor` of shape (m, k), where m is broadcastable to n. This
+        `Tensor` is *not* necessarily non-negative.
+
+    Returns:
+      A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
+      softmax losses for each example.
+
+    Raises:
+      TypeError: if "predictions" is not a floating-point `Tensor`, or "weights"
+        is not a `Tensor`.
+      ValueError: if "predictions" and "weights" have different numbers of
+        columns (i.e. if the number of classes is inconsistent).
+    """
+    num_classes = helpers.get_num_columns_of_2d_tensor(
+        predictions, name="multiclass predictions")
+    weights_num_classes = helpers.get_num_columns_of_2d_tensor(
+        weights, name="weights")
+    if weights_num_classes != num_classes:
+      raise ValueError("weights must have the same number of columns as "
+                       "predictions ({} vs. {}): did you specify num_classes "
+                       "correctly when you created your context?".format(
+                           weights_num_classes, num_classes))
+    dtype = predictions.dtype.base_dtype
+    if not dtype.is_floating:
+      raise TypeError("multiclass predictions must be floating-point")
+
+    maximum_predictions = tf.reduce_max(predictions, axis=1, keepdims=True)
+    numerators = tf.exp(predictions - maximum_predictions)
+    denominators = tf.reduce_sum(numerators, axis=1, keepdims=True)
+    probabilities = numerators / denominators
+
+    weights = tf.cast(weights, dtype=dtype)
+    return tf.reduce_sum(weights * probabilities, axis=1)
 
   def evaluate_binary_classification(self, predictions, weights):
     """Evaluates the softmax loss on the given predictions.
@@ -405,7 +704,7 @@ class SoftmaxLoss(BinaryClassificationLoss):
     return positive_weights * is_positive + negative_weights * is_negative
 
 
-class SoftmaxCrossEntropyLoss(BinaryClassificationLoss):
+class SoftmaxCrossEntropyLoss(MulticlassLoss):
   """Softmax cross-entropy loss.
 
   The softmax cross-entropy loss is subdifferentiable and non-normalized.
@@ -426,6 +725,77 @@ class SoftmaxCrossEntropyLoss(BinaryClassificationLoss):
 
   def __eq__(self, other):
     return type(other) is type(self)
+
+  def evaluate_multiclass(self, predictions, weights):
+    """Evaluates the multiclass cross-entropy loss on the given predictions.
+
+    Given a rank-1 `Tensor` of predictions with shape (n,), where n is the
+    number of examples, and a rank-2 `Tensor` of weights with shape (m, 2),
+    where m is broadcastable to n, this method will return a `Tensor` of shape
+    (n,) where the ith element is:
+
+    ```python
+    max_weight[i] = max_j weights[i, j]
+    softmax_cross_entropy_loss[i] = max_weight[i] - sum_j (
+      (max_weight[i] - weights[i, j]) * ( 1 +
+        log( exp(predictions[i, j]) / sum_k exp(predictions[i, k]) ) ) )
+    ```
+
+    The reason this formulation was chosen is that it can be derived from the
+    softmax loss using the inequality -log(p) >= 1-p. Indeed, the difference
+    between the two losses is entirely due to the slop in this inequality. In
+    particular, it satisfies the following properties:
+
+    1. It's shift invariant: adding a constant to every weight will shift the
+       loss by the same constant.
+    2. It's scale invariant: multiplying every weight by a constant will scale
+       the loss by the same constant.
+    3. When there are only two classes, it's equivalent to the binary softmax
+       cross-entropy loss implemented in evaluate_binary_classification().
+    4. When the weights represent an expected misclassification rate (i.e.
+       weights[i, j] >= 0, and sum_j weights[i, j] = 1), it's equivalent to the
+       usual multiclass softmax cross-entropy misclassification loss.
+    5. It's convex in the predictions, and upper bounds the multiclass softmax
+       loss.
+
+    Args:
+      predictions: a `Tensor` of shape (n, k), where n is the number of examples
+        and k is the number of classes.
+      weights: a `Tensor` of shape (m, k), where m is broadcastable to n. This
+        `Tensor` is *not* necessarily non-negative.
+
+    Returns:
+      A `Tensor` of shape (n,) and dtype=predictions.dtype, containing the
+      softmax cross-entropy losses for each example.
+
+    Raises:
+      TypeError: if "predictions" is not a floating-point `Tensor`, or "weights"
+        is not a `Tensor`.
+      ValueError: if "predictions" and "weights" have different numbers of
+        columns (i.e. if the number of classes is inconsistent).
+    """
+    num_classes = helpers.get_num_columns_of_2d_tensor(
+        predictions, name="multiclass predictions")
+    weights_num_classes = helpers.get_num_columns_of_2d_tensor(
+        weights, name="weights")
+    if weights_num_classes != num_classes:
+      raise ValueError("weights must have the same number of columns as "
+                       "predictions ({} vs. {}): did you specify num_classes "
+                       "correctly when you created your context?".format(
+                           weights_num_classes, num_classes))
+    dtype = predictions.dtype.base_dtype
+    if not dtype.is_floating:
+      raise TypeError("multiclass predictions must be floating-point")
+
+    maximum_predictions = tf.reduce_max(predictions, axis=1, keepdims=True)
+    numerators = tf.exp(predictions - maximum_predictions)
+    denominators = tf.reduce_sum(numerators, axis=1, keepdims=True)
+    log_probabilities = tf.math.log(numerators / denominators)
+
+    weights = tf.cast(weights, dtype=dtype)
+    maximum_weights = tf.reduce_max(weights, axis=1, keepdims=True)
+    return (tf.squeeze(maximum_weights) - tf.reduce_sum(
+        (maximum_weights - weights) * (1 + log_probabilities), axis=1))
 
   def evaluate_binary_classification(self, predictions, weights):
     """Evaluates the cross-entropy loss on the given predictions.

@@ -46,6 +46,7 @@ from tensorflow_constrained_optimization.python.rates.binary_rates import true_p
 from tensorflow_constrained_optimization.python.rates.loss import BinaryClassificationLoss
 from tensorflow_constrained_optimization.python.rates.loss import HingeLoss
 from tensorflow_constrained_optimization.python.rates.loss import Loss
+from tensorflow_constrained_optimization.python.rates.loss import MulticlassLoss
 from tensorflow_constrained_optimization.python.rates.loss import SoftmaxCrossEntropyLoss
 from tensorflow_constrained_optimization.python.rates.loss import SoftmaxLoss
 from tensorflow_constrained_optimization.python.rates.loss import ZeroOneLoss
