@@ -83,7 +83,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numbers
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers

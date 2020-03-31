@@ -31,7 +31,7 @@ from __future__ import print_function
 import abc
 import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow_constrained_optimization.python.rates import helpers
 
