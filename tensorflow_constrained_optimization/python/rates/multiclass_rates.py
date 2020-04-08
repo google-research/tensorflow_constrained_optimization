@@ -1075,3 +1075,230 @@ def true_negative_proportion(context,
       coefficients=(1.0 - positive_class),
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
+
+
+def precision_ratio(context,
+                    positive_class,
+                    penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                    constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates two `Expression`s representing multiclass precision as a ratio.
+
+  The result of this function represents:
+    numerator := sum_i{w_i * c_i *
+          sum_j{y[i, j] * positive_class[j]} *
+          positive_class[argmax_j z[i, j]]
+        } / sum_i{w_i * c_i}
+    denominator := sum_i{w_i * c_i * positive_class[argmax_j z[i, j]]}
+        / sum_i{w_i * c_i}
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to include
+  in the numerator and denominator (all four of z, y, w and c are in the
+  context). Additionally, positive_class[j] is the probability that the jth
+  class should be treated as "positive".
+
+  The reason for decomposing a precision as a separate numerator and denominator
+  is to make it easy to set up constraints of the form (for example):
+
+  > precision := numerator / denominator >= 0.9
+
+  for which you can multiply through by the denominator to yield the equivalent
+  constraint:
+
+  > numerator >= 0.9 * denominator
+
+  This latter form is something that we can straightforwardly handle.
+
+  Args:
+    context: multiclass `SubsettableContext`, the block of data to use when
+      calculating the rate.
+    positive_class: int, the index of the class to treat as "positive", *or* a
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An (`Expression`, `Expression`) pair representing the numerator and
+      denominator of a precision (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not
+      a MulticlassLoss, or positive_class is a non-integer number.
+    ValueError: if the context does not contain labels, or is not a multiclass
+      context, or positive_class is an integer outside the range
+      [0,num_classes), or is a collection not containing num_classes elements.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("precision requires a context with labels")
+
+  num_classes = _get_num_classes(context)
+  positive_class = _positive_class_as_array(positive_class, num_classes)
+
+  def positive_labels_fn(labels):
+    return tf.tensordot(
+        tf.cast(labels, dtype=tf.float32), positive_class, axes=(1, 0))
+
+  # Notice that context.subset() handles floating-point arguments as
+  # probabilities (which is what we want, if the labels are themselves
+  # non-boolean, and are therefore considered probabilities).
+  positive_context = context.subset(
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.penalty_labels),
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.constraint_labels),
+  )
+
+  numerator_expression = _unlabeled_rate(
+      numerator_context=positive_context,
+      denominator_context=context,
+      coefficients=positive_class,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+  denominator_expression = _unlabeled_rate(
+      numerator_context=context,
+      denominator_context=context,
+      coefficients=positive_class,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+  return numerator_expression, denominator_expression
+
+
+def f_score_ratio(context,
+                  positive_class,
+                  beta=1.0,
+                  penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                  constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates two `Expression`s representing multiclass F-score as a ratio.
+
+  The result of this function represents:
+    numerator := (1 + beta^2) * sum_i{w_i * c_i *
+          sum_j{y[i, j] * positive_class[j]} *
+          positive_class[1{j = argmax_j z[i, j]]
+        } / sum_i{w_i * c_i}
+    denominator := ((1 + beta^2) * sum_i{w_i * c_i *
+          sum_j{y[i, j] * positive_class[j]} *
+          positive_class[argmax_j z[i, j]]
+        } + beta^2 * sum_i{w_i * c_i *
+          sum_j{y[i, j] * positive_class[j]} *
+          (1 - positive_class[argmax_j z[i, j]])
+        } + sum_i{w_i * c_i *
+          sum_j{y[i, j] * (1 - positive_class[j])} *
+          positive_class[argmax_j z[i, j]]
+        }) / sum_i{w_i * c_i}
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to include
+  in the numerator and denominator (all four of z, y, w and c are in the
+  context). Additionally, positive_class[j] is the probability that the jth
+  class should be treated as "positive".
+
+  The reason for decomposing an F-score as a separate numerator and denominator
+  is to make it easy to set up constraints of the form (for example):
+
+  > f_score := numerator / denominator >= 0.9
+
+  for which you can multiply through by the denominator to yield the equivalent
+  constraint:
+
+  > numerator >= 0.9 * denominator
+
+  This latter form is something that we can straightforwardly handle.
+
+  Args:
+    context: multiclass `SubsettableContext`, the block of data to use when
+      calculating the rate.
+    positive_class: int, the index of the class to treat as "positive", *or* a
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
+    beta: non-negative float, the beta parameter to the F-score. If beta=0, then
+      the result is precision, and if beta=1 (the default), then the result is
+      the F1-score.
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An (`Expression`, `Expression`) pair representing the numerator and
+      denominator of a F-score (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not
+      a MulticlassLoss, or positive_class is a non-integer number.
+    ValueError: if the context does not contain labels, or is not a multiclass
+      context, or positive_class is an integer outside the range
+      [0,num_classes), or is a collection not containing num_classes elements.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("f_score requires a context with labels")
+
+  if beta < 0.0:
+    raise ValueError("beta parameter to f_score must be non-negative")
+  if beta <= 0.0:
+    # The F0-score is just the precision, and representing it as such results
+    # in a slightly simpler expression.
+    return precision_ratio(
+        context,
+        positive_class=positive_class,
+        penalty_loss=penalty_loss,
+        constraint_loss=constraint_loss)
+
+  num_classes = _get_num_classes(context)
+  positive_class = _positive_class_as_array(positive_class, num_classes)
+
+  def positive_labels_fn(labels):
+    return tf.tensordot(
+        tf.cast(labels, dtype=tf.float32), positive_class, axes=(1, 0))
+
+  def negative_labels_fn(labels):
+    return tf.tensordot(
+        tf.cast(labels, dtype=tf.float32), 1.0 - positive_class, axes=(1, 0))
+
+  # Notice that context.subset() handles floating-point arguments as
+  # probabilities (which is what we want, if the labels are themselves
+  # non-boolean, and are therefore considered probabilities).
+  positive_context = context.subset(
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.penalty_labels),
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.constraint_labels),
+  )
+  negative_context = context.subset(
+      deferred_tensor.DeferredTensor.apply(negative_labels_fn,
+                                           raw_context.penalty_labels),
+      deferred_tensor.DeferredTensor.apply(negative_labels_fn,
+                                           raw_context.constraint_labels),
+  )
+
+  numerator_expression = (1.0 + beta * beta) * _unlabeled_rate(
+      numerator_context=positive_context,
+      denominator_context=context,
+      coefficients=positive_class,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+  denominator_expression = (
+      numerator_expression + (beta * beta) * _unlabeled_rate(
+          numerator_context=positive_context,
+          denominator_context=context,
+          coefficients=(1.0 - positive_class),
+          penalty_loss=penalty_loss,
+          constraint_loss=constraint_loss) + _unlabeled_rate(
+              numerator_context=negative_context,
+              denominator_context=context,
+              coefficients=positive_class,
+              penalty_loss=penalty_loss,
+              constraint_loss=constraint_loss))
+
+  return numerator_expression, denominator_expression
