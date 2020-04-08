@@ -46,9 +46,11 @@ import collections
 import numbers
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
+import tensorflow.compat.v2 as tf
 
 from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import defaults
+from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import expression
 from tensorflow_constrained_optimization.python.rates import loss
 from tensorflow_constrained_optimization.python.rates import predicate
@@ -104,12 +106,12 @@ def _unlabeled_rate(numerator_context,
   where predictions_rate[j] represents the rate at which the jth class is
   predicted:
     prediction_rate[j] := sum_i{w_i * c_i *
-                                1{z[i, j] > z[i, k] forall k != j}}
+                                1{z[i, j] > z[i, k] for all k != j}}
         / sum_i{w_i * d_i}
-  where z[i, j] is the prediction for the ith example on the jth class, w_i is
-  the given weights, and c_i and d_i are indicators for which examples to
-  include in the numerator and denominator (all four of z, w, c and d are in the
-  contexts).
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), w_i is the given
+  weights, and c_i and d_i are indicators for which examples to include in the
+  numerator and denominator (all four of z, w, c and d are in the contexts).
 
   Args:
     numerator_context: multiclass `SubsettableContext`, the block of data to use
@@ -184,16 +186,17 @@ def _labeled_rate(numerator_context,
   """Creates an `Expression` for a multiclass rate on a labeled dataset.
 
   The result of this function represents:
-    total_rate := sum_i{sum_j{sum_k{w_i * c_i * matrix[j, k] *
-                                    1{l_i = k} *
-                                    1{z[i, j] > z[i, k] forall k != j}}}} /
-        / sum_i{w_i * d_i}
+    total_rate := sum_i{w_i * c_i * sum_k{
+          matrix[argmax_j z[i, j], k] * y[i, k]
+        }} / sum_i{w_i * d_i}
   in words, it's the average (notice the denominator) over all examples (i) of
   the cost matrix[j, k] where k is the true label and j is the prediction.
-  Here, z[i, j] is the prediction for the ith example on the jth class, l_i is
-  the given labels, w_i is the given weights, and c_i and d_i are indicators for
-  which examples to include in the numerator and denominator (all five of z, l,
-  w, c and d are in the context).
+  Here, z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i and d_i are indicators for which examples to
+  include in the numerator and denominator (all five of z, y, w, c and d are in
+  the context).
 
   Args:
     numerator_context: multiclass `SubsettableContext`, the block of data to use
@@ -229,7 +232,7 @@ def _labeled_rate(numerator_context,
     raise ValueError("numerator and denominator contexts must be compatible")
   if (raw_context.penalty_labels is None or
       raw_context.constraint_labels is None):
-    raise ValueError("this multiclass_rate requires a context with labels")
+    raise ValueError("this rate requires a context with labels")
   num_classes = raw_context.num_classes
   if num_classes is None:
     raise ValueError("multiclass rates can only be constructed from "
@@ -295,19 +298,20 @@ def positive_prediction_rate(context,
   """Creates an `Expression` for a multiclass positive prediction rate.
 
   The result of this function represents:
-    positive_rate := sum_i{w_i * c_i *
-        1{z[i, positive_class] > z[i, k] forall k != positive_class}}
+    positive_rate := sum_i{w_i * c_i * positive_class[argmax_j z[i, j]]}
         / sum_i{w_i * c_i}
-  where z_i and w_i are the given predictions and weights, and c_i is an
-  indicator for which examples to include in the rate (all three of z, w and c
-  are in the context).
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), w_i is the per-example
+  weights, and c_i is an indicator for which examples to include in the rate
+  (all three of z, w and c are in the context). Additionally, positive_class[j]
+  is the probability that the jth class should be treated as "positive".
 
   Args:
     context: multiclass `SubsettableContext`, the block of data to use when
       calculating the rate.
     positive_class: int, the index of the class to treat as "positive", *or* a
-      collection of num_classes elements, where the ith element indicates
-      whether the ith class should be treated as "positive".
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
     penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
       when calculating the "penalty" approximation to the rate.
     constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
@@ -342,19 +346,20 @@ def negative_prediction_rate(context,
   """Creates an `Expression` for a multiclass negative prediction rate.
 
   The result of this function represents:
-    negative_rate := sum_i{w_i * c_i *
-        1{exists j != positive_class s.t. z[i, j] > z[i, positive_class]}}
+    negative_rate := sum_i{w_i * c_i * (1 - positive_class[argmax_j z[i, j]])}
         / sum_i{w_i * c_i}
-  where z_i and w_i are the given predictions and weights, and c_i is an
-  indicator for which examples to include in the rate (all three of z, w and c
-  are in the context).
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), w_i is the per-example
+  weights, and c_i is an indicator for which examples to include in the rate
+  (all three of z, w and c are in the context). Additionally, positive_class[j]
+  is the probability that the jth class should be treated as "positive".
 
   Args:
     context: multiclass `SubsettableContext`, the block of data to use when
       calculating the rate.
     positive_class: int, the index of the class to treat as "positive", *or* a
-      collection of num_classes elements, where the ith element indicates
-      whether the ith class should be treated as "positive".
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
     penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
       when calculating the "penalty" approximation to the rate.
     constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
@@ -388,11 +393,14 @@ def error_rate(context,
   """Creates an `Expression` for a multiclass error rate.
 
   The result of this function represents:
-    error_rate := sum_i{w_i * c_i * 1{exists j != y_i s.t. z[i, j] > z[i, y_i]}}
+    error_rate := sum_i{w_i * c_i * sum_j{y[i, j] * 1{j != argmax_j' z[i, j']}}
         / sum_i{w_i * c_i}
-  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
-  is an indicator for which examples to include in the rate (all four of z, y, w
-  and c are in the context).
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to
+  include in the numerator and denominator (all four of z, y, w and c are in
+  the context).
 
   Args:
     context: multiclass `SubsettableContext`, the block of data to use when
@@ -427,11 +435,14 @@ def accuracy_rate(context,
   """Creates an `Expression` for a multiclass accuracy rate.
 
   The result of this function represents:
-    accuracy_rate := sum_i{w_i * c_i * 1{z[i, y_i] > z[i, j] forall j != y_i}}
+    error_rate := sum_i{w_i * c_i * y[i, argmax_j z[i, j]]}
         / sum_i{w_i * c_i}
-  where z_i, y_i and w_i are the given predictions, labels and weights, and c_i
-  is an indicator for which examples to include in the rate (all four of z, y, w
-  and c are in the context).
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to
+  include in the numerator and denominator (all four of z, y, w and c are in
+  the context).
 
   Args:
     context: multiclass `SubsettableContext`, the block of data to use when
@@ -456,5 +467,611 @@ def accuracy_rate(context,
       numerator_context=context,
       denominator_context=context,
       matrix=np.eye(num_classes, dtype=np.bool),
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def true_positive_rate(context,
+                       positive_class,
+                       penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                       constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a multiclass true positive rate.
+
+  The result of this function represents:
+    true_positive_rate := sum_i{w_i * c_i *
+          sum_j{y[i, j] * positive_class[j]} * positive_class[argmax_j z[i, j]]
+        } / sum_i{w_i * c_i * sum_j{y[i, j] * positive_class[j]}}
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to include
+  in the numerator and denominator (all four of z, y, w and c are in the
+  context). Additionally, positive_class[j] is the probability that the jth
+  class should be treated as "positive".
+
+  Unlike the "true_positive_proportion", which is the number of
+  positively-labeled examples on which we make a positive prediction, divided by
+  the total number of examples, this function instead divides only by the number
+  of *positively-labeled* examples.
+
+  Args:
+    context: multiclass `SubsettableContext`, the block of data to use when
+      calculating the rate.
+    positive_class: int, the index of the class to treat as "positive", *or* a
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing true_positive_rate (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not
+      a MulticlassLoss, or positive_class is a non-integer number.
+    ValueError: if the context does not contain labels, or is not a multiclass
+      context, or positive_class is an integer outside the range
+      [0,num_classes), or is a collection not containing num_classes elements.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("true_positive_rate requires a context with labels")
+
+  num_classes = _get_num_classes(context)
+  positive_class = _positive_class_as_array(positive_class, num_classes)
+
+  def positive_labels_fn(labels):
+    return tf.tensordot(
+        tf.cast(labels, dtype=tf.float32), positive_class, axes=(1, 0))
+
+  # Notice that context.subset() handles floating-point arguments as
+  # probabilities (which is what we want, if the labels are themselves
+  # non-boolean, and are therefore considered probabilities).
+  positive_context = context.subset(
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.penalty_labels),
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.constraint_labels),
+  )
+
+  return _unlabeled_rate(
+      numerator_context=positive_context,
+      denominator_context=positive_context,
+      coefficients=positive_class,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def false_negative_rate(context,
+                        positive_class,
+                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a multiclass false negative rate.
+
+  The result of this function represents:
+    false_negative_rate := sum_i{w_i * c_i *
+          sum_j{y[i, j] * positive_class[j]} *
+          (1 - positive_class[argmax_j z[i, j]])
+        } / sum_i{w_i * c_i * sum_j{y[i, j] * positive_class[j]}}
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to include
+  in the numerator and denominator (all four of z, y, w and c are in the
+  context). Additionally, positive_class[j] is the probability that the jth
+  class should be treated as "positive".
+
+  Unlike the "false_negative_proportion", which is the number of
+  positively-labeled examples on which we make a negative prediction, divided by
+  the total number of examples, this function instead divides only by the number
+  of *positively-labeled* examples.
+
+  Args:
+    context: multiclass `SubsettableContext`, the block of data to use when
+      calculating the rate.
+    positive_class: int, the index of the class to treat as "positive", *or* a
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing false_negative_rate (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not
+      a MulticlassLoss, or positive_class is a non-integer number.
+    ValueError: if the context does not contain labels, or is not a multiclass
+      context, or positive_class is an integer outside the range
+      [0,num_classes), or is a collection not containing num_classes elements.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("false_negative_rate requires a context with labels")
+
+  num_classes = _get_num_classes(context)
+  positive_class = _positive_class_as_array(positive_class, num_classes)
+
+  def positive_labels_fn(labels):
+    return tf.tensordot(
+        tf.cast(labels, dtype=tf.float32), positive_class, axes=(1, 0))
+
+  # Notice that context.subset() handles floating-point arguments as
+  # probabilities (which is what we want, if the labels are themselves
+  # non-boolean, and are therefore considered probabilities).
+  positive_context = context.subset(
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.penalty_labels),
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.constraint_labels),
+  )
+
+  return _unlabeled_rate(
+      numerator_context=positive_context,
+      denominator_context=positive_context,
+      coefficients=(1.0 - positive_class),
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def false_positive_rate(context,
+                        positive_class,
+                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a multiclass false positive rate.
+
+  The result of this function represents:
+    false_positive_rate := sum_i{w_i * c_i *
+          sum_j{y[i, j] * (1 - positive_class[j])} *
+          positive_class[argmax_j z[i, j]]
+        } / sum_i{w_i * c_i * sum_j{y[i, j] * (1 - positive_class[j])}}
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to include
+  in the numerator and denominator (all four of z, y, w and c are in the
+  context). Additionally, positive_class[j] is the probability that the jth
+  class should be treated as "positive".
+
+  Unlike the "false_positive_proportion", which is the number of
+  negatively-labeled examples on which we make a positive prediction, divided by
+  the total number of examples, this function instead divides only by the number
+  of *negatively-labeled* examples.
+
+  Args:
+    context: multiclass `SubsettableContext`, the block of data to use when
+      calculating the rate.
+    positive_class: int, the index of the class to treat as "positive", *or* a
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing false_positive_rate (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not
+      a MulticlassLoss, or positive_class is a non-integer number.
+    ValueError: if the context does not contain labels, or is not a multiclass
+      context, or positive_class is an integer outside the range
+      [0,num_classes), or is a collection not containing num_classes elements.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("false_positive_rate requires a context with labels")
+
+  num_classes = _get_num_classes(context)
+  positive_class = _positive_class_as_array(positive_class, num_classes)
+
+  def negative_labels_fn(labels):
+    return tf.tensordot(
+        tf.cast(labels, dtype=tf.float32), 1.0 - positive_class, axes=(1, 0))
+
+  # Notice that context.subset() handles floating-point arguments as
+  # probabilities (which is what we want, if the labels are themselves
+  # non-boolean, and are therefore considered probabilities).
+  negative_context = context.subset(
+      deferred_tensor.DeferredTensor.apply(negative_labels_fn,
+                                           raw_context.penalty_labels),
+      deferred_tensor.DeferredTensor.apply(negative_labels_fn,
+                                           raw_context.constraint_labels),
+  )
+
+  return _unlabeled_rate(
+      numerator_context=negative_context,
+      denominator_context=negative_context,
+      coefficients=positive_class,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def true_negative_rate(context,
+                       positive_class,
+                       penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                       constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a multiclass true negative rate.
+
+  The result of this function represents:
+    true_negative_rate := sum_i{w_i * c_i *
+          sum_j{y[i, j] * (1 - positive_class[j])} *
+          (1 - positive_class[argmax_j z[i, j]])
+        } / sum_i{w_i * c_i * sum_j{y[i, j] * (1 - positive_class[j])}}
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to include
+  in the numerator and denominator (all four of z, y, w and c are in the
+  context). Additionally, positive_class[j] is the probability that the jth
+  class should be treated as "positive".
+
+  Unlike the "true_negative_proportion", which is the number of
+  negatively-labeled examples on which we make a negative prediction, divided by
+  the total number of examples, this function instead divides only by the number
+  of *negatively-labeled* examples.
+
+  Args:
+    context: multiclass `SubsettableContext`, the block of data to use when
+      calculating the rate.
+    positive_class: int, the index of the class to treat as "positive", *or* a
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing true_negative_rate (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not
+      a MulticlassLoss, or positive_class is a non-integer number.
+    ValueError: if the context does not contain labels, or is not a multiclass
+      context, or positive_class is an integer outside the range
+      [0,num_classes), or is a collection not containing num_classes elements.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("true_negative_rate requires a context with labels")
+
+  num_classes = _get_num_classes(context)
+  positive_class = _positive_class_as_array(positive_class, num_classes)
+
+  def negative_labels_fn(labels):
+    return tf.tensordot(
+        tf.cast(labels, dtype=tf.float32), 1.0 - positive_class, axes=(1, 0))
+
+  # Notice that context.subset() handles floating-point arguments as
+  # probabilities (which is what we want, if the labels are themselves
+  # non-boolean, and are therefore considered probabilities).
+  negative_context = context.subset(
+      deferred_tensor.DeferredTensor.apply(negative_labels_fn,
+                                           raw_context.penalty_labels),
+      deferred_tensor.DeferredTensor.apply(negative_labels_fn,
+                                           raw_context.constraint_labels),
+  )
+
+  return _unlabeled_rate(
+      numerator_context=negative_context,
+      denominator_context=negative_context,
+      coefficients=(1.0 - positive_class),
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def true_positive_proportion(context,
+                             positive_class,
+                             penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                             constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a multiclass true positive proportion.
+
+  The result of this function represents:
+    true_positive_proportion := sum_i{w_i * c_i *
+          sum_j{y[i, j] * positive_class[j]} * positive_class[argmax_j z[i, j]]
+        } / sum_i{w_i * c_i}
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to include
+  in the numerator and denominator (all four of z, y, w and c are in the
+  context). Additionally, positive_class[j] is the probability that the jth
+  class should be treated as "positive".
+
+  Unlike the "true_positive_rate", which is the number of positively-labeled
+  examples on which we make a positive prediction, divided by the number of
+  positively-labeled examples, this function instead divides by the total number
+  of examples.
+
+  Args:
+    context: multiclass `SubsettableContext`, the block of data to use when
+      calculating the rate.
+    positive_class: int, the index of the class to treat as "positive", *or* a
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing true_positive_proportion (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not
+      a MulticlassLoss, or positive_class is a non-integer number.
+    ValueError: if the context does not contain labels, or is not a multiclass
+      context, or positive_class is an integer outside the range
+      [0,num_classes), or is a collection not containing num_classes elements.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("true_positive_proportion requires a context with labels")
+
+  num_classes = _get_num_classes(context)
+  positive_class = _positive_class_as_array(positive_class, num_classes)
+
+  def positive_labels_fn(labels):
+    return tf.tensordot(
+        tf.cast(labels, dtype=tf.float32), positive_class, axes=(1, 0))
+
+  # Notice that context.subset() handles floating-point arguments as
+  # probabilities (which is what we want, if the labels are themselves
+  # non-boolean, and are therefore considered probabilities).
+  positive_context = context.subset(
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.penalty_labels),
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.constraint_labels),
+  )
+
+  return _unlabeled_rate(
+      numerator_context=positive_context,
+      denominator_context=context,
+      coefficients=positive_class,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def false_negative_proportion(context,
+                              positive_class,
+                              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a multiclass false negative proportion.
+
+  The result of this function represents:
+    false_negative_proportion := sum_i{w_i * c_i *
+          sum_j{y[i, j] * positive_class[j]} *
+          (1 - positive_class[argmax_j z[i, j]])
+        } / sum_i{w_i * c_i}
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to include
+  in the numerator and denominator (all four of z, y, w and c are in the
+  context). Additionally, positive_class[j] is the probability that the jth
+  class should be treated as "positive".
+
+  Unlike the "false_negative_rate", which is the number of positively-labeled
+  examples on which we make a negative prediction, divided by the number of
+  positively-labeled examples, this function instead divides by the total number
+  of examples.
+
+  Args:
+    context: multiclass `SubsettableContext`, the block of data to use when
+      calculating the rate.
+    positive_class: int, the index of the class to treat as "positive", *or* a
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing false_negative_proportion (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not
+      a MulticlassLoss, or positive_class is a non-integer number.
+    ValueError: if the context does not contain labels, or is not a multiclass
+      context, or positive_class is an integer outside the range
+      [0,num_classes), or is a collection not containing num_classes elements.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("false_negative_proportion requires a context with labels")
+
+  num_classes = _get_num_classes(context)
+  positive_class = _positive_class_as_array(positive_class, num_classes)
+
+  def positive_labels_fn(labels):
+    return tf.tensordot(
+        tf.cast(labels, dtype=tf.float32), positive_class, axes=(1, 0))
+
+  # Notice that context.subset() handles floating-point arguments as
+  # probabilities (which is what we want, if the labels are themselves
+  # non-boolean, and are therefore considered probabilities).
+  positive_context = context.subset(
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.penalty_labels),
+      deferred_tensor.DeferredTensor.apply(positive_labels_fn,
+                                           raw_context.constraint_labels),
+  )
+
+  return _unlabeled_rate(
+      numerator_context=positive_context,
+      denominator_context=context,
+      coefficients=(1.0 - positive_class),
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def false_positive_proportion(context,
+                              positive_class,
+                              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a multiclass false positive proportion.
+
+  The result of this function represents:
+    false_positive_proportion := sum_i{w_i * c_i *
+          sum_j{y[i, j] * (1 - positive_class[j])} *
+          positive_class[argmax_j z[i, j]]
+        } / sum_i{w_i * c_i}
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to include
+  in the numerator and denominator (all four of z, y, w and c are in the
+  context). Additionally, positive_class[j] is the probability that the jth
+  class should be treated as "positive".
+
+  Unlike the "false_positive_rate", which is the number of negatively-labeled
+  examples on which we make a positive prediction, divided by the number of
+  negatively-labeled examples, this function instead divides by the total number
+  of examples.
+
+  Args:
+    context: multiclass `SubsettableContext`, the block of data to use when
+      calculating the rate.
+    positive_class: int, the index of the class to treat as "positive", *or* a
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing false_positive_proportion (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not
+      a MulticlassLoss, or positive_class is a non-integer number.
+    ValueError: if the context does not contain labels, or is not a multiclass
+      context, or positive_class is an integer outside the range
+      [0,num_classes), or is a collection not containing num_classes elements.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("false_positive_proportion requires a context with labels")
+
+  num_classes = _get_num_classes(context)
+  positive_class = _positive_class_as_array(positive_class, num_classes)
+
+  def negative_labels_fn(labels):
+    return tf.tensordot(
+        tf.cast(labels, dtype=tf.float32), 1.0 - positive_class, axes=(1, 0))
+
+  # Notice that context.subset() handles floating-point arguments as
+  # probabilities (which is what we want, if the labels are themselves
+  # non-boolean, and are therefore considered probabilities).
+  negative_context = context.subset(
+      deferred_tensor.DeferredTensor.apply(negative_labels_fn,
+                                           raw_context.penalty_labels),
+      deferred_tensor.DeferredTensor.apply(negative_labels_fn,
+                                           raw_context.constraint_labels),
+  )
+
+  return _unlabeled_rate(
+      numerator_context=negative_context,
+      denominator_context=context,
+      coefficients=positive_class,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def true_negative_proportion(context,
+                             positive_class,
+                             penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                             constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a multiclass true negative proportion.
+
+  The result of this function represents:
+    true_negative_proportion := sum_i{w_i * c_i *
+          sum_j{y[i, j] * (1 - positive_class[j])} *
+          (1 - positive_class[argmax_j z[i, j]])
+        } / sum_i{w_i * c_i}
+  where z[i, j] is the prediction for the ith example on the jth class (so
+  argmax_j z[i, j] is the ith example's predicted class), y[i, j] is the
+  probability that the ith example is labeled to belong to the jth class, w_i is
+  the per-example weights, and c_i is an indicator for which examples to include
+  in the numerator and denominator (all four of z, y, w and c are in the
+  context). Additionally, positive_class[j] is the probability that the jth
+  class should be treated as "positive".
+
+  Unlike the "true_negative_rate", which is the number of negatively-labeled
+  examples on which we make a negative prediction, divided by the number of
+  negatively-labeled examples, this function instead divides by the total number
+  of examples.
+
+  Args:
+    context: multiclass `SubsettableContext`, the block of data to use when
+      calculating the rate.
+    positive_class: int, the index of the class to treat as "positive", *or* a
+      collection of num_classes elements, where the ith element is the
+      probability that the ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing true_negative_proportion (as defined above).
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not
+      a MulticlassLoss, or positive_class is a non-integer number.
+    ValueError: if the context does not contain labels, or is not a multiclass
+      context, or positive_class is an integer outside the range
+      [0,num_classes), or is a collection not containing num_classes elements.
+  """
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("true_negative_proportion requires a context with labels")
+
+  num_classes = _get_num_classes(context)
+  positive_class = _positive_class_as_array(positive_class, num_classes)
+
+  def negative_labels_fn(labels):
+    return tf.tensordot(
+        tf.cast(labels, dtype=tf.float32), 1.0 - positive_class, axes=(1, 0))
+
+  # Notice that context.subset() handles floating-point arguments as
+  # probabilities (which is what we want, if the labels are themselves
+  # non-boolean, and are therefore considered probabilities).
+  negative_context = context.subset(
+      deferred_tensor.DeferredTensor.apply(negative_labels_fn,
+                                           raw_context.penalty_labels),
+      deferred_tensor.DeferredTensor.apply(negative_labels_fn,
+                                           raw_context.constraint_labels),
+  )
+
+  return _unlabeled_rate(
+      numerator_context=negative_context,
+      denominator_context=context,
+      coefficients=(1.0 - positive_class),
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)

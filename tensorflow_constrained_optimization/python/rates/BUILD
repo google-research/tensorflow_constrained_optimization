@@ -171,6 +171,7 @@ py_library(
     deps = [
         ":basic_expression",
         ":defaults",
+        ":deferred_tensor",
         ":expression",
         ":loss",
         ":predicate",
@@ -178,6 +179,7 @@ py_library(
         ":term",
         # numpy dep,
         # six dep,
+        # tensorflow dep,
     ],
 )
 

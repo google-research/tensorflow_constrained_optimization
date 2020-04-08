@@ -372,6 +372,346 @@ class MulticlassRatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     self._check_rates(expected_penalty_value, expected_constraint_value,
                       actual_expression)
 
+  def test_true_positive_rate(self):
+    """Checks `true_positive_rate`."""
+    positive_class = [True, False, False, True]
+    class_weights = np.array(positive_class, dtype=np.float32)
+
+    penalty_label_weights = np.zeros(self._penalty_size)
+    for ii in xrange(self._penalty_size):
+      if positive_class[self._penalty_labels[ii]]:
+        penalty_label_weights[ii] = 1.0
+    penalty_weights = np.tensordot(penalty_label_weights, class_weights, axes=0)
+    # For the penalty, the default loss is hinge.
+    penalty_losses = hinge_loss(penalty_weights, self._penalty_predictions)
+    expected_penalty_numerator = np.sum(penalty_losses * penalty_label_weights *
+                                        self._penalty_weights *
+                                        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(
+        penalty_label_weights * self._penalty_weights * self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    constraint_label_weights = np.zeros(self._constraint_size)
+    for ii in xrange(self._constraint_size):
+      if positive_class[self._constraint_labels[ii]]:
+        constraint_label_weights[ii] = 1.0
+    constraint_weights = np.tensordot(
+        constraint_label_weights, class_weights, axes=0)
+    # For the constraint, the default loss is zero-one.
+    constraint_losses = zero_one_loss(constraint_weights,
+                                      self._constraint_predictions)
+    expected_constraint_numerator = np.sum(
+        constraint_losses * constraint_label_weights *
+        self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(constraint_label_weights *
+                                             self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = multiclass_rates.true_positive_rate(
+        self._split_context, positive_class)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
+  def test_false_negative_rate(self):
+    """Checks `false_negative_rate`."""
+    positive_class = [True, False, True, True]
+    class_weights = 1.0 - np.array(positive_class, dtype=np.float32)
+
+    penalty_label_weights = np.zeros(self._penalty_size)
+    for ii in xrange(self._penalty_size):
+      if positive_class[self._penalty_labels[ii]]:
+        penalty_label_weights[ii] = 1.0
+    penalty_weights = np.tensordot(penalty_label_weights, class_weights, axes=0)
+    # For the penalty, the default loss is hinge.
+    penalty_losses = hinge_loss(penalty_weights, self._penalty_predictions)
+    expected_penalty_numerator = np.sum(penalty_losses * penalty_label_weights *
+                                        self._penalty_weights *
+                                        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(
+        penalty_label_weights * self._penalty_weights * self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    constraint_label_weights = np.zeros(self._constraint_size)
+    for ii in xrange(self._constraint_size):
+      if positive_class[self._constraint_labels[ii]]:
+        constraint_label_weights[ii] = 1.0
+    constraint_weights = np.tensordot(
+        constraint_label_weights, class_weights, axes=0)
+    # For the constraint, the default loss is zero-one.
+    constraint_losses = zero_one_loss(constraint_weights,
+                                      self._constraint_predictions)
+    expected_constraint_numerator = np.sum(
+        constraint_losses * constraint_label_weights *
+        self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(constraint_label_weights *
+                                             self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = multiclass_rates.false_negative_rate(
+        self._split_context, positive_class)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
+  def test_false_positive_rate(self):
+    """Checks `false_positive_rate`."""
+    positive_class = [False, False, False, True]
+    class_weights = np.array(positive_class, dtype=np.float32)
+
+    penalty_label_weights = np.ones(self._penalty_size)
+    for ii in xrange(self._penalty_size):
+      if positive_class[self._penalty_labels[ii]]:
+        penalty_label_weights[ii] = 0.0
+    penalty_weights = np.tensordot(penalty_label_weights, class_weights, axes=0)
+    # For the penalty, the default loss is hinge.
+    penalty_losses = hinge_loss(penalty_weights, self._penalty_predictions)
+    expected_penalty_numerator = np.sum(penalty_losses * penalty_label_weights *
+                                        self._penalty_weights *
+                                        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(
+        penalty_label_weights * self._penalty_weights * self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    constraint_label_weights = np.ones(self._constraint_size)
+    for ii in xrange(self._constraint_size):
+      if positive_class[self._constraint_labels[ii]]:
+        constraint_label_weights[ii] = 0.0
+    constraint_weights = np.tensordot(
+        constraint_label_weights, class_weights, axes=0)
+    # For the constraint, the default loss is zero-one.
+    constraint_losses = zero_one_loss(constraint_weights,
+                                      self._constraint_predictions)
+    expected_constraint_numerator = np.sum(
+        constraint_losses * constraint_label_weights *
+        self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(constraint_label_weights *
+                                             self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = multiclass_rates.false_positive_rate(
+        self._split_context, positive_class)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
+  def test_true_negative_rate(self):
+    """Checks `true_negative_rate`."""
+    positive_class = [False, False, True, True]
+    class_weights = 1.0 - np.array(positive_class, dtype=np.float32)
+
+    penalty_label_weights = np.ones(self._penalty_size)
+    for ii in xrange(self._penalty_size):
+      if positive_class[self._penalty_labels[ii]]:
+        penalty_label_weights[ii] = 0.0
+    penalty_weights = np.tensordot(penalty_label_weights, class_weights, axes=0)
+    # For the penalty, the default loss is hinge.
+    penalty_losses = hinge_loss(penalty_weights, self._penalty_predictions)
+    expected_penalty_numerator = np.sum(penalty_losses * penalty_label_weights *
+                                        self._penalty_weights *
+                                        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(
+        penalty_label_weights * self._penalty_weights * self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    constraint_label_weights = np.ones(self._constraint_size)
+    for ii in xrange(self._constraint_size):
+      if positive_class[self._constraint_labels[ii]]:
+        constraint_label_weights[ii] = 0.0
+    constraint_weights = np.tensordot(
+        constraint_label_weights, class_weights, axes=0)
+    # For the constraint, the default loss is zero-one.
+    constraint_losses = zero_one_loss(constraint_weights,
+                                      self._constraint_predictions)
+    expected_constraint_numerator = np.sum(
+        constraint_losses * constraint_label_weights *
+        self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(constraint_label_weights *
+                                             self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = multiclass_rates.true_negative_rate(
+        self._split_context, positive_class)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
+  def test_true_positive_proportion(self):
+    """Checks `true_positive_proportion`."""
+    positive_class = [True, False, False, True]
+    class_weights = np.array(positive_class, dtype=np.float32)
+
+    penalty_label_weights = np.zeros(self._penalty_size)
+    for ii in xrange(self._penalty_size):
+      if positive_class[self._penalty_labels[ii]]:
+        penalty_label_weights[ii] = 1.0
+    penalty_weights = np.tensordot(penalty_label_weights, class_weights, axes=0)
+    # For the penalty, the default loss is hinge.
+    penalty_losses = hinge_loss(penalty_weights, self._penalty_predictions)
+    expected_penalty_numerator = np.sum(penalty_losses * penalty_label_weights *
+                                        self._penalty_weights *
+                                        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    constraint_label_weights = np.zeros(self._constraint_size)
+    for ii in xrange(self._constraint_size):
+      if positive_class[self._constraint_labels[ii]]:
+        constraint_label_weights[ii] = 1.0
+    constraint_weights = np.tensordot(
+        constraint_label_weights, class_weights, axes=0)
+    # For the constraint, the default loss is zero-one.
+    constraint_losses = zero_one_loss(constraint_weights,
+                                      self._constraint_predictions)
+    expected_constraint_numerator = np.sum(
+        constraint_losses * constraint_label_weights *
+        self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = multiclass_rates.true_positive_proportion(
+        self._split_context, positive_class)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
+  def test_false_negative_proportion(self):
+    """Checks `false_negative_proportion`."""
+    positive_class = [True, False, True, True]
+    class_weights = 1.0 - np.array(positive_class, dtype=np.float32)
+
+    penalty_label_weights = np.zeros(self._penalty_size)
+    for ii in xrange(self._penalty_size):
+      if positive_class[self._penalty_labels[ii]]:
+        penalty_label_weights[ii] = 1.0
+    penalty_weights = np.tensordot(penalty_label_weights, class_weights, axes=0)
+    # For the penalty, the default loss is hinge.
+    penalty_losses = hinge_loss(penalty_weights, self._penalty_predictions)
+    expected_penalty_numerator = np.sum(penalty_losses * penalty_label_weights *
+                                        self._penalty_weights *
+                                        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    constraint_label_weights = np.zeros(self._constraint_size)
+    for ii in xrange(self._constraint_size):
+      if positive_class[self._constraint_labels[ii]]:
+        constraint_label_weights[ii] = 1.0
+    constraint_weights = np.tensordot(
+        constraint_label_weights, class_weights, axes=0)
+    # For the constraint, the default loss is zero-one.
+    constraint_losses = zero_one_loss(constraint_weights,
+                                      self._constraint_predictions)
+    expected_constraint_numerator = np.sum(
+        constraint_losses * constraint_label_weights *
+        self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = multiclass_rates.false_negative_proportion(
+        self._split_context, positive_class)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
+  def test_false_positive_proportion(self):
+    """Checks `false_positive_proportion`."""
+    positive_class = [False, False, False, True]
+    class_weights = np.array(positive_class, dtype=np.float32)
+
+    penalty_label_weights = np.ones(self._penalty_size)
+    for ii in xrange(self._penalty_size):
+      if positive_class[self._penalty_labels[ii]]:
+        penalty_label_weights[ii] = 0.0
+    penalty_weights = np.tensordot(penalty_label_weights, class_weights, axes=0)
+    # For the penalty, the default loss is hinge.
+    penalty_losses = hinge_loss(penalty_weights, self._penalty_predictions)
+    expected_penalty_numerator = np.sum(penalty_losses * penalty_label_weights *
+                                        self._penalty_weights *
+                                        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    constraint_label_weights = np.ones(self._constraint_size)
+    for ii in xrange(self._constraint_size):
+      if positive_class[self._constraint_labels[ii]]:
+        constraint_label_weights[ii] = 0.0
+    constraint_weights = np.tensordot(
+        constraint_label_weights, class_weights, axes=0)
+    # For the constraint, the default loss is zero-one.
+    constraint_losses = zero_one_loss(constraint_weights,
+                                      self._constraint_predictions)
+    expected_constraint_numerator = np.sum(
+        constraint_losses * constraint_label_weights *
+        self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = multiclass_rates.false_positive_proportion(
+        self._split_context, positive_class)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
+  def test_true_negative_proportion(self):
+    """Checks `true_negative_proportion`."""
+    positive_class = [False, False, True, True]
+    class_weights = 1.0 - np.array(positive_class, dtype=np.float32)
+
+    penalty_label_weights = np.ones(self._penalty_size)
+    for ii in xrange(self._penalty_size):
+      if positive_class[self._penalty_labels[ii]]:
+        penalty_label_weights[ii] = 0.0
+    penalty_weights = np.tensordot(penalty_label_weights, class_weights, axes=0)
+    # For the penalty, the default loss is hinge.
+    penalty_losses = hinge_loss(penalty_weights, self._penalty_predictions)
+    expected_penalty_numerator = np.sum(penalty_losses * penalty_label_weights *
+                                        self._penalty_weights *
+                                        self._penalty_predicate)
+    expected_penalty_denominator = np.sum(self._penalty_weights *
+                                          self._penalty_predicate)
+    expected_penalty_value = (
+        expected_penalty_numerator / expected_penalty_denominator)
+
+    constraint_label_weights = np.ones(self._constraint_size)
+    for ii in xrange(self._constraint_size):
+      if positive_class[self._constraint_labels[ii]]:
+        constraint_label_weights[ii] = 0.0
+    constraint_weights = np.tensordot(
+        constraint_label_weights, class_weights, axes=0)
+    # For the constraint, the default loss is zero-one.
+    constraint_losses = zero_one_loss(constraint_weights,
+                                      self._constraint_predictions)
+    expected_constraint_numerator = np.sum(
+        constraint_losses * constraint_label_weights *
+        self._constraint_weights * self._constraint_predicate)
+    expected_constraint_denominator = np.sum(self._constraint_weights *
+                                             self._constraint_predicate)
+    expected_constraint_value = (
+        expected_constraint_numerator / expected_constraint_denominator)
+
+    actual_expression = multiclass_rates.true_negative_proportion(
+        self._split_context, positive_class)
+    self._check_rates(expected_penalty_value, expected_constraint_value,
+                      actual_expression)
+
 
 if __name__ == "__main__":
   tf.test.main()
