@@ -552,8 +552,8 @@ directory contains several illustrations of how one can use this library:
         evaluating for fairness across age group, with the false positive rate
         set as the constraint.
 
-    1.  [AUCPR_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/AUCPR_training.ipynb):
+    1.  [PRAUC_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/PRAUC_training.ipynb):
         This notebook shows how to train a model to maximize the
-        *Area Under the Precision-Recall Curve (AUCPR)*. We'll show how to
+        *Area Under the Precision-Recall Curve (PR-AUC)*. We'll show how to
         train the model both with (i) plain TensorFlow (in eager mode), and
         (ii) with a custom tf.Estimator.
