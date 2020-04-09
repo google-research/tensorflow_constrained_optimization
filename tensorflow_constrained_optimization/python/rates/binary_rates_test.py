@@ -186,28 +186,31 @@ def find_zeros_of_functions(size, evaluate_fn, epsilon=1e-6):
 
 
 # @run_all_tests_in_graph_and_eager_modes
-class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
-  """Tests for rate-constructing functions."""
+class BinaryRatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
+  """Tests for binary classification rate-constructing functions."""
 
   def __init__(self, *args, **kwargs):
-    super(RatesTest, self).__init__(*args, **kwargs)
+    super(BinaryRatesTest, self).__init__(*args, **kwargs)
+
+    self._penalty_size = 12
+    self._constraint_size = 8
 
     # We use a fixed fake dataset to make sure that the tests are reproducible.
     # The code for generating this random dataset is:
     #
-    #   self._penalty_predictions = np.random.randn(penalty_size)
+    #   self._penalty_predictions = np.random.randn(self._penalty_size)
     #   self._penalty_labels = (
-    #       np.random.randint(0, 2, size=penalty_size) * 2 - 1)
-    #   self._penalty_weights = np.random.rand(penalty_size)
+    #       np.random.randint(0, 2, size=self._penalty_size) * 2 - 1)
+    #   self._penalty_weights = np.random.rand(self._penalty_size)
     #   self._penalty_predicate = np.random.choice(
-    #       [False, True], size=penalty_size)
+    #       [False, True], size=self._penalty_size)
     #
-    #   self._constraint_predictions = np.random.randn(constraint_size)
+    #   self._constraint_predictions = np.random.randn(self._constraint_size)
     #   self._constraint_labels = (
-    #       np.random.randint(0, 2, size=constraint_size) * 2 - 1)
-    #   self._constraint_weights = np.random.rand(constraint_size)
+    #       np.random.randint(0, 2, size=self._constraint_size) * 2 - 1)
+    #   self._constraint_weights = np.random.rand(self._constraint_size)
     #   self._constraint_predicate = np.random.choice(
-    #       [False, True], size=constraint_size)
+    #       [False, True], size=self._constraint_size)
     #
     # The dataset itself is:
     self._penalty_predictions = np.array([
@@ -272,6 +275,8 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         constraint_weights=lambda: constraint_weights)
     return context.subset(self._penalty_predicate, self._constraint_predicate)
 
+  # FUTURE WORK: this is identical to the corresponding function in
+  # multiclass_rates_test.py. Maybe put this in some common place?
   def _check_rates(self, expected_penalty_value, expected_constraint_value,
                    actual_expression):
     structure_memoizer = {
@@ -314,7 +319,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
           atol=1e-6)
 
   def test_positive_prediction_rate(self):
-    """Checks that `positive_prediction_rate` calculates the right quantity."""
+    """Checks `positive_prediction_rate`."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
         np.maximum(0.0, 1.0 + self._penalty_predictions) *
@@ -339,7 +344,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_negative_prediction_rate(self):
-    """Checks that `negative_prediction_rate` calculates the right quantity."""
+    """Checks `negative_prediction_rate`."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
         np.maximum(0.0, 1.0 - self._penalty_predictions) *
@@ -364,7 +369,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_error_rate(self):
-    """Checks that `error_rate` calculates the right quantity."""
+    """Checks `error_rate`."""
     # For the penalty, the default loss is hinge.
     expected_signed_penalty_labels = (self._penalty_labels > 0.0) * 2.0 - 1.0
     expected_penalty_numerator = np.sum(
@@ -394,7 +399,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_accuracy_rate(self):
-    """Checks that `accuracy_rate` calculates the right quantity."""
+    """Checks `accuracy_rate`."""
     # For the penalty, the default loss is hinge.
     expected_signed_penalty_labels = (self._penalty_labels > 0.0) * 2.0 - 1.0
     expected_penalty_numerator = np.sum(
@@ -424,7 +429,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_true_positive_rate(self):
-    """Checks that `true_positive_rate` calculates the right quantity."""
+    """Checks `true_positive_rate`."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
         np.maximum(0.0, 1.0 + self._penalty_predictions) *
@@ -452,7 +457,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_false_negative_rate(self):
-    """Checks that `false_negative_rate` calculates the right quantity."""
+    """Checks `false_negative_rate`."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
         np.maximum(0.0, 1.0 - self._penalty_predictions) *
@@ -480,7 +485,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_false_positive_rate(self):
-    """Checks that `false_positive_rate` calculates the right quantity."""
+    """Checks `false_positive_rate`."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
         np.maximum(0.0, 1.0 + self._penalty_predictions) *
@@ -508,7 +513,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_true_negative_rate(self):
-    """Checks that `true_negative_rate` calculates the right quantity."""
+    """Checks `true_negative_rate`."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
         np.maximum(0.0, 1.0 - self._penalty_predictions) *
@@ -536,7 +541,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_true_positive_proportion(self):
-    """Checks that `true_positive_proportion` calculates the right quantity."""
+    """Checks `true_positive_proportion`."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
         np.maximum(0.0, 1.0 + self._penalty_predictions) *
@@ -563,7 +568,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_false_negative_proportion(self):
-    """Checks that `false_negative_proportion` calculates the right quantity."""
+    """Checks `false_negative_proportion`."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
         np.maximum(0.0, 1.0 - self._penalty_predictions) *
@@ -590,7 +595,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_false_positive_proportion(self):
-    """Checks that `false_positive_proportion` calculates the right quantity."""
+    """Checks `false_positive_proportion`."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
         np.maximum(0.0, 1.0 + self._penalty_predictions) *
@@ -617,7 +622,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_true_negative_proportion(self):
-    """Checks that `true_negative_proportion` calculates the right quantity."""
+    """Checks `true_negative_proportion`."""
     # For the penalty, the default loss is hinge.
     expected_penalty_numerator = np.sum(
         np.maximum(0.0, 1.0 - self._penalty_predictions) *
@@ -644,7 +649,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_expression)
 
   def test_precision_ratio(self):
-    """Checks that `precision_ratio` calculates the right quantities."""
+    """Checks `precision_ratio`."""
     actual_numerator_expression, actual_denominator_expression = (
         binary_rates.precision_ratio(self._split_context))
 
@@ -696,7 +701,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                       actual_denominator_expression)
 
   def test_precision(self):
-    """Checks that `precision` calculates the right quantities."""
+    """Checks `precision`."""
     bisection_epsilon = 1e-6
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
@@ -773,7 +778,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         atol=bisection_epsilon)
 
   def test_f_score_ratio(self):
-    """Checks that `f_score_ratio` calculates the right quantities."""
+    """Checks `f_score_ratio`."""
     # We check the most common choices for the beta parameter to the F-score.
     for beta in [0.0, 0.5, 1.0, 2.0]:
       actual_numerator_expression, actual_denominator_expression = (
@@ -858,7 +863,7 @@ class RatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                         actual_denominator_expression)
 
   def test_f_score(self):
-    """Checks that `f_score` calculates the right quantities."""
+    """Checks `f_score`."""
     beta = 1.6
     bisection_epsilon = 1e-6
     structure_memoizer = {
