@@ -196,6 +196,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "test_helpers",
+    testonly = 1,
+    srcs = ["test_helpers.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        # numpy dep,
+        # six dep,
+    ],
+)
+
 py_test(
     name = "helpers_test",
     srcs = ["helpers_test.py"],
@@ -338,6 +349,7 @@ py_test(
         ":defaults",
         ":deferred_tensor",
         ":subsettable_context",
+        ":test_helpers",
         # numpy dep,
         # six dep,
         # tensorflow dep,
