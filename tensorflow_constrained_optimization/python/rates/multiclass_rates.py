@@ -1230,7 +1230,7 @@ def f_score_ratio(context,
 
   Returns:
     An (`Expression`, `Expression`) pair representing the numerator and
-      denominator of a F-score (as defined above).
+      denominator of an F-score (as defined above).
 
   Raises:
     TypeError: if the context is not a SubsettableContext, either loss is not

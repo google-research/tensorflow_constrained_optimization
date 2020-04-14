@@ -184,6 +184,18 @@ py_library(
 )
 
 py_library(
+    name = "general_rates",
+    srcs = ["general_rates.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":binary_rates",
+        ":defaults",
+        ":multiclass_rates",
+        ":subsettable_context",
+    ],
+)
+
+py_library(
     name = "rate_minimization_problem",
     srcs = ["rate_minimization_problem.py"],
     srcs_version = "PY2AND3",
