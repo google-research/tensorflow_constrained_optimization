@@ -248,3 +248,487 @@ def accuracy_rate(context,
       context=context,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
+
+
+def true_positive_rate(context,
+                       positive_class=None,
+                       penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                       constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a true positive rate.
+
+  A true positive rate is the number of positively-labeled examples within the
+  given context on which the model makes a positive prediction, divided by the
+  number of positively-labeled examples within the context. For multiclass
+  problems, the positive_class argument, which tells us which class (or classes)
+  should be treated as positive, must also be provided.
+
+  Please see the docstrings of true_positive_rate() in binary_rates.py and
+  multiclass_rates.py for further details.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. If this is a multiclass context, we'll calculate the multiclass
+      version of the rate.
+    positive_class: None for a non-multiclass problem. Otherwise, an int, the
+      index of the class to treat as "positive", *or* a collection of
+      num_classes elements, where the ith element is the probability that the
+      ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing the true positive rate.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not a
+      BinaryClassificationLoss (if the context is non-multiclass) or a
+      MulticlassLoss (if the context is multiclass). In the latter case, an
+      error will also be raised if positive_class is a non-integer number.
+    ValueError: if the context doesn't contain labels, or positive_class is
+      provided for a non-multiclass context, or is *not* provided for a
+      multiclass context. In the latter case, an error will also be raised if
+      positive_class is an integer outside the range [0,num_classes), or is a
+      collection not containing num_classes elements.
+  """
+  if _is_multiclass(context):
+    return multiclass_rates.true_positive_rate(
+        context=context,
+        positive_class=positive_class,
+        penalty_loss=penalty_loss,
+        constraint_loss=constraint_loss)
+
+  if positive_class is not None:
+    raise ValueError("positive_class cannot be provided to "
+                     "true_positive_rate unless it's also given a multiclass "
+                     "context")
+  return binary_rates.true_positive_rate(
+      context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def false_negative_rate(context,
+                        positive_class=None,
+                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a false negative rate.
+
+  A false negative rate is the number of positively-labeled examples within the
+  given context on which the model makes a negative prediction, divided by the
+  number of positively-labeled examples within the context. For multiclass
+  problems, the positive_class argument, which tells us which class (or classes)
+  should be treated as positive, must also be provided.
+
+  Please see the docstrings of false_negative_rate() in binary_rates.py and
+  multiclass_rates.py for further details.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. If this is a multiclass context, we'll calculate the multiclass
+      version of the rate.
+    positive_class: None for a non-multiclass problem. Otherwise, an int, the
+      index of the class to treat as "positive", *or* a collection of
+      num_classes elements, where the ith element is the probability that the
+      ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing the false negative rate.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not a
+      BinaryClassificationLoss (if the context is non-multiclass) or a
+      MulticlassLoss (if the context is multiclass). In the latter case, an
+      error will also be raised if positive_class is a non-integer number.
+    ValueError: if the context doesn't contain labels, or positive_class is
+      provided for a non-multiclass context, or is *not* provided for a
+      multiclass context. In the latter case, an error will also be raised if
+      positive_class is an integer outside the range [0,num_classes), or is a
+      collection not containing num_classes elements.
+  """
+  if _is_multiclass(context):
+    return multiclass_rates.false_negative_rate(
+        context=context,
+        positive_class=positive_class,
+        penalty_loss=penalty_loss,
+        constraint_loss=constraint_loss)
+
+  if positive_class is not None:
+    raise ValueError("positive_class cannot be provided to "
+                     "false_negative_rate unless it's also given a multiclass "
+                     "context")
+  return binary_rates.false_negative_rate(
+      context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def false_positive_rate(context,
+                        positive_class=None,
+                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a false positive rate.
+
+  A false positive rate is the number of negatively-labeled examples within the
+  given context on which the model makes a positive prediction, divided by the
+  number of negatively-labeled examples within the context. For multiclass
+  problems, the positive_class argument, which tells us which class (or classes)
+  should be treated as positive, must also be provided.
+
+  Please see the docstrings of false_positive_rate() in binary_rates.py and
+  multiclass_rates.py for further details.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. If this is a multiclass context, we'll calculate the multiclass
+      version of the rate.
+    positive_class: None for a non-multiclass problem. Otherwise, an int, the
+      index of the class to treat as "positive", *or* a collection of
+      num_classes elements, where the ith element is the probability that the
+      ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing the false positive rate.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not a
+      BinaryClassificationLoss (if the context is non-multiclass) or a
+      MulticlassLoss (if the context is multiclass). In the latter case, an
+      error will also be raised if positive_class is a non-integer number.
+    ValueError: if the context doesn't contain labels, or positive_class is
+      provided for a non-multiclass context, or is *not* provided for a
+      multiclass context. In the latter case, an error will also be raised if
+      positive_class is an integer outside the range [0,num_classes), or is a
+      collection not containing num_classes elements.
+  """
+  if _is_multiclass(context):
+    return multiclass_rates.false_positive_rate(
+        context=context,
+        positive_class=positive_class,
+        penalty_loss=penalty_loss,
+        constraint_loss=constraint_loss)
+
+  if positive_class is not None:
+    raise ValueError("positive_class cannot be provided to "
+                     "false_positive_rate unless it's also given a multiclass "
+                     "context")
+  return binary_rates.false_positive_rate(
+      context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def true_negative_rate(context,
+                       positive_class=None,
+                       penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                       constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a true negative rate.
+
+  A true negative rate is the number of negatively-labeled examples within the
+  given context on which the model makes a negative prediction, divided by the
+  number of negatively-labeled examples within the context. For multiclass
+  problems, the positive_class argument, which tells us which class (or classes)
+  should be treated as positive, must also be provided.
+
+  Please see the docstrings of true_negative_rate() in binary_rates.py and
+  multiclass_rates.py for further details.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. If this is a multiclass context, we'll calculate the multiclass
+      version of the rate.
+    positive_class: None for a non-multiclass problem. Otherwise, an int, the
+      index of the class to treat as "positive", *or* a collection of
+      num_classes elements, where the ith element is the probability that the
+      ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing the true negative rate.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not a
+      BinaryClassificationLoss (if the context is non-multiclass) or a
+      MulticlassLoss (if the context is multiclass). In the latter case, an
+      error will also be raised if positive_class is a non-integer number.
+    ValueError: if the context doesn't contain labels, or positive_class is
+      provided for a non-multiclass context, or is *not* provided for a
+      multiclass context. In the latter case, an error will also be raised if
+      positive_class is an integer outside the range [0,num_classes), or is a
+      collection not containing num_classes elements.
+  """
+  if _is_multiclass(context):
+    return multiclass_rates.true_negative_rate(
+        context=context,
+        positive_class=positive_class,
+        penalty_loss=penalty_loss,
+        constraint_loss=constraint_loss)
+
+  if positive_class is not None:
+    raise ValueError("positive_class cannot be provided to "
+                     "true_negative_rate unless it's also given a multiclass "
+                     "context")
+  return binary_rates.true_negative_rate(
+      context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def true_positive_proportion(context,
+                             positive_class=None,
+                             penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                             constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a true positive proportion.
+
+  A true positive proportion is the number of positively-labeled examples within
+  the given context on which the model makes a positive prediction, divided by
+  the total number of examples within the context. For multiclass problems, the
+  positive_class argument, which tells us which class (or classes) should be
+  treated as positive, must also be provided.
+
+  Please see the docstrings of true_positive_proportion() in binary_rates.py and
+  multiclass_rates.py for further details.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. If this is a multiclass context, we'll calculate the multiclass
+      version of the rate.
+    positive_class: None for a non-multiclass problem. Otherwise, an int, the
+      index of the class to treat as "positive", *or* a collection of
+      num_classes elements, where the ith element is the probability that the
+      ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing the true positive proportion.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not a
+      BinaryClassificationLoss (if the context is non-multiclass) or a
+      MulticlassLoss (if the context is multiclass). In the latter case, an
+      error will also be raised if positive_class is a non-integer number.
+    ValueError: if the context doesn't contain labels, or positive_class is
+      provided for a non-multiclass context, or is *not* provided for a
+      multiclass context. In the latter case, an error will also be raised if
+      positive_class is an integer outside the range [0,num_classes), or is a
+      collection not containing num_classes elements.
+  """
+  if _is_multiclass(context):
+    return multiclass_rates.true_positive_proportion(
+        context=context,
+        positive_class=positive_class,
+        penalty_loss=penalty_loss,
+        constraint_loss=constraint_loss)
+
+  if positive_class is not None:
+    raise ValueError(
+        "positive_class cannot be provided to "
+        "true_positive_proportion unless it's also given a multiclass "
+        "context")
+  return binary_rates.true_positive_proportion(
+      context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def false_negative_proportion(context,
+                              positive_class=None,
+                              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a false negative proportion.
+
+  A false negative proportion is the number of positively-labeled examples
+  within the given context on which the model makes a negative prediction,
+  divided by the total number of examples within the context. For multiclass
+  problems, the positive_class argument, which tells us which class (or classes)
+  should be treated as positive, must also be provided.
+
+  Please see the docstrings of false_negative_proportion() in binary_rates.py
+  and multiclass_rates.py for further details.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. If this is a multiclass context, we'll calculate the multiclass
+      version of the rate.
+    positive_class: None for a non-multiclass problem. Otherwise, an int, the
+      index of the class to treat as "positive", *or* a collection of
+      num_classes elements, where the ith element is the probability that the
+      ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing the false negative proportion.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not a
+      BinaryClassificationLoss (if the context is non-multiclass) or a
+      MulticlassLoss (if the context is multiclass). In the latter case, an
+      error will also be raised if positive_class is a non-integer number.
+    ValueError: if the context doesn't contain labels, or positive_class is
+      provided for a non-multiclass context, or is *not* provided for a
+      multiclass context. In the latter case, an error will also be raised if
+      positive_class is an integer outside the range [0,num_classes), or is a
+      collection not containing num_classes elements.
+  """
+  if _is_multiclass(context):
+    return multiclass_rates.false_negative_proportion(
+        context=context,
+        positive_class=positive_class,
+        penalty_loss=penalty_loss,
+        constraint_loss=constraint_loss)
+
+  if positive_class is not None:
+    raise ValueError(
+        "positive_class cannot be provided to "
+        "false_negative_proportion unless it's also given a multiclass "
+        "context")
+  return binary_rates.false_negative_proportion(
+      context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def false_positive_proportion(context,
+                              positive_class=None,
+                              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a false positive proportion.
+
+  A false positive proportion is the number of negatively-labeled examples
+  within the given context on which the model makes a positive prediction,
+  divided by the total number of examples within the context. For multiclass
+  problems, the positive_class argument, which tells us which class (or classes)
+  should be treated as positive, must also be provided.
+
+  Please see the docstrings of false_positive_proportion() in binary_rates.py
+  and multiclass_rates.py for further details.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. If this is a multiclass context, we'll calculate the multiclass
+      version of the rate.
+    positive_class: None for a non-multiclass problem. Otherwise, an int, the
+      index of the class to treat as "positive", *or* a collection of
+      num_classes elements, where the ith element is the probability that the
+      ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing the false positive proportion.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not a
+      BinaryClassificationLoss (if the context is non-multiclass) or a
+      MulticlassLoss (if the context is multiclass). In the latter case, an
+      error will also be raised if positive_class is a non-integer number.
+    ValueError: if the context doesn't contain labels, or positive_class is
+      provided for a non-multiclass context, or is *not* provided for a
+      multiclass context. In the latter case, an error will also be raised if
+      positive_class is an integer outside the range [0,num_classes), or is a
+      collection not containing num_classes elements.
+  """
+  if _is_multiclass(context):
+    return multiclass_rates.false_positive_proportion(
+        context=context,
+        positive_class=positive_class,
+        penalty_loss=penalty_loss,
+        constraint_loss=constraint_loss)
+
+  if positive_class is not None:
+    raise ValueError(
+        "positive_class cannot be provided to "
+        "false_positive_proportion unless it's also given a multiclass "
+        "context")
+  return binary_rates.false_positive_proportion(
+      context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
+
+
+def true_negative_proportion(context,
+                             positive_class=None,
+                             penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
+                             constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
+  """Creates an `Expression` for a true negative proportion.
+
+  A true negative proportion is the number of negatively-labeled examples within
+  the given context on which the model makes a negative prediction, divided by
+  the total number of examples within the context. For multiclass problems, the
+  positive_class argument, which tells us which class (or classes) should be
+  treated as positive, must also be provided.
+
+  Please see the docstrings of true_negative_proportion() in binary_rates.py
+  and multiclass_rates.py for further details.
+
+  Args:
+    context: `SubsettableContext`, the block of data to use when calculating the
+      rate. If this is a multiclass context, we'll calculate the multiclass
+      version of the rate.
+    positive_class: None for a non-multiclass problem. Otherwise, an int, the
+      index of the class to treat as "positive", *or* a collection of
+      num_classes elements, where the ith element is the probability that the
+      ith class should be treated as "positive".
+    penalty_loss: `MulticlassLoss`, the (differentiable) loss function to use
+      when calculating the "penalty" approximation to the rate.
+    constraint_loss: `MulticlassLoss`, the (not necessarily differentiable) loss
+      function to use when calculating the "constraint" approximation to the
+      rate.
+
+  Returns:
+    An `Expression` representing the true negative proportion.
+
+  Raises:
+    TypeError: if the context is not a SubsettableContext, either loss is not a
+      BinaryClassificationLoss (if the context is non-multiclass) or a
+      MulticlassLoss (if the context is multiclass). In the latter case, an
+      error will also be raised if positive_class is a non-integer number.
+    ValueError: if the context doesn't contain labels, or positive_class is
+      provided for a non-multiclass context, or is *not* provided for a
+      multiclass context. In the latter case, an error will also be raised if
+      positive_class is an integer outside the range [0,num_classes), or is a
+      collection not containing num_classes elements.
+  """
+  if _is_multiclass(context):
+    return multiclass_rates.true_negative_proportion(
+        context=context,
+        positive_class=positive_class,
+        penalty_loss=penalty_loss,
+        constraint_loss=constraint_loss)
+
+  if positive_class is not None:
+    raise ValueError(
+        "positive_class cannot be provided to "
+        "true_negative_proportion unless it's also given a multiclass "
+        "context")
+  return binary_rates.true_negative_proportion(
+      context=context,
+      penalty_loss=penalty_loss,
+      constraint_loss=constraint_loss)
