@@ -78,26 +78,26 @@ def hinge_loss(weights, predictions):
   for ii in xrange(num_examples):
     total_weighted_hinge = 0.0
 
-    included_indices = set()
-    excluded_indices = set(range(num_classes))
+    excluded_indices = set()
+    included_indices = set(range(num_classes))
     for jj in xrange(num_classes - 1):
+      included_indices.remove(weights_permutation[ii, jj])
+      excluded_indices.add(weights_permutation[ii, jj])
+
+      included_max = -float("Inf")
+      for kk in included_indices:
+        included_max = max(included_max, predictions[ii, kk])
+
+      excluded_mean = 0.0
+      for kk in excluded_indices:
+        excluded_mean += predictions[ii, kk]
+      excluded_mean /= len(excluded_indices)
+
       delta_weight = (
           weights[ii, weights_permutation[ii, jj + 1]] -
           weights[ii, weights_permutation[ii, jj]])
-
-      included_indices.add(weights_permutation[ii, jj])
-      excluded_indices.remove(weights_permutation[ii, jj])
-
-      total_hinge = 0.0
-      for kk in included_indices:
-        running_max = -float("Inf")
-        for ll in excluded_indices:
-          running_max = max(running_max, predictions[ii, ll])
-
-        hinge = max(0, 1.0 + running_max - predictions[ii, kk])
-        total_hinge += hinge
-
-      total_weighted_hinge += delta_weight * total_hinge / len(included_indices)
+      total_weighted_hinge += delta_weight * max(
+          0, 1.0 + included_max - excluded_mean)
 
     value = weights[ii, weights_permutation[ii, 0]] + total_weighted_hinge
 

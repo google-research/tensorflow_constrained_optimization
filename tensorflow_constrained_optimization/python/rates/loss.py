@@ -407,9 +407,9 @@ class HingeLoss(MulticlassLoss):
 
     ```python
     hinge_loss[i] = weights[i, 0] + sum_{j=0}^{num_classes - 2} (
-      (weights[i, j+1] - weights[i, j]) * mean_{k=0}^j (
-        max_{l=j+1}^{num_classes-1} (
-          max{0, margin + predictions[i, l] - predictions[i, k]} ) ) )
+        (weights[i, j+1] - weights[i, j]) * max_{l=j+1}^{num_classes-1}
+        max{0, margin + predictions[i, l] - mean_{k=0}^j predictions[i, k]}
+    )
     ```
 
     where we've assumed (without loss of generality) that the weights and
@@ -449,8 +449,6 @@ class HingeLoss(MulticlassLoss):
       ValueError: if "predictions" and "weights" have different numbers of
         columns (i.e. if the number of classes is inconsistent).
     """
-    # TODO: Hari points out that we could get a tighter surrogate by
-    # not taking the mean (formerly a min) outside the max. Try this out.
     num_classes = helpers.get_num_columns_of_2d_tensor(
         predictions, name="multiclass predictions")
     weights_num_classes = helpers.get_num_columns_of_2d_tensor(
@@ -490,7 +488,7 @@ class HingeLoss(MulticlassLoss):
     weights_indices = tf.stack([weights_iota, weights_permutation], axis=2)
     weights = tf.gather_nd(tf.cast(weights, dtype=dtype), weights_indices)
 
-    # First we create a Tensor of shape [predictions_rows, num_classes, 2], for
+    # Next we create a Tensor of shape [predictions_rows, num_classes, 2], for
     # which:
     #   predictions_indices[i, j, 0] = i
     #   predictions_indices[i, j, 1] = predictions_permutation[j]
@@ -507,21 +505,20 @@ class HingeLoss(MulticlassLoss):
     # such a way that the weights are nondecreasing. We wish to calculate the
     # following:
     #   result[i] = weights[i, 0] + \sum_{j=0}^{num_classes - 2} (
-    #     (weights[i, j+1] - weights[i, j]) * mean_{k=0}^j (
-    #       max_{l=j+1}^{num_classes-1} (
-    #         max{0, margin + predictions[i, l] - predictions[i, k]} ) ) )
+    #     (weights[i, j+1] - weights[i, j]) * max_{l=j+1}^{num_classes-1}
+    #     max{0, margin + predictions[i, l] - mean_{k=0}^j predictions[i, k]}
+    #   )
     # Notice that the innermost max is a hinge.
     result = weights[:, 0]
     for ii in xrange(num_classes - 1):
       scale = weights[:, ii + 1] - weights[:, ii]
       # The "included" predictions are those in the above max over l, and the
       # "excluded" predictions are those in the above mean over k.
-      excluded = predictions[:, 0:(ii + 1)]
       included = predictions[:, (ii + 1):num_classes]
-      included = tf.reduce_max(included, axis=1, keepdims=True)
-      excluded = tf.maximum(zero, self._margin + included - excluded)
+      included = tf.reduce_max(included, axis=1)
+      excluded = predictions[:, 0:(ii + 1)]
       excluded = tf.reduce_mean(excluded, axis=1)
-      result += scale * excluded
+      result += scale * tf.maximum(zero, self._margin + included - excluded)
 
     return result
 
