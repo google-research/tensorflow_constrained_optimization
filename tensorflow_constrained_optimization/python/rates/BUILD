@@ -188,10 +188,15 @@ py_library(
     srcs = ["general_rates.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":basic_expression",
         ":binary_rates",
         ":defaults",
+        ":deferred_tensor",
+        ":expression",
         ":multiclass_rates",
         ":subsettable_context",
+        ":term",
+        # tensorflow dep,
     ],
 )
 
@@ -383,6 +388,23 @@ py_test(
         ":subsettable_context",
         # numpy dep,
         # six dep,
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
+    ],
+)
+
+py_test(
+    name = "general_rates_test",
+    srcs = ["general_rates_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":defaults",
+        ":deferred_tensor",
+        ":general_rates",
+        ":subsettable_context",
+        ":test_helpers",
+        # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,
