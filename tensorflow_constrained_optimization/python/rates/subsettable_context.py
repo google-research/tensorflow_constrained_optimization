@@ -513,77 +513,6 @@ class SubsettableContext(helpers.RateObject):
         constraint_predicate=constraint_predicate)
 
 
-def _one_hot_labels(labels, num_classes):
-  """Converts the given labels to a "one-hot" format.
-
-  Internally, for multiclass problems, the labels have shape (num_examples,
-  num_classes), with each element being interpreted as the probability that the
-  given example is labeled as belonging to the given class. We call this the
-  "one-hot" format.
-
-  While we accept input labels in the above format, we *also* accept
-  one-dimensional labels with num_examples elements, where each element is the
-  index (in {0, 1, 2, ..., num_classes-1}) of the class to which the
-  corresponding example belongs.
-
-  This function converts the latter format to the former, if necessary, and
-  otherwise checks that the labels have the correct shape.
-
-  Args:
-    labels: `DeferredTensor` of labels, in either of the two formats described
-      above.
-    num_classes: int, the number of classes.
-
-  Returns:
-    Equivalent `DeferredTensor` of labels in the "one-hot" format described
-    above.
-
-  Raises:
-    ValueError: if num_classes is less than two, or if the labels `Tensor` has
-      unknown rank, an unknown number of columns, or the wrong number of columns
-      (not num_classes).
-  """
-  if num_classes < 2:
-    raise ValueError("multiclass problems must have at least two classes")
-
-  def one_hot_labels_fn(labels_value):
-    """Converts and returns a one-hot version of the given labels."""
-    labels_value = tf.convert_to_tensor(labels_value, name="labels")
-
-    dims = labels_value.shape.dims
-    if dims is None:
-      raise ValueError("labels Tensor must have a known rank")
-    if len(dims) == 1:
-      # If the labels are rank-1, then they're class indices in {0, 1, ...,
-      # num_classes - 1}. Convert them to the equivalent one-hot labels.
-      #
-      # FUTURE WORK: we might want to check that the given labels_value has an
-      # integral type, and raise our own error message, since tf.one_hot()'s
-      # isn't too descriptive.
-      labels_value = tf.one_hot(
-          labels_value,
-          num_classes,
-          on_value=True,
-          off_value=False,
-          dtype=tf.bool)
-    elif len(dims) == 2:
-      # If the labels are already one-hot (or represent distributions), then
-      # just check that they're the correct shape.
-      num_columns = dims[1].value
-      if num_columns is None:
-        raise ValueError("labels Tensor must have a known number of columns")
-      if num_columns != num_classes:
-        raise ValueError("labels Tensor is expected to have %d columns (it "
-                         "has %d)" % (num_classes, num_columns))
-    else:
-      raise ValueError("labels Tensor must be rank 1 or 2 (it is rank %d)" %
-                       len(dims))
-
-    return labels_value
-
-  return deferred_tensor.DeferredTensor.apply(one_hot_labels_fn, labels)
-
-
 def _rate_context_helper(predictions, labels, weights, num_classes):
   """Helper for rate_context() and multiclass_rate_context()."""
 
@@ -627,13 +556,6 @@ def _rate_context_helper(predictions, labels, weights, num_classes):
   if labels is not None:
     labels = deferred_tensor.ExplicitDeferredTensor(labels)
   weights = deferred_tensor.ExplicitDeferredTensor(weights)
-
-  if num_classes is not None and labels is not None:
-    # Internally, for multiclass problems, the labels have shape (num_examples,
-    # num_classes), with each element being interpreted as the probability that
-    # the given example is labeled as belonging to the given class. The
-    # _one_hot_labels() function converts to this format.
-    labels = _one_hot_labels(labels, num_classes)
 
   raw_context = _RawContext(
       penalty_predictions=predictions,
@@ -682,10 +604,10 @@ def multiclass_rate_context(num_classes, predictions, labels=None, weights=1.0):
     num_classes: int, the number of classes.
     predictions: rank-2 floating-point `Tensor`, for which the i,jth element is
       the output of the model on the ith training example, for the jth class.
-    labels: optional rank-1 `Tensor`, for which the ith element is the label of
-      the ith training example, *or* a rank-2 `Tensor`, for which the i,jth
-      element is the probability that the ith training example belongs to the
-      jth class.
+    labels: a rank-2 `Tensor`, for which the i,jth element is the probability
+      that the ith training example belongs to the jth class. If you have a
+      rank-1 `Tensor` of class indices, then you can use tf.one_hot() to convert
+      them to the required format.
     weights: optional rank-1 floating-point `Tensor`, for which the ith element
       is the weight of the ith training example. If not specified, the weights
       default to being all-one.
@@ -770,16 +692,6 @@ def _split_rate_context_helper(penalty_predictions, constraint_predictions,
         constraint_labels)
   constraint_weights = deferred_tensor.ExplicitDeferredTensor(
       constraint_weights)
-
-  if num_classes is not None:
-    # Internally, for multiclass problems, the labels have shape (num_examples,
-    # num_classes), with each element being interpreted as the probability that
-    # the given example is labeled as belonging to the given class. The
-    # _one_hot_labels() function converts to this format.
-    if penalty_labels is not None:
-      penalty_labels = _one_hot_labels(penalty_labels, num_classes)
-    if constraint_labels is not None:
-      constraint_labels = _one_hot_labels(constraint_labels, num_classes)
 
   raw_context = _RawContext(
       penalty_predictions=penalty_predictions,
@@ -871,16 +783,16 @@ def multiclass_split_rate_context(num_classes,
     constraint_predictions: rank-2 floating-point `Tensor`, for which the i,jth
       element is the output of the model on the ith training example, for the
       jth class, on the training dataset associated with the constraints.
-    penalty_labels: optional rank-1 `Tensor`, for which the ith element is the
-      label of the ith training example, *or* a rank-2 `Tensor`, for which the
-      i,jth element is the probability that the ith training example belongs to
-      the jth class. In either case, these labels should be for the training
-      dataset associated with the penalties.
-    constraint_labels: optional rank-1 `Tensor`, for which the ith element is
-      the label of the ith training example, *or* a rank-2 `Tensor`, for which
-      the i,jth element is the probability that the ith training example belongs
-      to the jth class. In either case, these labels should be for the training
-      dataset associated with the constraints.
+    penalty_labels: optional rank-2 `Tensor`, for which the i,jth element is the
+      probability that the ith training example belongs to the jth class. If you
+      have a rank-1 `Tensor` of class indices, then you can use tf.one_hot() to
+      convert them to the required format. These labels should be for the
+      training dataset associated with the penalties.
+    constraint_labels: optional rank-2 `Tensor`, for which the i,jth element is
+      the probability that the ith training example belongs to the jth class. If
+      you have a rank-1 `Tensor` of class indices, then you can use tf.one_hot()
+      to convert them to the required format. These labels should be for the
+      training dataset associated with the constraints.
     penalty_weights: optional rank-1 floating-point `Tensor`, for which the ith
       element is the weight of the ith training example, on the training dataset
       associated with the penalties. If not specified, the weights default to

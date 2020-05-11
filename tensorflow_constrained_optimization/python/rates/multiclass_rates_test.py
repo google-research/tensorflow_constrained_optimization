@@ -185,8 +185,9 @@ class MulticlassRatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         self._penalty_predictions, dtype=tf.float32)
     constraint_predictions = tf.constant(
         self._constraint_predictions, dtype=tf.float32)
-    penalty_labels = tf.constant(self._penalty_labels, dtype=tf.int32)
-    constraint_labels = tf.constant(self._constraint_labels, dtype=tf.int32)
+    penalty_labels = tf.one_hot(self._penalty_labels, depth=self._num_classes)
+    constraint_labels = tf.one_hot(
+        self._constraint_labels, depth=self._num_classes)
     penalty_weights = tf.constant(self._penalty_weights, dtype=tf.float32)
     constraint_weights = tf.constant(self._constraint_weights, dtype=tf.float32)
     context = subsettable_context.multiclass_split_rate_context(
