@@ -81,6 +81,7 @@ py_test(
 py_test(
     name = "proxy_lagrangian_optimizer_test",
     size = "small",
+    timeout = "moderate",
     srcs = ["proxy_lagrangian_optimizer_test.py"],
     srcs_version = "PY2AND3",
     deps = [
