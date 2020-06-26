@@ -90,6 +90,8 @@ class _StaticExplicitDeferredTensorState(_ExplicitDeferredTensorState):
         type-promoted, if necessary. Only applies if "value" is a `Tensor`:
           non-`Tensor` types are always auto-castable.
     """
+    super(_StaticExplicitDeferredTensorState, self).__init__()
+
     assert not callable(value)
     self._value = value
     self._auto_cast = auto_cast
@@ -184,6 +186,8 @@ class _CallableExplicitDeferredTensorState(_ExplicitDeferredTensorState):
         type-promoted, if necessary. Only applies if "callback" returns a
         `Tensor`: non-`Tensor` types are always auto-castable.
     """
+    super(_CallableExplicitDeferredTensorState, self).__init__()
+
     assert callable(callback)
     self._callback = callback
     self._auto_cast = auto_cast
@@ -485,6 +489,8 @@ class _DerivedDeferredTensor(DeferredTensor):
       TypeError: if value is neither a `Tensor`-like object nor a nullary
         function returning such an object.
     """
+    super(_DerivedDeferredTensor, self).__init__()
+
     # We cast args to a tuple so that it's immutable, and can therefore be
     # hashed.
     self._callback = callback
@@ -633,6 +639,8 @@ class ExplicitDeferredTensor(DeferredTensor):
       TypeError: if value is neither a `Tensor`-like object nor a nullary
         function returning such an object.
     """
+    super(ExplicitDeferredTensor, self).__init__()
+
     if isinstance(value, helpers.RateObject):
       raise TypeError(
           "a ExplicitDeferredTensor may only be created from a "
@@ -711,6 +719,8 @@ class DeferredVariable(DeferredTensor):
       auto_cast: if `True`, then calls to `DeferredTensor.apply` will attempt to
         perform automatic type promotion on the resulting `DeferredVariable`.
     """
+    super(DeferredVariable, self).__init__()
+
     self._initial_value = initial_value
     self._trainable = trainable
     self._name = name
@@ -745,7 +755,7 @@ class DeferredVariable(DeferredTensor):
     if key in structure_memoizer:
       raise RuntimeError("attempted to create a DeferredVariable that has "
                          "already been created")
-    structure_memoizer[key] = tf.compat.v2.Variable(
+    structure_memoizer[key] = tf.Variable(
         initial_value=self._initial_value,
         trainable=self._trainable,
         name=self._name,

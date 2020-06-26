@@ -189,7 +189,7 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
 
     else:
       initial_multipliers = np.zeros((num_constraints,), dtype=np.float32)
-      self._multipliers = tf.compat.v2.Variable(
+      self._multipliers = tf.Variable(
           initial_multipliers,
           trainable=True,
           name="tfco_lagrange_multipliers",

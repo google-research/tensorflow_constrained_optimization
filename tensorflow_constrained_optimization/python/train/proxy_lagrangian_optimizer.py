@@ -427,7 +427,7 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
                                        axis=0)
 
       # FUTURE WORK: make the dtype a parameter.
-      self._state = tf.compat.v2.Variable(
+      self._state = tf.Variable(
           initial_state,
           trainable=True,
           name="tfco_proxy_lagrangian_state",

@@ -35,7 +35,7 @@ class PredicateTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests the `Predicate` class."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     predicate1 = predicate.Predicate([-0.2, 0.4, 1.0, 0.3])
