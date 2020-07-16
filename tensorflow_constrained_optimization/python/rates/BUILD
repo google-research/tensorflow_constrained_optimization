@@ -102,6 +102,7 @@ py_library(
         ":deferred_tensor",
         ":helpers",
         ":predicate",
+        # numpy dep,
         # six dep,
         # tensorflow dep,
     ],
@@ -164,6 +165,42 @@ py_library(
 )
 
 py_library(
+    name = "multiclass_rates",
+    srcs = ["multiclass_rates.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":basic_expression",
+        ":defaults",
+        ":deferred_tensor",
+        ":expression",
+        ":loss",
+        ":predicate",
+        ":subsettable_context",
+        ":term",
+        # numpy dep,
+        # six dep,
+        # tensorflow dep,
+    ],
+)
+
+py_library(
+    name = "general_rates",
+    srcs = ["general_rates.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":basic_expression",
+        ":binary_rates",
+        ":defaults",
+        ":deferred_tensor",
+        ":expression",
+        ":multiclass_rates",
+        ":subsettable_context",
+        ":term",
+        # tensorflow dep,
+    ],
+)
+
+py_library(
     name = "rate_minimization_problem",
     srcs = ["rate_minimization_problem.py"],
     srcs_version = "PY2AND3",
@@ -173,6 +210,17 @@ py_library(
         ":deferred_tensor",
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:constrained_minimization_problem",
+    ],
+)
+
+py_library(
+    name = "test_helpers",
+    testonly = 1,
+    srcs = ["test_helpers.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        # numpy dep,
+        # six dep,
     ],
 )
 
@@ -318,8 +366,45 @@ py_test(
         ":defaults",
         ":deferred_tensor",
         ":subsettable_context",
+        ":test_helpers",
         # numpy dep,
         # six dep,
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
+    ],
+)
+
+py_test(
+    name = "multiclass_rates_test",
+    size = "large",
+    srcs = ["multiclass_rates_test.py"],
+    # shard_count = 3,
+    srcs_version = "PY2AND3",
+    deps = [
+        ":defaults",
+        ":deferred_tensor",
+        ":multiclass_rates",
+        ":subsettable_context",
+        # numpy dep,
+        # six dep,
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
+    ],
+)
+
+py_test(
+    name = "general_rates_test",
+    srcs = ["general_rates_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":defaults",
+        ":deferred_tensor",
+        ":general_rates",
+        ":subsettable_context",
+        ":test_helpers",
+        # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,

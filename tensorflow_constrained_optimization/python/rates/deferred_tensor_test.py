@@ -20,7 +20,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import defaults
@@ -36,7 +36,7 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests that automatic type promotion works as expected."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     tensor1 = deferred_tensor.ExplicitDeferredTensor(
@@ -82,7 +82,7 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # Keeps track of whether the callbacks have been called.
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     callback_list = []
@@ -114,7 +114,7 @@ class DeferredTensorTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests that `DeferredVariable`s are created correctly."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     variable = deferred_tensor.DeferredVariable(42, dtype=tf.int32)

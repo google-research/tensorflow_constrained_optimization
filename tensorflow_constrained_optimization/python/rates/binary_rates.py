@@ -78,7 +78,7 @@ from __future__ import print_function
 import numbers
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import defaults
@@ -90,33 +90,33 @@ from tensorflow_constrained_optimization.python.rates import term
 
 
 def _binary_classification_rate(
+    numerator_context,
+    denominator_context,
     positive_coefficient=0.0,
     negative_coefficient=0.0,
-    numerator_context=None,
-    denominator_context=None,
     penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
     constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates an `Expression` representing positive and negative rates.
+  """Creates an `Expression` for positive and negative rates.
 
   The result of this function represents:
     total_rate := (positive_coefficient * positive_rate +
         negative_coefficient * negative_rate)
   where:
-    positive_rate := sum_i{w_i * c_i * d_i * 1{z_i >  0}} / sum_i{w_i * d_i}
-    negative_rate := sum_i{w_i * c_i * d_i * 1{z_i <= 0}} / sum_i{w_i * d_i}
+    positive_rate := sum_i{w_i * c_i * 1{z_i >  0}} / sum_i{w_i * d_i}
+    negative_rate := sum_i{w_i * c_i * 1{z_i <= 0}} / sum_i{w_i * d_i}
   where z_i and w_i are the given predictions and weights, and c_i and d_i are
-  indicators for which examples to include the numerator and denominator (all
+  indicators for which examples to include in the numerator and denominator (all
   four of z, w, c and d are in the contexts).
 
   Args:
-    positive_coefficient: float, scalar coefficient on the positive prediction
-      rate.
-    negative_coefficient: float, scalar coefficient on the negative prediction
-      rate.
     numerator_context: `SubsettableContext`, the block of data to use when
       calculating the numerators of the rates.
     denominator_context: `SubsettableContext`, the block of data to use when
       calculating the denominators of the rates.
+    positive_coefficient: float, scalar coefficient on the positive prediction
+      rate.
+    negative_coefficient: float, scalar coefficient on the negative prediction
+      rate.
     penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
       to use when calculating the "penalty" approximation to the rates.
     constraint_loss: `BinaryClassificationLoss`, the (not necessarily
@@ -129,12 +129,9 @@ def _binary_classification_rate(
   Raises:
     TypeError: if either context is not a SubsettableContext, or either loss is
       not a BinaryClassificationLoss.
-    ValueError: if either context is not provided, or the two contexts are
-      incompatible (have different predictions, labels or weights).
+    ValueError: if the two contexts are incompatible (have different
+      predictions, labels or weights), or they are multiclass contexts.
   """
-  if numerator_context is None or denominator_context is None:
-    raise ValueError("both numerator_context and denominator_context must be "
-                     "provided")
   if not (
       isinstance(numerator_context, subsettable_context.SubsettableContext) and
       isinstance(denominator_context, subsettable_context.SubsettableContext)):
@@ -143,6 +140,9 @@ def _binary_classification_rate(
   raw_context = numerator_context.raw_context
   if denominator_context.raw_context != raw_context:
     raise ValueError("numerator and denominator contexts must be compatible")
+  if raw_context.num_classes is not None:
+    raise ValueError("binary classification rates cannot be constructed from "
+                     "multiclass contexts")
 
   if not (isinstance(penalty_loss, loss.BinaryClassificationLoss) and
           isinstance(constraint_loss, loss.BinaryClassificationLoss)):
@@ -165,134 +165,10 @@ def _binary_classification_rate(
       basic_expression.BasicExpression([constraint_term]))
 
 
-def _ratio_bound(numerator_expression, denominator_expression, lower_bound,
-                 upper_bound):
-  """Creates an `Expression` representing a ratio.
-
-  The result of this function is an `Expression` representing:
-    numerator_bound / denominator_bound
-  where numerator_bound and denominator_bound are two newly-created slack
-  variables projected to satisfy the following in an update op:
-    0 <= numerator_bound <= denominator_bound <= 1
-    denominator_lower_bound <= denominator_bound
-  Additionally, the following two constraints will be added if lower_bound is
-  True:
-    numerator_bound <= numerator_expression
-    denominator_bound >= denominator_expression
-  and/or the following two if upper_bound is true:
-    numerator_bound >= numerator_expression
-    denominator_bound <= denominator_expression
-  These constraints are placed in the "extra_constraints" field of the resulting
-  `Expression`.
-
-  If you're going to be lower-bounding or maximizing the result of this
-  function, then need to set the lower_bound parameter to `True`. Likewise, if
-  you're going to be upper-bounding or minimizing the result of this function,
-  then the upper_bound parameter must be `True`. At least one of these
-  parameters *must* be `True`, and it's permitted for both of them to be `True`
-  (but we recommend against this, since it would result in equality constraints,
-  which might cause problems during optimization and/or post-processing).
-
-  Args:
-    numerator_expression: `Expression`, the numerator of the ratio.
-    denominator_expression: `Expression`, the denominator of the ratio.
-    lower_bound: bool, `True` if you want the result of this function to
-      lower-bound the ratio.
-    upper_bound: bool, `True` if you want the result of this function to
-      upper-bound the ratio.
-
-  Returns:
-    An `Expression` representing the ratio.
-
-  Raises:
-    TypeError: if either numerator_expression or denominator_expression is not
-      an `Expression`.
-    ValueError: if both lower_bound and upper_bound are `False`.
-  """
-  if not (isinstance(numerator_expression, expression.Expression) and
-          isinstance(denominator_expression, expression.Expression)):
-    raise TypeError(
-        "both numerator_expression and denominator_expression must be "
-        "Expressions (perhaps you need to call wrap_rate() to create an "
-        "Expression from a Tensor?)")
-
-  # One could set both lower_bound and upper_bound to True, in which case the
-  # result of this function could be treated as the ratio itself (instead of a
-  # {lower,upper} bound of it). However, this would come with some drawbacks: it
-  # would of course make optimization more difficult, but more importantly, it
-  # would potentially cause post-processing for feasibility (e.g. using
-  # "shrinking") to fail to find a feasible solution.
-  if not (lower_bound or upper_bound):
-    raise ValueError("at least one of lower_bound or upper_bound must be True")
-
-  # We use a "update_ops_fn" instead of a "constraint" (which we would usually
-  # prefer) to perform the projection because we want to grab the denominator
-  # lower bound out of the structure_memoizer.
-  def update_ops_fn(ratio_bounds_variable, structure_memoizer, value_memoizer):
-    """Projects ratio_bounds onto the feasible region."""
-    del value_memoizer
-
-    numerator = ratio_bounds_variable[0]
-    denominator = ratio_bounds_variable[1]
-
-    # First make sure that numerator <= denominator.
-    average = 0.5 * (numerator + denominator)
-    numerator = tf.minimum(average, numerator)
-    denominator = tf.maximum(average, denominator)
-
-    # Next make sure that the numerator is in [0, 1] and the denominator is in
-    # [denominator_lower_bound, 1].
-    numerator = tf.maximum(0.0, tf.minimum(1.0, numerator))
-    denominator = tf.maximum(
-        structure_memoizer[defaults.DENOMINATOR_LOWER_BOUND_KEY],
-        tf.minimum(1.0, denominator))
-
-    return [ratio_bounds_variable.assign([numerator, denominator])]
-
-  # Ideally the slack variables would have the same dtype as the predictions,
-  # but we might not know their dtype (e.g. in eager mode), so instead we always
-  # use float32 with auto_cast=True.
-  ratio_bounds = deferred_tensor.DeferredVariable([0.0, 1.0],
-                                                  trainable=True,
-                                                  name="tfco_ratio_bounds",
-                                                  dtype=tf.float32,
-                                                  update_ops_fn=update_ops_fn,
-                                                  auto_cast=True)
-  numerator_bound_basic_expression = basic_expression.BasicExpression(
-      [term.TensorTerm(ratio_bounds[0])])
-  numerator_bound_expression = expression.ExplicitExpression(
-      penalty_expression=numerator_bound_basic_expression,
-      constraint_expression=numerator_bound_basic_expression)
-
-  denominator_bound_basic_expression = basic_expression.BasicExpression(
-      [term.TensorTerm(ratio_bounds[1])])
-  denominator_bound_expression = expression.ExplicitExpression(
-      penalty_expression=denominator_bound_basic_expression,
-      constraint_expression=denominator_bound_basic_expression)
-
-  extra_constraints = []
-  if lower_bound:
-    extra_constraints.append(numerator_bound_expression <= numerator_expression)
-    extra_constraints.append(
-        denominator_expression <= denominator_bound_expression)
-  if upper_bound:
-    extra_constraints.append(numerator_expression <= numerator_bound_expression)
-    extra_constraints.append(
-        denominator_bound_expression <= denominator_expression)
-
-  ratio_basic_expression = basic_expression.BasicExpression(
-      [term.TensorTerm(ratio_bounds[0] / ratio_bounds[1])])
-  return expression.ConstrainedExpression(
-      expression.ExplicitExpression(
-          penalty_expression=ratio_basic_expression,
-          constraint_expression=ratio_basic_expression),
-      extra_constraints=extra_constraints)
-
-
 def positive_prediction_rate(context,
                              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates an `Expression` representing a positive prediction rate.
+  """Creates an `Expression` for a positive prediction rate.
 
   The result of this function represents:
     positive_rate := sum_i{w_i * c_i * 1{z_i > 0}} / sum_i{w_i * c_i}
@@ -317,9 +193,9 @@ def positive_prediction_rate(context,
       a BinaryClassificationLoss.
   """
   return _binary_classification_rate(
-      positive_coefficient=1.0,
       numerator_context=context,
       denominator_context=context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -327,7 +203,7 @@ def positive_prediction_rate(context,
 def negative_prediction_rate(context,
                              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates an `Expression` representing a negative prediction rate.
+  """Creates an `Expression` for a negative prediction rate.
 
   The result of this function represents:
     negative_rate := sum_i{w_i * c_i * 1{z_i <= 0}} / sum_i{w_i * c_i}
@@ -352,9 +228,9 @@ def negative_prediction_rate(context,
       a BinaryClassificationLoss.
   """
   return _binary_classification_rate(
-      negative_coefficient=1.0,
       numerator_context=context,
       denominator_context=context,
+      negative_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -362,7 +238,7 @@ def negative_prediction_rate(context,
 def error_rate(context,
                penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing an error rate.
+  r"""Creates an `Expression` for an error rate.
 
   The result of this function represents:
 
@@ -403,15 +279,15 @@ def error_rate(context,
                                     raw_context.constraint_labels <= 0)
 
   positive_expression = _binary_classification_rate(
-      negative_coefficient=1.0,
       numerator_context=positive_context,
       denominator_context=context,
+      negative_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
   negative_expression = _binary_classification_rate(
-      positive_coefficient=1.0,
       numerator_context=negative_context,
       denominator_context=context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -421,7 +297,7 @@ def error_rate(context,
 def accuracy_rate(context,
                   penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                   constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing an accuracy rate.
+  r"""Creates an `Expression` for an accuracy rate.
 
   The result of this function represents:
 
@@ -462,15 +338,15 @@ def accuracy_rate(context,
                                     raw_context.constraint_labels <= 0)
 
   positive_expression = _binary_classification_rate(
-      positive_coefficient=1.0,
       numerator_context=positive_context,
       denominator_context=context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
   negative_expression = _binary_classification_rate(
-      negative_coefficient=1.0,
       numerator_context=negative_context,
       denominator_context=context,
+      negative_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -480,7 +356,7 @@ def accuracy_rate(context,
 def true_positive_rate(context,
                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing a true positive rate.
+  r"""Creates an `Expression` for a true positive rate.
 
   The result of this function represents:
 
@@ -523,9 +399,9 @@ def true_positive_rate(context,
                                     raw_context.constraint_labels > 0)
 
   return _binary_classification_rate(
-      positive_coefficient=1.0,
       numerator_context=positive_context,
       denominator_context=positive_context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -533,7 +409,7 @@ def true_positive_rate(context,
 def false_negative_rate(context,
                         penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                         constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing a false negative rate.
+  r"""Creates an `Expression` for a false negative rate.
 
   The result of this function represents:
 
@@ -576,9 +452,9 @@ def false_negative_rate(context,
                                     raw_context.constraint_labels > 0)
 
   return _binary_classification_rate(
-      negative_coefficient=1.0,
       numerator_context=positive_context,
       denominator_context=positive_context,
+      negative_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -586,7 +462,7 @@ def false_negative_rate(context,
 def false_positive_rate(context,
                         penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                         constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing a false positive rate.
+  r"""Creates an `Expression` for a false positive rate.
 
   The result of this function represents:
 
@@ -629,9 +505,9 @@ def false_positive_rate(context,
                                     raw_context.constraint_labels <= 0)
 
   return _binary_classification_rate(
-      positive_coefficient=1.0,
       numerator_context=negative_context,
       denominator_context=negative_context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -639,7 +515,7 @@ def false_positive_rate(context,
 def true_negative_rate(context,
                        penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                        constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing a true negative rate.
+  r"""Creates an `Expression` for a true negative rate.
 
   The result of this function represents:
 
@@ -682,9 +558,9 @@ def true_negative_rate(context,
                                     raw_context.constraint_labels <= 0)
 
   return _binary_classification_rate(
-      negative_coefficient=1.0,
       numerator_context=negative_context,
       denominator_context=negative_context,
+      negative_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -692,7 +568,7 @@ def true_negative_rate(context,
 def true_positive_proportion(context,
                              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing a true positive proportion.
+  r"""Creates an `Expression` for a true positive proportion.
 
   The result of this function represents:
 
@@ -735,9 +611,9 @@ def true_positive_proportion(context,
                                     raw_context.constraint_labels > 0)
 
   return _binary_classification_rate(
-      positive_coefficient=1.0,
       numerator_context=positive_context,
       denominator_context=context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -745,7 +621,7 @@ def true_positive_proportion(context,
 def false_negative_proportion(context,
                               penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                               constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing a false negative proportion.
+  r"""Creates an `Expression` for a false negative proportion.
 
   The result of this function represents:
 
@@ -788,9 +664,9 @@ def false_negative_proportion(context,
                                     raw_context.constraint_labels > 0)
 
   return _binary_classification_rate(
-      negative_coefficient=1.0,
       numerator_context=positive_context,
       denominator_context=context,
+      negative_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -798,7 +674,7 @@ def false_negative_proportion(context,
 def false_positive_proportion(context,
                               penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                               constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing a false positive proportion.
+  r"""Creates an `Expression` for a false positive proportion.
 
   The result of this function represents:
 
@@ -841,9 +717,9 @@ def false_positive_proportion(context,
                                     raw_context.constraint_labels <= 0)
 
   return _binary_classification_rate(
-      positive_coefficient=1.0,
       numerator_context=negative_context,
       denominator_context=context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -851,7 +727,7 @@ def false_positive_proportion(context,
 def true_negative_proportion(context,
                              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing a true negative proportion.
+  r"""Creates an `Expression` for a true negative proportion.
 
   The result of this function represents:
 
@@ -894,9 +770,9 @@ def true_negative_proportion(context,
                                     raw_context.constraint_labels <= 0)
 
   return _binary_classification_rate(
-      negative_coefficient=1.0,
       numerator_context=negative_context,
       denominator_context=context,
+      negative_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -904,7 +780,7 @@ def true_negative_proportion(context,
 def precision_ratio(context,
                     penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                     constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates two `Expression`s representing a precision as a ratio.
+  r"""Creates two `Expression`s representing precision as a ratio.
 
   The result of this function represents:
 
@@ -959,73 +835,26 @@ def precision_ratio(context,
                                     raw_context.constraint_labels > 0)
 
   numerator_expression = _binary_classification_rate(
-      positive_coefficient=1.0,
       numerator_context=positive_context,
       denominator_context=context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
   denominator_expression = _binary_classification_rate(
-      positive_coefficient=1.0,
       numerator_context=context,
       denominator_context=context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
   return numerator_expression, denominator_expression
 
 
-def precision(context,
-              penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
-              constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing precision.
-
-  The result of this function represents:
-
-  $$\\mathrm{precision} = \\frac{
-    \sum_i w_i c_i \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
-  }{ \sum_i w_i c_i \\mathbf{1}\{z_i > 0\} }$$
-
-  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
-  weights, and $$c_i$$ is an indicator for which examples to include in the rate
-  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
-
-  Args:
-    context: `SubsettableContext`, the block of data to use when calculating the
-      rate. This context *must* contain labels.
-    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
-      to use when calculating the "penalty" approximation to the rate.
-    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
-      differentiable) loss function to use when calculating the "constraint"
-      approximation to the rate.
-
-  Returns:
-    An `Expression` representing precision (as defined above).
-
-  Raises:
-    TypeError: if the context is not a SubsettableContext, or either loss is not
-      a BinaryClassificationLoss.
-    ValueError: if the context doesn't contain labels.
-  """
-  numerator_expression, denominator_expression = precision_ratio(
-      context, penalty_loss=penalty_loss, constraint_loss=constraint_loss)
-  return expression.BoundedExpression(
-      lower_bound=_ratio_bound(
-          numerator_expression=numerator_expression,
-          denominator_expression=denominator_expression,
-          lower_bound=True,
-          upper_bound=False),
-      upper_bound=_ratio_bound(
-          numerator_expression=numerator_expression,
-          denominator_expression=denominator_expression,
-          lower_bound=False,
-          upper_bound=True))
-
-
 def f_score_ratio(context,
                   beta=1.0,
                   penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                   constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates two `Expression`s representing an F-score as a ratio.
+  r"""Creates two `Expression`s representing F-score as a ratio.
 
   The result of this function represents:
 
@@ -1058,7 +887,7 @@ def f_score_ratio(context,
   Args:
     context: `SubsettableContext`, the block of data to use when calculating the
       rate. This context *must* contain labels.
-    beta: non-negative float, the beta parameter to the f-score. If beta=0, then
+    beta: non-negative float, the beta parameter to the F-score. If beta=0, then
       the result is precision, and if beta=1 (the default), then the result is
       the F1-score.
     penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
@@ -1095,85 +924,30 @@ def f_score_ratio(context,
                                     raw_context.constraint_labels <= 0)
 
   numerator_expression = _binary_classification_rate(
-      positive_coefficient=(1.0 + beta * beta),
       numerator_context=positive_context,
       denominator_context=context,
+      positive_coefficient=(1.0 + beta * beta),
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
   denominator_expression = (
       numerator_expression + _binary_classification_rate(
-          negative_coefficient=beta * beta,
           numerator_context=positive_context,
           denominator_context=context,
+          negative_coefficient=beta * beta,
           penalty_loss=penalty_loss,
           constraint_loss=constraint_loss) + _binary_classification_rate(
-              positive_coefficient=1.0,
               numerator_context=negative_context,
               denominator_context=context,
+              positive_coefficient=1.0,
               penalty_loss=penalty_loss,
               constraint_loss=constraint_loss))
 
   return numerator_expression, denominator_expression
 
 
-def f_score(context,
-            beta=1.0,
-            penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
-            constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing an F-score.
-
-  The result of this function represents:
-
-  $$\\mathrm{f\_score} = \\frac{
-    \sum_i w_i c_i (1 + \\beta^2) \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
-  }{
-    \sum_i w_i c_i ( (1 + \\beta^2) \\mathbf{1}\{y_i > 0 \\wedge z_i > 0\}
-    + \\beta^2 \\mathbf{1}\{y_i > 0 \\wedge z_i \\le 0\}
-    + \\mathbf{1}\{y_i \\le 0 \\wedge z_i > 0\} )
-  }$$
-
-  where $$z_i$$, $$y_i$$ and $$w_i$$ are the given predictions, labels and
-  weights, and $$c_i$$ is an indicator for which examples to include in the rate
-  (all four of $$z$$, $$y$$, $$w$$ and $$c$$ are in the context).
-
-  Args:
-    context: `SubsettableContext`, the block of data to use when calculating the
-      rate. This context *must* contain labels.
-    beta: non-negative float, the beta parameter to the f-score. If beta=0, then
-      the result is precision, and if beta=1 (the default), then the result is
-      the F1-score.
-    penalty_loss: `BinaryClassificationLoss`, the (differentiable) loss function
-      to use when calculating the "penalty" approximation to the rate.
-    constraint_loss: `BinaryClassificationLoss`, the (not necessarily
-      differentiable) loss function to use when calculating the "constraint"
-      approximation to the rate.
-
-  Returns:
-    An `Expression` representing f_score (as defined above).
-
-  Raises:
-    TypeError: if the context is not a SubsettableContext, or either loss is not
-      a BinaryClassificationLoss.
-    ValueError: if the context doesn't contain labels.
-  """
-  numerator_expression, denominator_expression = f_score_ratio(
-      context, beta, penalty_loss=penalty_loss, constraint_loss=constraint_loss)
-  return expression.BoundedExpression(
-      lower_bound=_ratio_bound(
-          numerator_expression=numerator_expression,
-          denominator_expression=denominator_expression,
-          lower_bound=True,
-          upper_bound=False),
-      upper_bound=_ratio_bound(
-          numerator_expression=numerator_expression,
-          denominator_expression=denominator_expression,
-          lower_bound=False,
-          upper_bound=True))
-
-
 def _tpr_at_fpr_bound(context, fpr_target, threshold_tensor, lower_bound,
                       upper_bound, penalty_loss, constraint_loss):
-  """Creates an `Expression` representing TPR@FPR.
+  """Creates an `Expression` for TPR@FPR.
 
   This is a helper function for _roc_auc_bound(). It returns an `Expression`
   representing the true positive rate (TPR) at an implicitly-defined threshold
@@ -1250,7 +1024,7 @@ def _tpr_at_fpr_bound(context, fpr_target, threshold_tensor, lower_bound,
 
 def _roc_auc_bound(context, bins, include_threshold, lower_bound, upper_bound,
                    penalty_loss, constraint_loss):
-  """Creates an `Expression` representing an approximate ROC AUC.
+  """Creates an `Expression` for an approximate ROC AUC.
 
   The result of this function represents a Riemann approximation to the area
   under the ROC curve (false positive rate on the horizontal axis, true positive
@@ -1344,7 +1118,7 @@ def roc_auc(context,
             include_threshold=True,
             penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
             constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates an `Expression` representing an approximate ROC AUC.
+  """Creates an `Expression` for an approximate ROC AUC.
 
   The result of this function represents a Riemann approximation to the area
   under the ROC curve (false positive rate on the horizontal axis, true positive
@@ -1400,7 +1174,7 @@ def roc_auc(context,
 def _recall_at_precision_bound(context, precision_target, include_threshold,
                                lower_bound, upper_bound, penalty_loss,
                                constraint_loss):
-  r"""Creates an `Expression` representing recall@precision.
+  r"""Creates an `Expression` for recall@precision.
 
   You should think of the result of this function as "the recall of a
   thresholded classifier, with the threshold being chosen so as to meet a
@@ -1519,7 +1293,7 @@ def recall_at_precision(context,
                         include_threshold=True,
                         penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                         constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing recall@precision.
+  r"""Creates an `Expression` for recall@precision.
 
   You should think of the result of this function as "the recall of a
   thresholded classifier, with the threshold being chosen so as to meet a
@@ -1586,7 +1360,7 @@ def _inverse_precision_at_recall_bound(context, recall_target,
                                        include_threshold, lower_bound,
                                        upper_bound, penalty_loss,
                                        constraint_loss):
-  r"""Creates an `Expression` representing (1/precision)@recall.
+  r"""Creates an `Expression` for (1/precision)@recall.
 
   You should think of the result of this function as "the inverse-precision of a
   thresholded classifier, with the threshold being chosen so as to meet a
@@ -1723,10 +1497,9 @@ def _inverse_precision_at_recall_bound(context, recall_target,
                                     raw_context.constraint_labels <= 0)
 
   recall_expression = _binary_classification_rate(
-      positive_coefficient=1.0,
-      negative_coefficient=0.0,
       numerator_context=positive_context,
       denominator_context=positive_context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -1738,10 +1511,9 @@ def _inverse_precision_at_recall_bound(context, recall_target,
 
   return expression.ConstrainedExpression(
       1 + _binary_classification_rate(
-          positive_coefficient=1.0,
-          negative_coefficient=0.0,
           numerator_context=negative_context,
           denominator_context=positive_context,
+          positive_coefficient=1.0,
           penalty_loss=penalty_loss,
           constraint_loss=constraint_loss) / recall_target,
       extra_constraints=extra_constraints)
@@ -1753,7 +1525,7 @@ def inverse_precision_at_recall(
     include_threshold=True,
     penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
     constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing (1/precision)@recall.
+  r"""Creates an `Expression` for (1/precision)@recall.
 
   You should think of the result of this function as "the inverse-precision of a
   thresholded classifier, with the threshold being chosen so as to meet a recall
@@ -1827,7 +1599,7 @@ def inverse_precision_at_recall(
 def _precision_at_recall_bound(context, recall_target, threshold_tensor,
                                slack_tensor, lower_bound, upper_bound,
                                penalty_loss, constraint_loss):
-  r"""Creates an `Expression` representing precision@recall.
+  r"""Creates an `Expression` for precision@recall.
 
   You should think of the result of this function as "the precision of a
   thresholded classifier, with the threshold being chosen so as to meet a
@@ -1951,18 +1723,16 @@ def _precision_at_recall_bound(context, recall_target, threshold_tensor,
                                     raw_context.constraint_labels <= 0)
 
   recall_expression = _binary_classification_rate(
-      positive_coefficient=1.0,
-      negative_coefficient=0.0,
       numerator_context=positive_context,
       denominator_context=positive_context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
   constraint_expression = _binary_classification_rate(
-      positive_coefficient=1.0,
-      negative_coefficient=0.0,
       numerator_context=negative_context,
       denominator_context=positive_context,
+      positive_coefficient=1.0,
       penalty_loss=penalty_loss,
       constraint_loss=constraint_loss)
 
@@ -1994,7 +1764,7 @@ def precision_at_recall(context,
                         include_threshold=True,
                         penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
                         constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  r"""Creates an `Expression` representing precision@recall.
+  r"""Creates an `Expression` for precision@recall.
 
   You should think of the result of this function as "the precision of a
   thresholded classifier, with the threshold being chosen so as to meet a recall
@@ -2097,7 +1867,7 @@ def precision_at_recall(context,
 
 def _pr_auc_bound(context, bins, include_threshold, lower_bound, upper_bound,
                   penalty_loss, constraint_loss):
-  """Creates an `Expression` representing an approximate precision-recall AUC.
+  """Creates an `Expression` for an approximate precision-recall AUC.
 
   The result of this function represents a Riemann approximation to the area
   under the precision-recall curve (recall on the horizontal axis, precision on
@@ -2200,7 +1970,7 @@ def pr_auc(context,
            include_threshold=True,
            penalty_loss=defaults.DEFAULT_PENALTY_LOSS,
            constraint_loss=defaults.DEFAULT_CONSTRAINT_LOSS):
-  """Creates an `Expression` representing an approximate precision-recall AUC.
+  """Creates an `Expression` for an approximate precision-recall AUC.
 
   The result of this function represents a Riemann approximation to the area
   under the precision-recall curve (recall on the horizontal axis, precision on

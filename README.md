@@ -80,10 +80,11 @@ write optimization problems in simple mathematical notation (i.e. minimize
 *this* expression subject to *this* list of algebraic constraints).
 
 These helpers include a number of functions for constructing (in
-"binary_rates.py") and manipulating ("operations.py", and Python arithmetic
-operators) rates. Some of these, as described in [NaCoGu19], require introducing
-slack variables and extra implicit constraints to the resulting optimization
-problem, which, again, is handled automatically.
+"binary_rates.py", "multiclass_rates.py" and "general_rates.py") and
+manipulating ("operations.py", and Python arithmetic operators) rates. Some of
+these, as described in [NaCoGu19], require introducing slack variables and extra
+implicit constraints to the resulting optimization problem, which, again, is
+handled automatically.
 
 ### Shrinking
 
@@ -207,7 +208,10 @@ performance out of your model, consider using the "shrinking" procedure of
         convenient) to create an entirely separate dataset for each rare subset,
         and to construct each subset context directly from each such dataset.
 
-    *   [binary_rates.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/binary_rates.py):
+    *   [binary_rates.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/binary_rates.py),
+        [multiclass_rates.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/multiclass_rates.py),
+        and
+        [general_rates.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/general_rates.py):
         contains functions for constructing rates from contexts. These rates are
         the "heart" of this library, and can be combined into more complicated
         expressions using python arithmetic operators, or into constraints using
@@ -223,7 +227,8 @@ performance out of your model, consider using the "shrinking" procedure of
     *   [loss.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/loss.py):
         contains loss functions used in constructing rates. These can be passed
         as parameters to the optional `penalty_loss` and `constraint_loss`
-        functions in "binary_rates.py" (above).
+        functions in "binary_rates.py", "multiclass_rates.py" and
+        "general_rates.py" (above).
 
     *   [rate_minimization_problem.py](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/tensorflow_constrained_optimization/python/rates/rate_minimization_problem.py):
         contains the `RateMinimizationProblem` class, which constructs a
@@ -551,3 +556,9 @@ directory contains several illustrations of how one can use this library:
         CelebFaces Attributes dataset. The model trained in this notebook is
         evaluating for fairness across age group, with the false positive rate
         set as the constraint.
+
+    1.  [PRAUC_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/PRAUC_training.ipynb):
+        This notebook shows how to train a model to maximize the *Area Under the
+        Precision-Recall Curve (PR-AUC)*. We'll show how to train the model both
+        with (i) plain TensorFlow (in eager mode), and (ii) with a custom
+        tf.Estimator.

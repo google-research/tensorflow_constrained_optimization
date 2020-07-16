@@ -20,7 +20,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import defaults
@@ -89,7 +89,7 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     context1, context2 = create_contexts()
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     with self.wrapped_session() as session:
@@ -122,7 +122,7 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     context1, context2 = create_contexts()
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     and_context = context1 & context2
@@ -146,7 +146,7 @@ class SubsettableContextTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     context1, context2 = create_contexts()
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     or_context = context1 | context2

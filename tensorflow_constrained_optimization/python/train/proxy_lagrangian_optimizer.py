@@ -50,7 +50,7 @@ from __future__ import print_function
 
 import math
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow_constrained_optimization.python.train import constrained_optimizer
 
@@ -427,7 +427,7 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
                                        axis=0)
 
       # FUTURE WORK: make the dtype a parameter.
-      self._state = tf.compat.v2.Variable(
+      self._state = tf.Variable(
           initial_state,
           trainable=True,
           name="tfco_proxy_lagrangian_state",

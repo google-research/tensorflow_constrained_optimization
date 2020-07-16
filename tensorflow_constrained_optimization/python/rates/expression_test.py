@@ -20,7 +20,7 @@ from __future__ import division
 from __future__ import print_function
 
 from six.moves import xrange  # pylint: disable=redefined-builtin
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import basic_expression
@@ -39,7 +39,7 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests `Expression`'s arithmetic operators."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     def constant_expression(penalty_constant, constraint_constant=None):
@@ -94,7 +94,7 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests that `Expression`s propagate extra variables correctly."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     def create_dummy_expression(penalty_variable, constraint_variable):
@@ -188,7 +188,7 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # SumExpression flattens the list.
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     term_values = [0, 1, 2, 3, 4]
@@ -226,7 +226,7 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests that `BoundedExpression`s select their components correctly."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.compat.v2.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
     }
 
     term1 = term.TensorTerm(1.0)
