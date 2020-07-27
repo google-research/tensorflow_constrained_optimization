@@ -14,8 +14,6 @@
 # the License.
 # ==============================================================================
 
-# Placeholder for internal Python version compatibility macro.
-
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])  # Apache 2.0
@@ -227,6 +225,7 @@ py_library(
 py_test(
     name = "helpers_test",
     srcs = ["helpers_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":helpers",
@@ -237,6 +236,7 @@ py_test(
 py_test(
     name = "loss_test",
     srcs = ["loss_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":loss",
@@ -250,6 +250,7 @@ py_test(
 py_test(
     name = "deferred_tensor_test",
     srcs = ["deferred_tensor_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":defaults",
@@ -264,6 +265,7 @@ py_test(
 py_test(
     name = "predicate_test",
     srcs = ["predicate_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":defaults",
@@ -277,6 +279,7 @@ py_test(
 py_test(
     name = "subsettable_context_test",
     srcs = ["subsettable_context_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":defaults",
@@ -291,6 +294,7 @@ py_test(
 py_test(
     name = "term_test",
     srcs = ["term_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":defaults",
@@ -309,6 +313,7 @@ py_test(
 py_test(
     name = "basic_expression_test",
     srcs = ["basic_expression_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":basic_expression",
@@ -327,6 +332,7 @@ py_test(
 py_test(
     name = "expression_test",
     srcs = ["expression_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":basic_expression",
@@ -344,6 +350,7 @@ py_test(
 py_test(
     name = "operations_test",
     srcs = ["operations_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":defaults",
@@ -359,6 +366,7 @@ py_test(
     name = "binary_rates_test",
     size = "large",
     srcs = ["binary_rates_test.py"],
+    python_version = "PY3",
     # shard_count = 3,
     srcs_version = "PY2AND3",
     deps = [
@@ -379,6 +387,7 @@ py_test(
     name = "multiclass_rates_test",
     size = "large",
     srcs = ["multiclass_rates_test.py"],
+    python_version = "PY3",
     # shard_count = 3,
     srcs_version = "PY2AND3",
     deps = [
@@ -397,6 +406,7 @@ py_test(
 py_test(
     name = "general_rates_test",
     srcs = ["general_rates_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":defaults",
@@ -414,6 +424,7 @@ py_test(
 py_test(
     name = "rate_minimization_problem_test",
     srcs = ["rate_minimization_problem_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":binary_rates",
