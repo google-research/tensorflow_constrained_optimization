@@ -156,7 +156,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests `_RatioWeights` with all-zero weights class method."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32),
+        defaults.VARIABLE_FN_KEY: tf.Variable
     }
 
     ratio_weights = term._RatioWeights({}, 1)
@@ -176,7 +177,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         tf.bool, shape=(None,))
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32),
+        defaults.VARIABLE_FN_KEY: tf.Variable
     }
 
     numerator_predicate = predicate.Predicate(numerator_predicate_placeholder)
@@ -255,7 +257,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests `_RatioWeights`'s arithmetic operators."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32),
+        defaults.VARIABLE_FN_KEY: tf.Variable
     }
 
     def create_ratio_weights(weights_tensor):
@@ -296,7 +299,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests memoization."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32),
+        defaults.VARIABLE_FN_KEY: tf.Variable
     }
 
     weights_tensor = deferred_tensor.ExplicitDeferredTensor(
@@ -327,7 +331,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests `BinaryClassificationTerm`."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32),
+        defaults.VARIABLE_FN_KEY: tf.Variable
     }
 
     def numpy_loss(positive_weights_array, negative_weights_array,
@@ -403,7 +408,8 @@ class TermTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # MulticlassTerm with two classes.
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32),
+        defaults.VARIABLE_FN_KEY: tf.Variable
     }
 
     def numpy_loss(positive_weights_array, negative_weights_array,

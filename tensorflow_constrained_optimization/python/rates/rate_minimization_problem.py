@@ -96,7 +96,11 @@ class RateMinimizationProblem(
   iteration-to-iteration as they converge to their true values.
   """
 
-  def __init__(self, objective, constraints=None, denominator_lower_bound=1e-3):
+  def __init__(self,
+               objective,
+               constraints=None,
+               denominator_lower_bound=1e-3,
+               variable_fn=tf.Variable):
     """Creates a rate constrained optimization problem.
 
     In addition to an objective function to minimize and a list of constraints
@@ -118,6 +122,9 @@ class RateMinimizationProblem(
       constraints: a collection of `Constraint`s to impose.
       denominator_lower_bound: float, the smallest permitted value of the
         denominator of a rate.
+      variable_fn: optional function with the same signature as the
+        `tf.Variable` constructor, that returns a new variable with the
+        specified properties.
 
     Raises:
       ValueError: if the "penalty" portion of the objective or a constraint is
@@ -134,6 +141,7 @@ class RateMinimizationProblem(
       raise ValueError("non-differentiable losses (e.g. the zero-one loss) "
                        "cannot be optimized--they can only be constrained")
 
+    inputs = deferred_tensor.DeferredTensorInputList()
     variables = deferred_tensor.DeferredVariableList()
     constraints = constraint.ConstraintList(constraints)
 
@@ -141,7 +149,7 @@ class RateMinimizationProblem(
     # don't take one as a parameter since we want complete ownership, to avoid
     # any shenanigans: it has to start at zero, and be incremented after every
     # minibatch.
-    self._global_step = tf.Variable(
+    self._global_step = variable_fn(
         0,
         trainable=False,
         name="tfco_global_step",
@@ -155,13 +163,15 @@ class RateMinimizationProblem(
     # optimization problem.
     self._structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: denominator_lower_bound,
-        defaults.GLOBAL_STEP_KEY: self._global_step
+        defaults.GLOBAL_STEP_KEY: self._global_step,
+        defaults.VARIABLE_FN_KEY: variable_fn
     }
 
     # We ignore the "constraint_expression" field here, since we're not inside a
     # constraint (this is the objective function).
     self._objective = objective.penalty_expression.evaluate(
         self._structure_memoizer)
+    inputs += self._objective.inputs
     variables += self._objective.variables
     constraints += objective.extra_constraints
 
@@ -191,9 +201,15 @@ class RateMinimizationProblem(
             self._structure_memoizer)
         self._proxy_constraints.append(penalty_value)
         self._constraints.append(constraint_value)
+        inputs += penalty_value.inputs
+        inputs += constraint_value.inputs
         variables += penalty_value.variables
         variables += constraint_value.variables
         constraints += new_constraint.expression.extra_constraints
+
+    # Extract the list of all input `Tensor`-like objects (or nullary functions
+    # returning such).
+    self._inputs = inputs.list
 
     # Explicitly create all of the variables. This also functions as a sanity
     # check: before this point, no variable should have been accessed
@@ -273,6 +289,16 @@ class RateMinimizationProblem(
         for cc in self._proxy_constraints
     ])
     return objective, constraints, proxy_constraints
+
+  @property
+  def inputs(self):
+    """Returns a list of inputs to problem.
+
+    Returns:
+      A list of inputs, each of which is a `Tensor`-like object, or a nullary
+      function returning such.
+    """
+    return self._inputs
 
   @property
   def variables(self):

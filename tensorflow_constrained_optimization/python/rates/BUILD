@@ -52,6 +52,7 @@ py_library(
     srcs = ["deferred_tensor.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":defaults",
         ":helpers",
         # numpy dep,
         # six dep,

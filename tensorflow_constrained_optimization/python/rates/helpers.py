@@ -170,6 +170,8 @@ class UniqueList(RateObject):
       self._list.append(element)
 
   def __eq__(self, other):
+    if not isinstance(other, UniqueList):
+      return False
     # Two UniqueLists are equal iff they have the same element_type, and contain
     # the same elements in the same order.
     if self._element_type != other.element_type:

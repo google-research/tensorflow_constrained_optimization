@@ -47,7 +47,8 @@ class OperationsTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32),
+        defaults.VARIABLE_FN_KEY: tf.Variable
     }
 
     penalty_value = expression.penalty_expression.evaluate(structure_memoizer)

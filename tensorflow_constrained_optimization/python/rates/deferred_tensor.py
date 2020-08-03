@@ -27,78 +27,37 @@ import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow.compat.v2 as tf
 
+from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import helpers
 
 
-@six.add_metaclass(abc.ABCMeta)
-class _ExplicitDeferredTensorState(helpers.RateObject):
-  """Base class for internal state of an `ExplicitDeferredTensor`."""
-
-  @abc.abstractmethod
-  def value_and_auto_cast(self, structure_memoizer, value_memoizer):
-    """Returns the value of the `Tensor`, and whether it has no fixed type.
-
-    The difference between the two memoizer parameters is that the
-    "structure_memoizer" is responsible for memoizing quantities relating to the
-    *structure* of the problem, whereas the "value_memoizer" remembers
-    particular computed *values*. Whereas we have only one "structure_memoizer"
-    per RateMinimizationProblem, we should be given a fresh "value_memoizer"
-    every time the inputs change (i.e. at each iteration).
-
-    Args:
-      structure_memoizer: dict, which memoizes variables (among other things).
-      value_memoizer: dict, which memoizes DeferredTensor values.
-
-    Returns:
-      A (`Tensor`-like, `Boolean`) pair containing the value of the
-      `DeferredTensor`, and whether this value should be automatically
-      type-promoted if necessary.
-    """
-    pass
-
-  @abc.abstractmethod
-  def __hash__(self):
-    pass
-
-  @abc.abstractmethod
-  def __eq__(self, other):
-    pass
-
-  def __ne__(self, other):
-    return not self.__eq__(other)
-
-
-class _StaticExplicitDeferredTensorState(_ExplicitDeferredTensorState):
-  """Internal state for an `ExplicitDeferredTensor` wrapping a `Tensor."""
+class _DeferredTensorInput(helpers.RateObject):
+  """Wrapper around allowed input types, supporting __hash__ and __eq__."""
 
   @classmethod
   def _list_to_tuple(cls, arg):
     """Recursively converts lists into tuples."""
     if not isinstance(arg, list):
       return arg
-    return tuple([
-        _StaticExplicitDeferredTensorState._list_to_tuple(element)
-        for element in arg
-    ])
+    return tuple(
+        [_DeferredTensorInput._list_to_tuple(element) for element in arg])
 
-  def __init__(self, value, auto_cast):
-    """Creates a new `_StaticExplicitDeferredTensorState`.
+  def __init__(self, value):
+    """Creates a new `_DeferredTensorInput`.
 
     Args:
-      value: `Tensor`-like, the value of the `DeferredTensor`.
-      auto_cast: `Boolean`, whether the value should be automatically
-        type-promoted, if necessary. Only applies if "value" is a `Tensor`:
-          non-`Tensor` types are always auto-castable.
+      value: either a `Tensor`-like object, or a nullary function returning such
+        an object.
     """
-    super(_StaticExplicitDeferredTensorState, self).__init__()
-
-    assert not callable(value)
+    if isinstance(value, helpers.RateObject):
+      raise TypeError(
+          "a DeferredTensor may only be created from a Tensor-like object, "
+          "or a nullary function returning such")
     self._value = value
-    self._auto_cast = auto_cast
 
-    # For non-Tensor types, we make a deep copy to make extra-certain that it is
-    # immutable (since we'll hash it).
-    if not tf.is_tensor(self._value):
+    # For non-callable non-Tensor types, we make a deep copy to make
+    # extra-certain that it is immutable (since we'll hash it).
+    if not callable(self._value) and not tf.is_tensor(self._value):
       self._value = copy.deepcopy(self._value)
 
     # We memoize the hash, since it can be expensive to compute.
@@ -108,122 +67,71 @@ class _StaticExplicitDeferredTensorState(_ExplicitDeferredTensorState):
   def value(self):
     return self._value
 
-  @property
-  def auto_cast(self):
-    return self._auto_cast
-
-  def value_and_auto_cast(self, structure_memoizer, value_memoizer):
-    del structure_memoizer, value_memoizer
-    return self._value, self._auto_cast
-
   def __hash__(self):
-    # We memoize the hash, since it can be expensive to compute.
     if self._hash is None:
-      # We return the hash of a triple containing (i) the value, or None if the
-      # value is a Tensor, (ii) the id of the value, or None if the value is not
-      # a Tensor, and (iii) the auto_cast flag.
-      #
-      # The reason for the first two fields being laid out like they are is that
-      # __eq__() compares Tensors by id (using "is"), and non-Tensors by value.
-      if tf.is_tensor(self.value):
-        identifier = (None, id(self.value), self._auto_cast)
-      else:
-        # We cast to a numpy array, then to a list (of lists of lists...), and
-        # finally to a tuple (of tuples of tuples...) so that, even if we're
-        # given a numpy type (which is not necessarily hashable), we'll wind up
-        # with a hashable type.
-        #
-        # TODO: is there a more efficient way to do this? Notice that
-        # we can't just hash a numpy array's storage, since arrays of different
-        # types might be considered equal (e.g. [1.0, 2.0] == [1, 2]).
-        identifier = (_StaticExplicitDeferredTensorState._list_to_tuple(
-            np.array(self.value).tolist()), None, self._auto_cast)
 
-      self._hash = hash(identifier)
+      if callable(self._value):
+        self._hash = hash(self._value)
+
+      else:
+        # We return the hash of a pair containing (i) the value, or None if
+        # the value is a Tensor, and (ii) the id of the value, or None if the
+        # value is not a Tensor.
+        #
+        # The reason for the fields being laid out like they are is that
+        # __eq__() compares Tensors by id (using "is"), and non-Tensors by
+        # value.
+        if tf.is_tensor(self._value):
+          identifier = (None, id(self._value))
+        else:
+          # We cast to a numpy array, then to a list (of lists of lists...), and
+          # finally to a tuple (of tuples of tuples...) so that, even if we're
+          # given a numpy type (which is not necessarily hashable), we'll wind
+          # up with a hashable type.
+          #
+          # TODO: is there a more efficient way to do this? Notice that
+          # we can't just hash a numpy array's storage, since arrays of
+          # different types might be considered equal (e.g. [1.0, 2.0] ==
+          # [1, 2]).
+          identifier = (_DeferredTensorInput._list_to_tuple(
+              np.array(self._value).tolist()), None)
+
+        self._hash = hash(identifier)
 
     return self._hash
 
   def __eq__(self, other):
-    if not isinstance(other, _StaticExplicitDeferredTensorState):
+    if not isinstance(other, _DeferredTensorInput):
       return False
-    if self.auto_cast != other.auto_cast:
+    if callable(self.value) != callable(other.value):
       return False
 
-    # If at least one of the objects is a Tensor, then we check that they're the
-    # same object, instead of calling __eq__.
-    #
-    # In eager mode, we could potentially check for value-equality, by using the
-    # np.array_equal() code below after *explicitly* casting the Tensors to
-    # numpy arrays by calling Tensor.numpy(). This would probably be a bad idea,
-    # though, since if the Tensor is actually a tf.Variable, its value could
-    # change in the future.
-    if tf.is_tensor(self.value) or tf.is_tensor(other.value):
+    if callable(self.value):
+      # We can't actually determine the values without calling the callbacks, so
+      # we only consider the states equal if they have the same callbacks.
       return self.value is other.value
 
-    # Every other allowed type can be handled by numpy.
-    #
-    # We can hope that in most cases, this will be quick (e.g. same object -->
-    # equal, different shapes --> unequal), but if we're unlucky, this has the
-    # potential to be slow.
-    return np.array_equal(self.value, other.value)
-
-
-class _CallableExplicitDeferredTensorState(_ExplicitDeferredTensorState):
-  """Internal state for an `ExplicitDeferredTensor` wrapping a callable.
-
-  The value isn't exactly "unknown". Rather, it isn't immediately available,
-  since it is returned by the callback function passed to the constructor, which
-  should not be called until we're inside a `RateMinimizationProblem`.
-  """
-
-  def __init__(self, callback, auto_cast):
-    """Creates a new `_CallableExplicitDeferredTensorState`.
-
-    Args:
-      callback: nullary function returning a `Tensor`-like, the value of the
-        `DeferredTensor`.
-      auto_cast: `Boolean`, whether the value should be automatically
-        type-promoted, if necessary. Only applies if "callback" returns a
-        `Tensor`: non-`Tensor` types are always auto-castable.
-    """
-    super(_CallableExplicitDeferredTensorState, self).__init__()
-
-    assert callable(callback)
-    self._callback = callback
-    self._auto_cast = auto_cast
-
-  @property
-  def callback(self):
-    return self._callback
-
-  @property
-  def auto_cast(self):
-    return self._auto_cast
-
-  def value_and_auto_cast(self, structure_memoizer, value_memoizer):
-    del structure_memoizer
-
-    result = None
-    if value_memoizer is not None:
-      key = (_CallableExplicitDeferredTensorState, self)
-      if key not in value_memoizer:
-        value_memoizer[key] = (self._callback(), self._auto_cast)
-      result = value_memoizer[key]
     else:
-      result = (self._callback(), self._auto_cast)
+      # If at least one of the objects is a Tensor, then we check that they're
+      # the same object, instead of calling __eq__.
+      #
+      # In eager mode, we could potentially check for value-equality, by using
+      # the np.array_equal() code below after *explicitly* casting the Tensors
+      # to numpy arrays by calling Tensor.numpy(). This would probably be a bad
+      # idea though, since if the Tensor is actually a variable, its value could
+      # change in the future.
+      if tf.is_tensor(self.value) or tf.is_tensor(other.value):
+        return self.value is other.value
 
-    return result
+      # Every other allowed type can be handled by numpy.
+      #
+      # We can hope that in most cases, this will be quick (e.g. same object -->
+      # equal, different shapes --> unequal), but if we're unlucky, this has the
+      # potential to be slow.
+      return np.array_equal(self.value, other.value)
 
-  def __hash__(self):
-    return hash((self._callback, self._auto_cast))
-
-  def __eq__(self, other):
-    if not isinstance(other, _CallableExplicitDeferredTensorState):
-      return False
-    # We can't actually determine the values without calling the callbacks, so
-    # we only consider the states equal if they have the same callbacks.
-    return (self.callback is other.callback and
-            self.auto_cast == other.auto_cast)
+  def __ne__(self, other):
+    return not self.__eq__(other)
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -308,6 +216,24 @@ class DeferredTensor(helpers.RateObject):
       type-promoted if necessary.
     """
     pass
+
+  @abc.abstractproperty
+  def inputs(self):
+    """Returns the list of non-`DeferredVariable` dependencies.
+
+    `DeferredTensor`s can be constructed from other `DeferredTensor`s via a call
+    to apply(), as well as various operators (all of which thunk down to
+    apply()). You can therefore think of a `DeferredTensor` as a parse tree of a
+    python expression. The leaves of this tree will be `Tensor`-like objects,
+    nullary functions returning `Tensor`-like objects, or `DeferredVariable`s.
+    The apply() method keeps track of all dependencies included in the parse
+    tree of a `DeferredTensor`, with the list of such `DeferredVariable`s being
+    returned by the `variables` method, and the other two types of dependencies
+    being returned by this one.
+
+    Returns:
+      A list of non-`DeferredVariable` dependencies.
+    """
 
   @abc.abstractproperty
   def variables(self):
@@ -496,6 +422,10 @@ class _DerivedDeferredTensor(DeferredTensor):
     self._callback = callback
     self._args = tuple(args)
 
+    self._inputs = DeferredTensorInputList()
+    for arg in self._args:
+      self._inputs += arg.inputs
+
     self._variables = DeferredVariableList()
     for arg in self._args:
       self._variables += arg.variables
@@ -596,6 +526,10 @@ class _DerivedDeferredTensor(DeferredTensor):
     return result
 
   @property
+  def inputs(self):
+    return self._inputs.list
+
+  @property
   def variables(self):
     return self._variables.list
 
@@ -616,12 +550,8 @@ class ExplicitDeferredTensor(DeferredTensor):
   If we interpret a `DeferredTensor` as an expression tree, then
   `ExplicitDeferredTensor`s and `DeferredVariable`s will be the leaves, and
   `_DerivedDeferredTensor`s will be the internal nodes. Unlike a
-  `DeferredVariable`, which represents a `tf.Variable`, this class represents
-  either a `Tensor`, or a nullary function returning such.
-
-  These two cases (`Tensor`, or callable) are handled by the two internal
-  "state" classes `_StaticExplicitDeferredTensorState` and
-  `_CallableExplicitDeferredTensorState` classes, respectively.
+  `DeferredVariable`, which represents a TensorFlow variable, this class
+  represents either a `Tensor`, or a nullary function returning such.
   """
 
   def __init__(self, value, auto_cast=False):
@@ -640,22 +570,31 @@ class ExplicitDeferredTensor(DeferredTensor):
         function returning such an object.
     """
     super(ExplicitDeferredTensor, self).__init__()
-
-    if isinstance(value, helpers.RateObject):
-      raise TypeError(
-          "a ExplicitDeferredTensor may only be created from a "
-          "Tensor-like object, or a nullary function returning such")
-    elif callable(value):
-      # If we're given a callable value, then we treat it as a nullary function
-      # returning a Tensor-like object.
-      self._state = _CallableExplicitDeferredTensorState(value, auto_cast)
-    else:
-      # If we're not given a callable value, then we treat it as a Tensor-like
-      # object.
-      self._state = _StaticExplicitDeferredTensorState(value, auto_cast)
+    self._input = _DeferredTensorInput(value)
+    self._auto_cast = auto_cast
 
   def _value_and_auto_cast(self, structure_memoizer, value_memoizer):
-    return self._state.value_and_auto_cast(structure_memoizer, value_memoizer)
+    del structure_memoizer
+
+    if callable(self._input.value):
+      result = None
+      if value_memoizer is not None:
+        key = (ExplicitDeferredTensor, self)
+        if key not in value_memoizer:
+          value_memoizer[key] = (self._input.value(), self._auto_cast)
+        result = value_memoizer[key]
+      else:
+        result = (self._input.value(), self._auto_cast)
+    else:
+      del value_memoizer
+      result = self._input.value, self._auto_cast
+
+    return result
+
+  @property
+  def inputs(self):
+    # The only input upon which this ExplicitDeferredTensor depends is its own.
+    return [self._input.value]
 
   @property
   def variables(self):
@@ -664,14 +603,15 @@ class ExplicitDeferredTensor(DeferredTensor):
     return []
 
   def __hash__(self):
-    return self._state.__hash__()
+    return hash((self._input, self._auto_cast))
 
   def __eq__(self, other):
     if not isinstance(other, helpers.RateObject):
       other = ExplicitDeferredTensor(other)
     elif not isinstance(other, ExplicitDeferredTensor):
       return False
-    return self._state == other._state  # pylint: disable=protected-access
+    return (self._input.__eq__(other._input) and
+            self._auto_cast == other._auto_cast)
 
 
 class DeferredVariable(DeferredTensor):
@@ -690,7 +630,7 @@ class DeferredVariable(DeferredTensor):
 
   The storage for all `DeferredVariables` must be *explicitly* created by
   calling `create` (this will happen inside the `RateMinimizationProblem`
-  constructor). The resulting `tf.Variable` will be stored in the
+  constructor). The resulting variable will be stored in the
   "structure_memoizer" dict owned by the `RateMinimizationProblem`. After it's
   created, the value can be accessed as usual for a `DeferredTensor`: by calling
   it (`DeferredTensor`'s __call__ method).
@@ -738,6 +678,12 @@ class DeferredVariable(DeferredTensor):
     return structure_memoizer[key], self._auto_cast
 
   @property
+  def inputs(self):
+    # DeferredVariables are excluded from the list of inputs (they are accessed
+    # via the "variables" method).
+    return []
+
+  @property
   def variables(self):
     # The only DeferredVariable upon which this DeferredVariable depends is
     # itself.
@@ -750,12 +696,12 @@ class DeferredVariable(DeferredTensor):
     return self is other
 
   def create(self, structure_memoizer):
-    """Creates the `tf.Variable` owned by this `DeferredVariable`."""
+    """Creates the variable owned by this `DeferredVariable`."""
     key = (DeferredVariable, self)
     if key in structure_memoizer:
       raise RuntimeError("attempted to create a DeferredVariable that has "
                          "already been created")
-    structure_memoizer[key] = tf.Variable(
+    structure_memoizer[key] = structure_memoizer[defaults.VARIABLE_FN_KEY](
         initial_value=self._initial_value,
         trainable=self._trainable,
         name=self._name,
@@ -787,6 +733,76 @@ class DeferredVariable(DeferredTensor):
     return self._update_ops_fn(
         self.__call__(structure_memoizer, value_memoizer), structure_memoizer,
         value_memoizer)
+
+
+class DeferredTensorInputList(helpers.RateObject):
+  """Represents a list of `DeferredTensor` inputs.
+
+  Aside from having a very stripped-down interface compared to a normal Python
+  list, this class also differs in that (i) it verifies that every element it
+  contains is a valid `DeferredTensor` input, and (ii) duplicate elements are
+  removed (but, unlike a set, order is preserved).
+  """
+
+  def __init__(self, collection=None):
+    """Creates a new `DeferredTensorInputList` from a collection."""
+    # We need to wrap _DeferredTensorInput around every element so that we have
+    # __hash__ and __eq__, allowing us to use UniqueList (which is basically the
+    # entire point of this class).
+    if collection is not None:
+      collection = [_DeferredTensorInput(element) for element in collection]
+    self._list = helpers.UniqueList(
+        collection=collection, element_type=_DeferredTensorInput)
+
+  @property
+  def list(self):
+    """Returns the contents as a Python list."""
+    return [element.value for element in self._list]
+
+  def append(self, element):
+    """Appends a new element to the list, ignoring duplicates."""
+    self._list.append(_DeferredTensorInput(element))
+
+  def __eq__(self, other):
+    if not isinstance(other, DeferredTensorInputList):
+      return False
+    return self._list.__eq__(other._list)
+
+  def __ne__(self, other):
+    return not self.__eq__(other)
+
+  def __len__(self):
+    """Returns the length of this `DeferredTensorInputList`."""
+    return self._list.__len__()
+
+  def __iter__(self):
+    """Returns an iterator over a COPY of the wrapped list."""
+    # We call "list" instead of "_list" since we want the inputs themselves, not
+    # the _DeferredTensorInput wrappers. Notice that this copies the list.
+    return self.list.__iter__()
+
+  def __add__(self, other):
+    """Appends two `DeferredTensorInputList`s."""
+    result = DeferredTensorInputList(self)
+    for element in other:
+      result.append(element)
+    return result
+
+  def __radd__(self, other):
+    """Appends two `DeferredTensorInputList`s."""
+    result = DeferredTensorInputList(other)
+    for element in self:
+      result.append(element)
+    return result
+
+  def __getitem__(self, slice_spec):
+    """Returns a single element or a slice of this `DeferredTensorInputList`."""
+    # We call "list" instead of "_list" since we want the inputs themselves, not
+    # the _DeferredTensorInput wrappers. Notice that this copies the list.
+    result = self.list[slice_spec]
+    if isinstance(result, list):
+      result = DeferredTensorInputList(result)
+    return result
 
 
 class DeferredVariableList(helpers.UniqueList):

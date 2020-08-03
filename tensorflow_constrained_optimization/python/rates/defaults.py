@@ -23,6 +23,7 @@ from tensorflow_constrained_optimization.python.rates import loss
 
 DENOMINATOR_LOWER_BOUND_KEY = "denominator_lower_bound"
 GLOBAL_STEP_KEY = "global_step"
+VARIABLE_FN_KEY = "variable_fn"
 
 DEFAULT_PENALTY_LOSS = loss.HingeLoss()
 DEFAULT_CONSTRAINT_LOSS = loss.ZeroOneLoss()
