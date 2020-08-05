@@ -370,8 +370,7 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
           var_list=var_list,
           gate_gradients=gate_gradients,
           aggregation_method=aggregation_method,
-          colocate_gradients_with_ops=colocate_gradients_with_ops,
-          grad_loss=grad_loss)
+          colocate_gradients_with_ops=colocate_gradients_with_ops)
 
   # pylint: disable=protected-access
 
@@ -631,7 +630,7 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     with tf.control_dependencies(loss.update_ops()):
       loss_fn = self._formulation.get_loss_fn(loss)
       return super(ConstrainedOptimizerV2, self)._compute_gradients(
-          loss_fn, var_list=var_list, grad_loss=grad_loss)
+          loss_fn, var_list=var_list)
 
   def _create_slots(self, var_list):
     if self._constraint_optimizer is None:

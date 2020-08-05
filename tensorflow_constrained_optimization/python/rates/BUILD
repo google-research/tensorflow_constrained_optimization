@@ -213,6 +213,18 @@ py_library(
 )
 
 py_library(
+    name = "keras",
+    srcs = ["keras.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":rate_minimization_problem",
+        # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python/train:lagrangian_optimizer",
+    ],
+)
+
+py_library(
     name = "test_helpers",
     testonly = 1,
     srcs = ["test_helpers.py"],
@@ -434,6 +446,20 @@ py_test(
         ":subsettable_context",
         # numpy dep,
         # six dep,
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
+    ],
+)
+
+py_test(
+    name = "keras_test",
+    srcs = ["keras_test.py"],
+    python_version = "PY3",
+    srcs_version = "PY2AND3",
+    deps = [
+        ":keras",
+        ":operations",
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,
