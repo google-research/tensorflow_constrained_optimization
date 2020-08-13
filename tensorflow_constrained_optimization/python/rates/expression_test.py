@@ -39,7 +39,8 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests `Expression`'s arithmetic operators."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32),
+        defaults.VARIABLE_FN_KEY: tf.Variable
     }
 
     def constant_expression(penalty_constant, constraint_constant=None):
@@ -94,7 +95,8 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests that `Expression`s propagate extra variables correctly."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32),
+        defaults.VARIABLE_FN_KEY: tf.Variable
     }
 
     def create_dummy_expression(penalty_variable, constraint_variable):
@@ -188,7 +190,8 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     # SumExpression flattens the list.
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32),
+        defaults.VARIABLE_FN_KEY: tf.Variable
     }
 
     term_values = [0, 1, 2, 3, 4]
@@ -226,7 +229,8 @@ class ExpressionTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     """Tests that `BoundedExpression`s select their components correctly."""
     structure_memoizer = {
         defaults.DENOMINATOR_LOWER_BOUND_KEY: 0.0,
-        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32)
+        defaults.GLOBAL_STEP_KEY: tf.Variable(0, dtype=tf.int32),
+        defaults.VARIABLE_FN_KEY: tf.Variable
     }
 
     term1 = term.TensorTerm(1.0)

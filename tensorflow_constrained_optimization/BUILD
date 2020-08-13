@@ -16,7 +16,7 @@
 
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])  # Apache 2.0
+licenses(["notice"])
 
 exports_files(["LICENSE"])
 
@@ -32,6 +32,7 @@ py_library(
         "//tensorflow_constrained_optimization/python:constrained_minimization_problem",
         "//tensorflow_constrained_optimization/python/rates:binary_rates",
         "//tensorflow_constrained_optimization/python/rates:general_rates",
+        "//tensorflow_constrained_optimization/python/rates:keras",
         "//tensorflow_constrained_optimization/python/rates:loss",
         "//tensorflow_constrained_optimization/python/rates:operations",
         "//tensorflow_constrained_optimization/python/rates:rate_minimization_problem",

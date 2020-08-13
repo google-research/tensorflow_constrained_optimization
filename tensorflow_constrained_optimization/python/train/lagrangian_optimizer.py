@@ -122,7 +122,10 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
   regret.
   """
 
-  def __init__(self, maximum_multiplier_radius=None, dual_scale=1.0):
+  def __init__(self,
+               maximum_multiplier_radius=None,
+               dual_scale=1.0,
+               variable_fn=tf.Variable):
     """Constructs a new `_LagrangianFormulation`.
 
     Args:
@@ -130,6 +133,9 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
         sum of the Lagrange multipliers.
       dual_scale: optional float defaulting to 1, a multiplicative scaling
         factor applied to gradients w.r.t. the Lagrange multipliers.
+      variable_fn: optional function with the same signature as the
+        `tf.Variable` constructor, that returns a new variable with the
+        specified properties.
 
     Raises:
       ValueError: if "maximum_multiplier_radius" or "dual_scale" are
@@ -143,6 +149,8 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
     if dual_scale <= 0.0:
       raise ValueError("dual_scale must be strictly positive")
     self._dual_scale = dual_scale
+
+    self._variable_fn = variable_fn
 
     # We can't create the Lagrange multipliers here, since we don't know how
     # many constraints there will be until we see the
@@ -189,8 +197,8 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
 
     else:
       initial_multipliers = np.zeros((num_constraints,), dtype=np.float32)
-      self._multipliers = tf.Variable(
-          initial_multipliers,
+      self._multipliers = self._variable_fn(
+          initial_value=initial_multipliers,
           trainable=True,
           name="tfco_lagrange_multipliers",
           dtype=tf.float32,
@@ -284,7 +292,8 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
 
 def create_lagrangian_loss(minimization_problem,
                            maximum_multiplier_radius=None,
-                           dual_scale=1.0):
+                           dual_scale=1.0,
+                           variable_fn=tf.Variable):
   """Creates a loss function from a `ConstrainedMinimizationProblem`.
 
   Minimizing the returned loss will have the effect of jointly minimizing over
@@ -307,7 +316,7 @@ def create_lagrangian_loss(minimization_problem,
 
   In addition to a loss function, this method returns a function returning a
   list of operations that should be executed before each iteration
-  ("update_ops"), and a `tf.Variable` containing the Lagrange multipliers.
+  ("update_ops"), and a variable containing the Lagrange multipliers.
 
   In graph mode, the result of this update_ops function could be "attached" to
   the train_op using tf.control_dependencies. In eager mode, it should be called
@@ -357,18 +366,21 @@ def create_lagrangian_loss(minimization_problem,
       sum of the Lagrange multipliers.
     dual_scale: optional float defaulting to 1, a multiplicative scaling factor
       applied to gradients w.r.t. the Lagrange multipliers.
+    variable_fn: optional function with the same signature as the `tf.Variable`
+      constructor, that returns a new variable with the specified properties.
 
   Returns:
     A (loss_fn, update_ops_fn, multipliers_variable) tuple, where loss_fn is a
     nullary function returning a `Tensor` that can be minimized to optimize the
     constrained problem, update_ops_fn is a nullary function that returns a list
     of operations that should be executed before each training iteration, and
-    multipliers_variable is a `tf.Variable` of Lagrange multipliers.
+    multipliers_variable is a variable of Lagrange multipliers.
   """
   return constrained_optimizer.create_loss(
       _LagrangianFormulation(
           maximum_multiplier_radius=maximum_multiplier_radius,
-          dual_scale=dual_scale), minimization_problem)
+          dual_scale=dual_scale,
+          variable_fn=variable_fn), minimization_problem)
 
 
 class LagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):

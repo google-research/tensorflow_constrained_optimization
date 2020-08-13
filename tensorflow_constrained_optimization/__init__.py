@@ -43,6 +43,8 @@ from tensorflow_constrained_optimization.python.rates.general_rates import true_
 from tensorflow_constrained_optimization.python.rates.general_rates import true_negative_rate
 from tensorflow_constrained_optimization.python.rates.general_rates import true_positive_proportion
 from tensorflow_constrained_optimization.python.rates.general_rates import true_positive_rate
+from tensorflow_constrained_optimization.python.rates.keras import KerasLayer
+from tensorflow_constrained_optimization.python.rates.keras import KerasPlaceholder
 from tensorflow_constrained_optimization.python.rates.loss import BinaryClassificationLoss
 from tensorflow_constrained_optimization.python.rates.loss import HingeLoss
 from tensorflow_constrained_optimization.python.rates.loss import Loss

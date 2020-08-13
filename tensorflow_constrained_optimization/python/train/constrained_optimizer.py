@@ -370,8 +370,7 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
           var_list=var_list,
           gate_gradients=gate_gradients,
           aggregation_method=aggregation_method,
-          colocate_gradients_with_ops=colocate_gradients_with_ops,
-          grad_loss=grad_loss)
+          colocate_gradients_with_ops=colocate_gradients_with_ops)
 
   # pylint: disable=protected-access
 
@@ -584,7 +583,7 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
 
   # pylint: disable=protected-access
 
-  def _compute_gradients(self, loss, var_list, grad_loss=None):
+  def _compute_gradients(self, loss, var_list, grad_loss=None, tape=None):
     """Compute gradients of a `ConstrainedMinimizationProblem` (or loss).
 
     If "loss" is a `ConstrainedMinimizationProblem` (which is the most common
@@ -609,6 +608,7 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
         method of the contained "optimizer".
       var_list: as in `tf.keras.optimizers.Optimizer`.
       grad_loss: as in `tf.keras.optimizers.Optimizer`.
+      tape: as in `tf.keras.optimizers.Optimizer`.
 
     Returns:
       A list of (gradient, variable) pairs, as in the _compute_gradients()
@@ -617,16 +617,20 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     if not isinstance(
         loss, constrained_minimization_problem.ConstrainedMinimizationProblem):
       return super(ConstrainedOptimizerV2, self)._compute_gradients(
-          loss, var_list=var_list, grad_loss=grad_loss)
+          loss, var_list=var_list, grad_loss=grad_loss, tape=tape)
 
     if grad_loss is not None:
       raise ValueError("the grad_loss argument cannot be provided when the "
                        "loss argument is a ConstrainedMinimizationProblem")
 
+    if tape is not None:
+      raise ValueError("the tape argument cannot be provided when the "
+                       "loss argument is a ConstrainedMinimizationProblem")
+
     with tf.control_dependencies(loss.update_ops()):
       loss_fn = self._formulation.get_loss_fn(loss)
       return super(ConstrainedOptimizerV2, self)._compute_gradients(
-          loss_fn, var_list=var_list, grad_loss=grad_loss)
+          loss_fn, var_list=var_list)
 
   def _create_slots(self, var_list):
     if self._constraint_optimizer is None:

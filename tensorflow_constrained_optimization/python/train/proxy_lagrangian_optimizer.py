@@ -241,7 +241,8 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
                update_type,
                minimum_multiplier_radius=None,
                initial_multiplier_radius=None,
-               dual_scale=1.0):
+               dual_scale=1.0,
+               variable_fn=tf.Variable):
     """Constructs a new `_ProxyLagrangianFormulation`.
 
     Args:
@@ -268,6 +269,9 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
         and defaults to zero if update_type="additive".
       dual_scale: optional float defaulting to 1, a multiplicative scaling
         factor applied to gradients w.r.t. the internal state.
+      variable_fn: optional function with the same signature as the
+        `tf.Variable` constructor, that returns a new variable with the
+        specified properties.
 
     Raises:
       ValueError: if the "regret_type" or "update_type" parameters are invalid,
@@ -312,6 +316,8 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
     if dual_scale <= 0.0:
       raise ValueError("dual_scale must be strictly positive")
     self._dual_scale = dual_scale
+
+    self._variable_fn = variable_fn
 
     # We can't create the internal state here, since we don't know how many
     # constraints there will be until we see the ConstrainedMinimizationProblem.
@@ -427,8 +433,8 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
                                        axis=0)
 
       # FUTURE WORK: make the dtype a parameter.
-      self._state = tf.Variable(
-          initial_state,
+      self._state = self._variable_fn(
+          initial_value=initial_state,
           trainable=True,
           name="tfco_proxy_lagrangian_state",
           dtype=tf.float32,
@@ -590,7 +596,8 @@ def create_proxy_lagrangian_loss(minimization_problem,
                                  update_type=_MULTPILICATIVE_UPDATE_TYPE,
                                  minimum_multiplier_radius=None,
                                  initial_multiplier_radius=None,
-                                 dual_scale=1.0):
+                                 dual_scale=1.0,
+                                 variable_fn=tf.Variable):
   """Creates a loss function from a `ConstrainedMinimizationProblem`.
 
   Minimizing the returned loss will have the effect of jointly minimizing
@@ -616,8 +623,8 @@ def create_proxy_lagrangian_loss(minimization_problem,
 
   In addition to a loss function, this method returns a function returning a
   list of operations that should be executed before each iteration
-  ("update_ops"), and a `tf.Variable` containing the internal proxy-Lagrangian
-  state (the analogue of the Lagrange multipliers).
+  ("update_ops"), and a variable containing the internal proxy-Lagrangian state
+  (the analogue of the Lagrange multipliers).
 
   In graph mode, the result of this update_ops function could be "attached" to
   the train_op using tf.control_dependencies. In eager mode, it should be called
@@ -686,13 +693,15 @@ def create_proxy_lagrangian_loss(minimization_problem,
       zero if update_type="additive".
     dual_scale: optional float defaulting to 1, a multiplicative scaling factor
       applied to gradients w.r.t. the internal state.
+    variable_fn: optional function with the same signature as the `tf.Variable`
+      constructor, that returns a new variable with the specified properties.
 
   Returns:
     A (loss_fn, update_ops_fn, state_variable) tuple, where loss_fn is a nullary
     function returning a `Tensor` that can be minimized to optimize the
     constrained problem, update_ops_fn is a nullary function that returns a list
     of operations that should be executed before each training iteration, and
-    state_variable is a `tf.Variable` containing the internal state of the
+    state_variable is a variable containing the internal state of the
     proxy-Lagrangian formulation.
   """
   return constrained_optimizer.create_loss(
@@ -701,7 +710,8 @@ def create_proxy_lagrangian_loss(minimization_problem,
           update_type=update_type,
           minimum_multiplier_radius=minimum_multiplier_radius,
           initial_multiplier_radius=initial_multiplier_radius,
-          dual_scale=dual_scale), minimization_problem)
+          dual_scale=dual_scale,
+          variable_fn=variable_fn), minimization_problem)
 
 
 class ProxyLagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):

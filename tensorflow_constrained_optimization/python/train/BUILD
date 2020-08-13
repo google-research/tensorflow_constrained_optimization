@@ -14,8 +14,6 @@
 # the License.
 # ==============================================================================
 
-# Placeholder for internal Python version compatibility macro.
-
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])  # Apache 2.0
@@ -67,6 +65,7 @@ py_library(
 py_test(
     name = "lagrangian_optimizer_test",
     srcs = ["lagrangian_optimizer_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":lagrangian_optimizer",
@@ -83,6 +82,7 @@ py_test(
     size = "small",
     timeout = "moderate",
     srcs = ["proxy_lagrangian_optimizer_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":proxy_lagrangian_optimizer",

@@ -14,8 +14,6 @@
 # the License.
 # ==============================================================================
 
-# Placeholder for internal Python version compatibility macro.
-
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])  # Apache 2.0
@@ -55,6 +53,7 @@ py_test(
     name = "candidates_test",
     size = "small",
     srcs = ["candidates_test.py"],
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = [
         ":candidates",
