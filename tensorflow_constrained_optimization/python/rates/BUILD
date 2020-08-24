@@ -418,6 +418,7 @@ py_test(
 
 py_test(
     name = "general_rates_test",
+    timeout = "long",
     srcs = ["general_rates_test.py"],
     python_version = "PY3",
     srcs_version = "PY2AND3",
