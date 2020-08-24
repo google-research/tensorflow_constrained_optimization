@@ -303,7 +303,7 @@ Notice that `predictions` is a nullary function returning a `Tensor`. This is
 needed to support eager mode, but in graph mode, it's fine for it to simply be a
 `Tensor`. To see how this example could work in graph mode, please see the
 Jupyter notebook containing a more-comprehensive version of this example
-([Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Recall_constraint.ipynb)).
+([Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Recall_constraint.ipynb)).
 
 Now that we have the output of our linear model (in the `predictions` variable),
 we can move on to constructing the optimization problem. At this point, there
@@ -319,7 +319,7 @@ are two ways to proceed:
 
 Here, we'll only consider the first of these options. To see how to use the
 second option, please refer to
-[Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Recall_constraint.ipynb).
+[Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Recall_constraint.ipynb).
 
 ### Rate helpers
 
@@ -442,7 +442,7 @@ print("Constrained recall = %f" % recall(labels, trained_predictions))
 ```
 
 Notice that this code is intended to run in eager mode (there is no session): in
-[Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Recall_constraint.ipynb),
+[Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Recall_constraint.ipynb),
 we also show how to train in graph mode. Running this code results in the
 following output (due to the randomness of the dataset, you'll get a different
 result when you run it):
@@ -495,14 +495,40 @@ The
 [examples](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/)
 directory contains several illustrations of how one can use this library:
 
-*   [Jupyter](https://jupyter.org/) notebooks:
+*   [Colaboratory](https://colab.research.google.com/) notebooks:
 
-    1.  [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Recall_constraint.ipynb):
+    1.  [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Recall_constraint.ipynb):
         **Start here!** This is a more-comprehensive version of the above simple
         example. In particular, it can run in either graph or eager modes, shows
         how to manually create a `ConstrainedMinimizationProblem` instead of
         using the rate helpers, and illustrates the use of both V1 and V2
         optimizers.
+
+    1.  [Recall_constraint_keras.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Recall_constraint_keras.ipynb):
+        Same as
+        [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Recall_constraint.ipynb),
+        but uses Keras instead of raw TensorFlow.
+
+    1.  [Wiki_toxicity_fairness.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Wiki_toxicity_fairness.ipynb):
+        This notebook shows how to train a *fair* classifier to predict whether
+        a comment posted on a Wiki Talk page contain toxic content. The notebook
+        discusses two criteria for fairness and shows how to enforce them by
+        constructing a rate-based optimization optimization problem.
+
+    1.  [CelebA_fairness.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/CelebA_fairness.ipynb):
+        This notebook shows how to train a *fair* classifier to predict to
+        detect a celebrity's smile in images using tf.keras and the large-scale
+        CelebFaces Attributes dataset. The model trained in this notebook is
+        evaluating for fairness across age group, with the false positive rate
+        set as the constraint.
+
+    1.  [PRAUC_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/PRAUC_training.ipynb):
+        This notebook shows how to train a model to maximize the *Area Under the
+        Precision-Recall Curve (PR-AUC)*. We'll show how to train the model both
+        with (i) plain TensorFlow (in eager mode), and (ii) with a custom
+        tf.Estimator.
+
+*   [Jupyter](https://jupyter.org/) notebooks:
 
     1.  [Fairness_adult.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/jupyter/Fairness_adult.ipynb):
         This notebook shows how to train classifiers for fairness constraints on
@@ -541,24 +567,3 @@ directory contains several illustrations of how one can use this library:
         This notebook describes how to use rate constraints for low-churn
         classification. That is, to train for accuracy while ensuring the
         predictions don't differ by much compared to a baseline model.
-
-*   [Colaboratory](https://colab.research.google.com/) notebooks:
-
-    1.  [Wiki_toxicity_fairness.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Wiki_toxicity_fairness.ipynb):
-        This notebook shows how to train a *fair* classifier to predict whether
-        a comment posted on a Wiki Talk page contain toxic content. The notebook
-        discusses two criteria for fairness and shows how to enforce them by
-        constructing a rate-based optimization optimization problem.
-
-    1.  [CelebA_fairness.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/CelebA_fairness.ipynb):
-        This notebook shows how to train a *fair* classifier to predict to
-        detect a celebrity's smile in images using tf.keras and the large-scale
-        CelebFaces Attributes dataset. The model trained in this notebook is
-        evaluating for fairness across age group, with the false positive rate
-        set as the constraint.
-
-    1.  [PRAUC_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/PRAUC_training.ipynb):
-        This notebook shows how to train a model to maximize the *Area Under the
-        Precision-Recall Curve (PR-AUC)*. We'll show how to train the model both
-        with (i) plain TensorFlow (in eager mode), and (ii) with a custom
-        tf.Estimator.
