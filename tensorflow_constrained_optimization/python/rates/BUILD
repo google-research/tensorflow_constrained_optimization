@@ -461,6 +461,7 @@ py_test(
     deps = [
         ":keras",
         ":operations",
+        # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,

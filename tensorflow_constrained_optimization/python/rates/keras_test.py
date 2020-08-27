@@ -19,6 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import tensorflow.compat.v2 as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
@@ -42,6 +43,27 @@ class MockKerasLayer(keras.KerasLayer):
   def _variable_fn(self, *args, name=None, **kwargs):
     self._names.append(name)
     return super(MockKerasLayer, self)._variable_fn(*args, name=name, **kwargs)
+
+
+class MockKerasMetric(tf.keras.metrics.Metric):
+
+  def __init__(self, *args, **kwargs):
+    super(MockKerasMetric, self).__init__(*args, **kwargs)
+    self._last_method = None
+
+  @property
+  def last_method(self):
+    return self._last_method
+
+  def update_state(self, y_true, y_pred, sample_weight=None):
+    self._last_method = ["update_state", y_true, y_pred, sample_weight]
+
+  def reset_states(self):
+    self._last_method = "reset_states"
+
+  def result(self):
+    self._last_method = "result"
+    return 0
 
 
 # @run_all_tests_in_graph_and_eager_modes
@@ -107,6 +129,38 @@ class KerasTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     with self.wrapped_session() as session:
       result = session.run(layer.loss(-10.0, -100.0))
     self.assertNear(1.234, result, err=1e-6)
+
+  def test_keras_wrapped_metric(self):
+    """Tests the `KerasWrappedMetric` class."""
+    # We only execute in eager mode, since we need to be able to compare Tensors
+    # without a session (for update_state).
+    if tf.executing_eagerly():
+      predictions_placeholder = keras.KerasPlaceholder(
+          lambda _, y_pred: y_pred[:, 2])
+      labels_placeholder = keras.KerasPlaceholder(
+          lambda y_true, _: y_true[:, 1])
+      mock_metric = MockKerasMetric()
+      metric = keras.KerasMetricWrapper(
+          mock_metric,
+          predictions=predictions_placeholder,
+          labels=labels_placeholder)
+
+      y_true = np.array([[0, 1, 2, 3], [4, 5, 6, 7]])
+      y_pred = np.array([[8, 9, 10, 11], [12, 13, 14, 15]])
+
+      metric.update_state(y_true, y_pred, sample_weight=3.14)
+      actual_last_method = mock_metric.last_method
+      self.assertEqual(4, len(actual_last_method))
+      self.assertEqual("update_state", actual_last_method[0])
+      self.assertAllEqual(y_true[:, 1], actual_last_method[1])
+      self.assertAllEqual(y_pred[:, 2], actual_last_method[2])
+      self.assertEqual(3.14, actual_last_method[3])
+
+      metric.reset_states()
+      self.assertEqual("reset_states", mock_metric.last_method)
+
+      metric.result()
+      self.assertEqual("result", mock_metric.last_method)
 
 
 if __name__ == "__main__":
