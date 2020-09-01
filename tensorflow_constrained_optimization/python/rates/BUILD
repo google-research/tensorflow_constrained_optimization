@@ -418,6 +418,7 @@ py_test(
 
 py_test(
     name = "general_rates_test",
+    timeout = "long",
     srcs = ["general_rates_test.py"],
     python_version = "PY3",
     srcs_version = "PY2AND3",
@@ -460,6 +461,7 @@ py_test(
     deps = [
         ":keras",
         ":operations",
+        # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,

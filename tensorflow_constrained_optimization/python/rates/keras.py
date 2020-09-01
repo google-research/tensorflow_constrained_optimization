@@ -116,22 +116,22 @@ class KerasPlaceholder(object):
   other main issue: inputs.
 
   The basic problem is that, in TFCO, we set up the constrained optimization
-  problem, and therefore the loss function *outside* of the main training loop.
+  problem (and therefore the loss function) *outside* of the main training loop.
   We need a way to get the predictions and labels, which are passed to the Keras
-  loss, to the problem. To do this, we create these placeholder classes, which
-  are parameterized by a function that takes the labels "y_true" and predictions
-  "y_pred" as inputs, and returns whatever slice of these inputs should be
-  represented by the placeholder.
+  loss, to the TFCO problem. To do this, we create these placeholder classes,
+  which are parameterized by a *function* that takes the labels "y_true" and
+  predictions "y_pred" as inputs, and returns whatever slice of these inputs
+  should be represented by the placeholder.
 
   In the simplest cases, you'll create two such placeholders, one of which
-  returns "y_true" and ignores "y_pred", and the other of which does the
+  returns "y_pred" and ignores "y_true", and the other of which does the
   opposite. You will then create a context with these as its "predictions" and
-  "labels" parameters.
+  "labels" parameters, respectively.
 
   In more complex cases, e.g. in a fairness problem, in which protected group
   membership information must be available, you can place these features in
-  extra label columns, and then extract the relevant features from "y_true" in
-  the placeholder.
+  extra label columns (i.e. extra columns of "y_true"), and then extract the
+  relevant features from "y_true" in the placeholder.
   """
 
   def __init__(self, callback):
@@ -334,3 +334,99 @@ class KerasLayer(tf.keras.layers.Layer):
     return {}
 
   # The default implementation of from_config is fine.
+
+
+class KerasMetricWrapper(tf.keras.metrics.Metric):
+  """Wraps a Keras `Metric`, accepting `KerasPlaceholder`s as inputs.
+
+  This class both *is* a Keras `Metric`, and also *wraps* a Keras `Metric`
+  instance. The purpose of this object is to make it easy to deal with standard
+  Keras metrics in the setting in which e.g. the labels contain extra side
+  information needed by TFCO (protected class memberships, predictions of a
+  baseline model, etc.). A standard metric can't handle these extra label
+  columns, so we need to extract the actual labels before calling the metric.
+
+  To this end, this class is constructed with two parameters (among others):
+  "predictions" and "labels", which are `KerasPlaceholder`s that tell us how to
+  map the "y_true" and "y_pred" `Metric` parameters to the predictions and
+  labels expected by the metric, respectively.
+  """
+
+  def __init__(self,
+               wrapped,
+               predictions=None,
+               labels=None,
+               from_logits=False,
+               name=None,
+               **kwargs):
+    """Creates a new `KerasMetricWrapper`.
+
+    The resulting object should act just like the `Metric` passed in the
+    "wrapped" argument, except that its inputs will be extracted from "y_true"
+    and "y_pred" as specified by the given "labels" and "predictions"
+    `KerasPlaceholder`s (with the latter being possibly transformed due to the
+    "from_logits" argument).
+
+    Args:
+      wrapped: Keras `Metric` instance to wrap.
+      predictions: optional `KerasPlaceholder` object representing the
+        predictions to pass to the wrapped `Metric`. If not provided, the
+        "y_pred" parameter to "update_state" will pass through unchanged.
+      labels: optional `KerasPlaceholder` object representing the labels to pass
+        to the wrapped `Metric`. If not provided, the "y_true" parameter to
+        "update_state" will pass through unchanged.
+      from_logits: boolean, defaulting to `False`. If `True`, we will pass the
+        predictions through a sigmoid before passing them on to the wrapped
+        `Metric`. This is a workaround for the fact that some Keras `Metric`s do
+        not support the "from_logits" parameter, themselves.
+      name: string, the name of this `Metric`. If not specified, it will default
+        to the name of the wrapped `Metric`.
+      **kwargs: additional arguments to pass to the Keras `Metric` base class'
+        constructor.
+    """
+    if predictions is not None and not isinstance(predictions,
+                                                  KerasPlaceholder):
+      raise TypeError("predictions parameter to KerasMetricWrapper must be a "
+                      "KerasPlaceholder object")
+    if labels is not None and not isinstance(labels, KerasPlaceholder):
+      raise TypeError("labels parameter to KerasMetricWrapper must be a "
+                      "KerasPlaceholder object")
+
+    # If we're not given a name, we inherit from the wrapped Metric.
+    if not name:
+      name = wrapped.name
+    super(KerasMetricWrapper, self).__init__(name=name, **kwargs)
+
+    self._predictions = predictions
+    self._labels = labels
+    self._from_logits = from_logits
+    self._wrapped = wrapped
+
+  def update_state(self, y_true, y_pred, **kwargs):
+    # Extract the labels from the KerasPlaceholder, if necessary.
+    if self._labels:
+      self._labels.assign(y_true, y_pred)
+      labels = self._labels()
+      self._labels.assign()
+    else:
+      labels = y_true
+
+    # Extract the predictions from the KerasPlaceholder, if necessary.
+    if self._predictions:
+      self._predictions.assign(y_true, y_pred)
+      predictions = self._predictions()
+      self._predictions.assign()
+    else:
+      predictions = y_pred
+
+    # Pass the predictions through a sigmoid, if necessary.
+    if self._from_logits:
+      predictions = tf.math.sigmoid(predictions)
+
+    return self._wrapped.update_state(labels, predictions, **kwargs)
+
+  def reset_states(self):
+    return self._wrapped.reset_states()
+
+  def result(self):
+    return self._wrapped.result()
