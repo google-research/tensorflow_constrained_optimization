@@ -402,7 +402,7 @@ class KerasMetricWrapper(tf.keras.metrics.Metric):
     self._from_logits = from_logits
     self._wrapped = wrapped
 
-  def update_state(self, y_true, y_pred, sample_weight=None):
+  def update_state(self, y_true, y_pred, **kwargs):
     # Extract the labels from the KerasPlaceholder, if necessary.
     if self._labels:
       self._labels.assign(y_true, y_pred)
@@ -423,8 +423,7 @@ class KerasMetricWrapper(tf.keras.metrics.Metric):
     if self._from_logits:
       predictions = tf.math.sigmoid(predictions)
 
-    return self._wrapped.update_state(
-        labels, predictions, sample_weight=sample_weight)
+    return self._wrapped.update_state(labels, predictions, **kwargs)
 
   def reset_states(self):
     return self._wrapped.reset_states()

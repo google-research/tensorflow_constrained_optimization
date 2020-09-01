@@ -47,16 +47,31 @@ class MockKerasLayer(keras.KerasLayer):
 
 class MockKerasMetric(tf.keras.metrics.Metric):
 
-  def __init__(self, *args, **kwargs):
+  def __init__(self, minibatch_size, *args, **kwargs):
     super(MockKerasMetric, self).__init__(*args, **kwargs)
     self._last_method = None
+    # We need to create variables that will contain copies of the arguments to
+    # update_state() since this function will be wrapped in a tf.Function, so
+    # the arguments themselves will be graph Tensors, and we need eager Tensors
+    # in eager mode.
+    self._y_true = tf.Variable(np.zeros(minibatch_size), dtype=tf.float32)
+    self._y_pred = tf.Variable(np.zeros(minibatch_size), dtype=tf.float32)
 
   @property
   def last_method(self):
     return self._last_method
 
-  def update_state(self, y_true, y_pred, sample_weight=None):
-    self._last_method = ["update_state", y_true, y_pred, sample_weight]
+  @property
+  def y_true(self):
+    return self._y_true
+
+  @property
+  def y_pred(self):
+    return self._y_pred
+
+  def update_state(self, y_true, y_pred):
+    self._last_method = "update_state"
+    return [self._y_true.assign(y_true), self._y_pred.assign(y_pred)]
 
   def reset_states(self):
     self._last_method = "reset_states"
@@ -132,35 +147,31 @@ class KerasTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
   def test_keras_wrapped_metric(self):
     """Tests the `KerasWrappedMetric` class."""
-    # We only execute in eager mode, since we need to be able to compare Tensors
-    # without a session (for update_state).
-    if tf.executing_eagerly():
-      predictions_placeholder = keras.KerasPlaceholder(
-          lambda _, y_pred: y_pred[:, 2])
-      labels_placeholder = keras.KerasPlaceholder(
-          lambda y_true, _: y_true[:, 1])
-      mock_metric = MockKerasMetric()
-      metric = keras.KerasMetricWrapper(
-          mock_metric,
-          predictions=predictions_placeholder,
-          labels=labels_placeholder)
+    predictions_placeholder = keras.KerasPlaceholder(
+        lambda _, y_pred: y_pred[:, 2])
+    labels_placeholder = keras.KerasPlaceholder(lambda y_true, _: y_true[:, 1])
+    mock_metric = MockKerasMetric(minibatch_size=2)  # We use two-column inputs.
+    metric = keras.KerasMetricWrapper(
+        mock_metric,
+        predictions=predictions_placeholder,
+        labels=labels_placeholder)
 
-      y_true = np.array([[0, 1, 2, 3], [4, 5, 6, 7]])
-      y_pred = np.array([[8, 9, 10, 11], [12, 13, 14, 15]])
+    # Notice that these arrays have two columns (the "minibatch_size" parameter
+    # to MockKerasMetric).
+    y_true = np.array([[0, 1, 2, 3], [4, 5, 6, 7]], dtype=np.float32)
+    y_pred = np.array([[8, 9, 10, 11], [12, 13, 14, 15]], dtype=np.float32)
 
-      metric.update_state(y_true, y_pred, sample_weight=3.14)
-      actual_last_method = mock_metric.last_method
-      self.assertEqual(4, len(actual_last_method))
-      self.assertEqual("update_state", actual_last_method[0])
-      self.assertAllEqual(y_true[:, 1], actual_last_method[1])
-      self.assertAllEqual(y_pred[:, 2], actual_last_method[2])
-      self.assertEqual(3.14, actual_last_method[3])
+    with self.wrapped_session() as session:
+      session.run_ops(lambda: metric.update_state(y_true, y_pred))
+      self.assertEqual("update_state", mock_metric.last_method)
+      self.assertAllEqual(y_true[:, 1], session.run(mock_metric.y_true))
+      self.assertAllEqual(y_pred[:, 2], session.run(mock_metric.y_pred))
 
-      metric.reset_states()
-      self.assertEqual("reset_states", mock_metric.last_method)
+    metric.reset_states()
+    self.assertEqual("reset_states", mock_metric.last_method)
 
-      metric.result()
-      self.assertEqual("result", mock_metric.last_method)
+    metric.result()
+    self.assertEqual("result", mock_metric.last_method)
 
 
 if __name__ == "__main__":
