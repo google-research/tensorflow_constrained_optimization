@@ -96,25 +96,25 @@ class GeneralRatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       constraint_list.append(constraint_value)
       variables += constraint_value.variables
     variables = variables.list
-    self.assertEqual(2, len(constraint_list))
+    self.assertEqual(1, len(constraint_list))
     constraints = deferred_tensor.DeferredTensor.apply(
         lambda *args: tf.stack(args), *constraint_list)
 
     # We need to explicitly create all variables included in the expression
-    # before we can try to extract the ratio_bounds.
+    # before we can try to extract the denominator_bound.
     for variable in variables:
       variable.create(structure_memoizer)
 
     # The find_zeros_of_functions() helper will perform a bisection search over
-    # the ratio_bounds, so we need to extract the Tensor containing them from
-    # the graph.
-    ratio_bounds = None
+    # the denominator_bound, so we need to extract the Tensor containing them
+    # from the graph.
+    denominator_bound = None
     for variable in variables:
       tensor = variable(structure_memoizer)
-      if tensor.name.startswith("tfco_ratio_bounds"):
-        self.assertIsNone(ratio_bounds)
-        ratio_bounds = tensor
-    self.assertIsNotNone(ratio_bounds)
+      if tensor.name.startswith("tfco_denominator_bound"):
+        self.assertIsNone(denominator_bound)
+        denominator_bound = tensor
+    self.assertIsNotNone(denominator_bound)
 
     def update_ops_fn():
       update_ops = []
@@ -127,27 +127,22 @@ class GeneralRatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
       def evaluate_fn(values):
         """Assigns the variables and evaluates the constraints."""
-        session.run_ops(lambda: ratio_bounds.assign(values))
+        # We need to extract the first element from the one-element "values"
+        # Tensor, since the denominator_bound has shape (), not (1,).
+        session.run_ops(lambda: denominator_bound.assign(values[0]))
         return session.run(constraints(structure_memoizer))
 
-      actual_ratio_bounds = test_helpers.find_zeros_of_functions(
-          2, evaluate_fn, epsilon=bisection_epsilon)
-      actual_numerator = actual_ratio_bounds[0]
-      actual_denominator = actual_ratio_bounds[1]
-
-    expected_numerator = (
-        np.sum((0.5 * (1.0 + np.sign(self._predictions))) *
-               (self._labels > 0.0) * self._weights) / np.sum(self._weights))
+      # We need to extract the first element here, for the same reason as above.
+      actual_denominator_bound = test_helpers.find_zeros_of_functions(
+          1, evaluate_fn, epsilon=bisection_epsilon)[0]
 
     expected_denominator = (
         np.sum((0.5 * (1.0 + np.sign(self._predictions))) * self._weights) /
         np.sum(self._weights))
 
     self.assertAllClose(
-        expected_numerator, actual_numerator, rtol=0, atol=bisection_epsilon)
-    self.assertAllClose(
         expected_denominator,
-        actual_denominator,
+        actual_denominator_bound,
         rtol=0,
         atol=bisection_epsilon)
 
@@ -172,25 +167,25 @@ class GeneralRatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
       constraint_list.append(constraint_value)
       variables += constraint_value.variables
     variables = variables.list
-    self.assertEqual(2, len(constraint_list))
+    self.assertEqual(1, len(constraint_list))
     constraints = deferred_tensor.DeferredTensor.apply(
         lambda *args: tf.stack(args), *constraint_list)
 
     # We need to explicitly create all variables included in the expression
-    # before we can try to extract the ratio_bounds.
+    # before we can try to extract the denominator_bound.
     for variable in variables:
       variable.create(structure_memoizer)
 
     # The find_zeros_of_functions() helper will perform a bisection search over
-    # the ratio_bounds, so we need to extract the Tensor containing them from
-    # the graph.
-    ratio_bounds = None
+    # the denominator_bound, so we need to extract the Tensor containing them
+    # from the graph.
+    denominator_bound = None
     for variable in variables:
       tensor = variable(structure_memoizer)
-      if tensor.name.startswith("tfco_ratio_bounds"):
-        self.assertIsNone(ratio_bounds)
-        ratio_bounds = tensor
-    self.assertIsNotNone(ratio_bounds)
+      if tensor.name.startswith("tfco_denominator_bound"):
+        self.assertIsNone(denominator_bound)
+        denominator_bound = tensor
+    self.assertIsNotNone(denominator_bound)
 
     def update_ops_fn():
       update_ops = []
@@ -203,17 +198,14 @@ class GeneralRatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
 
       def evaluate_fn(values):
         """Assigns the variables and evaluates the constraints."""
-        session.run_ops(lambda: ratio_bounds.assign(values))
+        # We need to extract the first element from the one-element "values"
+        # Tensor, since the denominator_bound has shape (), not (1,).
+        session.run_ops(lambda: denominator_bound.assign(values[0]))
         return session.run(constraints(structure_memoizer))
 
-      actual_ratio_bounds = test_helpers.find_zeros_of_functions(
-          2, evaluate_fn, epsilon=bisection_epsilon)
-      actual_numerator = actual_ratio_bounds[0]
-      actual_denominator = actual_ratio_bounds[1]
-
-    expected_numerator = ((1.0 + beta * beta) * np.sum(
-        (0.5 * (1.0 + np.sign(self._predictions))) *
-        (self._labels > 0.0) * self._weights) / np.sum(self._weights))
+      # We need to extract the first element here, for the same reason as above.
+      actual_denominator_bound = test_helpers.find_zeros_of_functions(
+          1, evaluate_fn, epsilon=bisection_epsilon)[0]
 
     expected_denominator = (((1.0 + beta * beta) * np.sum(
         (0.5 * (1.0 + np.sign(self._predictions))) *
@@ -224,10 +216,8 @@ class GeneralRatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
                 (self._labels <= 0.0) * self._weights)) / np.sum(self._weights))
 
     self.assertAllClose(
-        expected_numerator, actual_numerator, rtol=0, atol=bisection_epsilon)
-    self.assertAllClose(
         expected_denominator,
-        actual_denominator,
+        actual_denominator_bound,
         rtol=0,
         atol=bisection_epsilon)
 

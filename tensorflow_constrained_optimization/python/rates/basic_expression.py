@@ -47,8 +47,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numbers
-
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers
 
@@ -154,9 +152,6 @@ class BasicExpression(helpers.RateObject):
 
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("BasicExpression objects only support *scalar* "
-                      "multiplication")
     return BasicExpression([tt * scalar for tt in self._terms])
 
   def __rmul__(self, scalar):
@@ -165,8 +160,6 @@ class BasicExpression(helpers.RateObject):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("BasicExpression objects only support *scalar* division")
     return BasicExpression([tt / scalar for tt in self._terms])
 
   # __rtruediv__ is not implemented since we only allow *scalar* division, i.e.

@@ -52,7 +52,6 @@ from __future__ import print_function
 
 import abc
 import copy
-import numbers
 import numpy as np
 import six
 import tensorflow.compat.v2 as tf
@@ -237,12 +236,6 @@ class _RatioWeights(helpers.RateObject):
 
   def __mul__(self, scalar):
     """Returns the result of multiplying the ratio weights by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("_RatioWeights objects only support *scalar* "
-                      "multiplication")
-
-    if scalar == 0:
-      return _RatioWeights({}, self._num_columns)
     return _RatioWeights(
         {
             denominator_key: numerator * scalar
@@ -255,11 +248,6 @@ class _RatioWeights(helpers.RateObject):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing the ratio weights by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("_RatioWeights objects only support *scalar* division")
-
-    if scalar == 0:
-      raise ValueError("cannot divide by zero")
     return _RatioWeights(
         {
             denominator_key: numerator / scalar
@@ -594,6 +582,8 @@ class TensorTerm(Term):
     Raises:
       TypeError: if "tensor" is not a `DeferredTensor` or `Tensor`-like object.
     """
+    super(TensorTerm, self).__init__()
+
     if isinstance(tensor, deferred_tensor.DeferredTensor):
       self._tensor = tensor
     elif not isinstance(tensor, helpers.RateObject):
@@ -776,6 +766,8 @@ class BinaryClassificationTerm(Term):
     Raises:
       TypeError: if predictions or ratio_weights has the wrong type.
     """
+    super(BinaryClassificationTerm, self).__init__()
+
     if not isinstance(predictions, deferred_tensor.DeferredTensor):
       raise TypeError("predictions must be a DeferredTensor object")
     if not isinstance(ratio_weights, _RatioWeights):
@@ -929,17 +921,11 @@ class BinaryClassificationTerm(Term):
   # function.
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("Term objects only support *scalar* multiplication")
-
     return BinaryClassificationTerm(self._predictions,
                                     self._ratio_weights * scalar, self._loss)
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("Term objects only support *scalar* division")
-
     return BinaryClassificationTerm(self._predictions,
                                     self._ratio_weights / scalar, self._loss)
 
@@ -1106,6 +1092,8 @@ class MulticlassTerm(Term):
     Raises:
       TypeError: if predictions or ratio_weights has the wrong type.
     """
+    super(MulticlassTerm, self).__init__()
+
     if not isinstance(predictions, deferred_tensor.DeferredTensor):
       raise TypeError("predictions must be a DeferredTensor object")
     if not isinstance(ratio_weights, _RatioWeights):
@@ -1260,17 +1248,11 @@ class MulticlassTerm(Term):
   # function.
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("Term objects only support *scalar* multiplication")
-
     return MulticlassTerm(self._predictions, self._ratio_weights * scalar,
                           self._loss)
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("Term objects only support *scalar* division")
-
     return MulticlassTerm(self._predictions, self._ratio_weights / scalar,
                           self._loss)
 

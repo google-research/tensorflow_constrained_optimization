@@ -54,20 +54,16 @@ def _is_multiclass(context):
 
 def _ratio_bound(numerator_expression, denominator_expression, lower_bound,
                  upper_bound):
-  """Creates an `Expression` for a one-sided bound on a ratio.
+  """Creates an `Expression` for a bound on a ratio.
 
   The result of this function is an `Expression` representing:
-    numerator_bound / denominator_bound
-  where numerator_bound and denominator_bound are two newly-created slack
-  variables projected to satisfy the following in an update op:
-    0 <= numerator_bound <= denominator_bound <= 1
-    denominator_lower_bound <= denominator_bound
-  Additionally, the following two constraints will be added if lower_bound is
-  True:
-    numerator_bound <= numerator_expression
+    numerator / denominator_bound
+  where denominator_bound is a newly-created slack variable projected to satisfy
+  the following (in an update op):
+    denominator_lower_bound <= denominator_bound <= 1
+  Additionally, the following constraint will be added if lower_bound is True:
     denominator_bound >= denominator_expression
-  and/or the following two if upper_bound is true:
-    numerator_bound >= numerator_expression
+  and/or the following if upper_bound is true:
     denominator_bound <= denominator_expression
   These constraints are placed in the "extra_constraints" field of the resulting
   `Expression`.
@@ -82,7 +78,8 @@ def _ratio_bound(numerator_expression, denominator_expression, lower_bound,
 
   Args:
     numerator_expression: `Expression`, the numerator of the ratio.
-    denominator_expression: `Expression`, the denominator of the ratio.
+    denominator_expression: `Expression`, the denominator of the ratio. The
+      value of this expression must be between zero and one.
     lower_bound: bool, `True` if you want the result of this function to
       lower-bound the ratio.
     upper_bound: bool, `True` if you want the result of this function to
@@ -112,76 +109,45 @@ def _ratio_bound(numerator_expression, denominator_expression, lower_bound,
   if not (lower_bound or upper_bound):
     raise ValueError("at least one of lower_bound or upper_bound must be True")
 
-  # We use a "update_ops_fn" instead of a "constraint" (which we would usually
+  # We use an "update_ops_fn" instead of a "constraint" (which we would usually
   # prefer) to perform the projection because we want to grab the denominator
   # lower bound out of the structure_memoizer.
-  def update_ops_fn(ratio_bounds_variable, structure_memoizer, value_memoizer):
-    """Projects ratio_bounds onto the feasible region."""
+  def update_ops_fn(denominator_bound_variable, structure_memoizer,
+                    value_memoizer):
+    """Projects denominator_bound onto the feasible region."""
     del value_memoizer
 
-    numerator = ratio_bounds_variable[0]
-    denominator = ratio_bounds_variable[1]
-
-    # First make sure that numerator <= denominator.
-    average = 0.5 * (numerator + denominator)
-    numerator = tf.minimum(average, numerator)
-    denominator = tf.maximum(average, denominator)
-
-    # Next make sure that the numerator is in [0, 1] and the denominator is in
-    # [denominator_lower_bound, 1].
-    numerator = tf.maximum(0.0, tf.minimum(1.0, numerator))
-    denominator = tf.maximum(
+    denominator_bound = tf.maximum(
         structure_memoizer[defaults.DENOMINATOR_LOWER_BOUND_KEY],
-        tf.minimum(1.0, denominator))
+        tf.minimum(1.0, denominator_bound_variable))
+    return [denominator_bound_variable.assign(denominator_bound)]
 
-    return [ratio_bounds_variable.assign([numerator, denominator])]
-
-  # Ideally the slack variables would have the same dtype as the predictions,
-  # but we might not know their dtype (e.g. in eager mode), so instead we always
-  # use float32 with auto_cast=True.
-  ratio_bounds = deferred_tensor.DeferredVariable([0.0, 1.0],
-                                                  trainable=True,
-                                                  name="tfco_ratio_bounds",
-                                                  dtype=tf.float32,
-                                                  update_ops_fn=update_ops_fn,
-                                                  auto_cast=True)
-  numerator_bound_basic_expression = basic_expression.BasicExpression(
-      [term.TensorTerm(ratio_bounds[0])])
-  numerator_bound_expression = expression.ExplicitExpression(
-      penalty_expression=numerator_bound_basic_expression,
-      constraint_expression=numerator_bound_basic_expression)
-
+  # Ideally the slack variable would have the same dtype as the predictions, but
+  # we might not know their dtype (e.g. in eager mode), so instead we always use
+  # float32 with auto_cast=True.
+  denominator_bound = deferred_tensor.DeferredVariable(
+      1.0,
+      trainable=True,
+      name="tfco_denominator_bound",
+      dtype=tf.float32,
+      update_ops_fn=update_ops_fn,
+      auto_cast=True)
   denominator_bound_basic_expression = basic_expression.BasicExpression(
-      [term.TensorTerm(ratio_bounds[1])])
+      [term.TensorTerm(denominator_bound)])
   denominator_bound_expression = expression.ExplicitExpression(
       penalty_expression=denominator_bound_basic_expression,
       constraint_expression=denominator_bound_basic_expression)
 
   extra_constraints = []
   if lower_bound:
-    extra_constraints.append(numerator_bound_expression <= numerator_expression)
     extra_constraints.append(
         denominator_expression <= denominator_bound_expression)
   if upper_bound:
-    extra_constraints.append(numerator_expression <= numerator_bound_expression)
     extra_constraints.append(
         denominator_bound_expression <= denominator_expression)
 
-  # One might wonder why we bound both the numerator and the denominator,
-  # instead of leaving the numerator unchanged (as an Expression), and dividing
-  # it by a bound on the denominator. The reason is that Expressions only
-  # support *scalar* division, and at least in the current implementation, this
-  # is a real requirement, since a BoundedExpression must know the sign of its
-  # associated scalar in order to choose which "side" of the bound matters.
-  #
-  # FUTURE WORK: see if we can remove this requirement by using "tf.cond"
-  # instead of "if" inside BoundedExpression.
-  ratio_basic_expression = basic_expression.BasicExpression(
-      [term.TensorTerm(ratio_bounds[0] / ratio_bounds[1])])
   return expression.ConstrainedExpression(
-      expression.ExplicitExpression(
-          penalty_expression=ratio_basic_expression,
-          constraint_expression=ratio_basic_expression),
+      expression=numerator_expression._positive_scalar_div(denominator_bound),  # pylint: disable=protected-access
       extra_constraints=extra_constraints)
 
 
@@ -189,12 +155,11 @@ def _ratio(numerator_expression, denominator_expression):
   """Creates an `Expression` for a ratio.
 
   The result of this function is an `Expression` representing:
-    numerator_bound / denominator_bound
-  where numerator_bound and denominator_bound satisfy the following:
-    0 <= numerator_bound <= denominator_bound <= 1
-    denominator_lower_bound <= denominator_bound
-  The resulting `Expression` will include both implicit slack variables and
-  implicit constraints.
+    numerator / denominator_bound
+  where denominator_bound satisfies the following:
+    denominator_lower_bound <= denominator_bound <= 1
+  The resulting `Expression` will include both the implicit denominator_bound
+  slack variable, and implicit constraints.
 
   Args:
     numerator_expression: `Expression`, the numerator of the ratio.
