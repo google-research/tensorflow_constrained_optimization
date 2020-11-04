@@ -696,17 +696,19 @@ class DeferredVariable(DeferredTensor):
     return self is other
 
   def create(self, structure_memoizer):
-    """Creates the variable owned by this `DeferredVariable`."""
+    """Creates and returns the variable owned by this `DeferredVariable`."""
     key = (DeferredVariable, self)
     if key in structure_memoizer:
       raise RuntimeError("attempted to create a DeferredVariable that has "
                          "already been created")
-    structure_memoizer[key] = structure_memoizer[defaults.VARIABLE_FN_KEY](
+    variable = structure_memoizer[defaults.VARIABLE_FN_KEY](
         initial_value=self._initial_value,
         trainable=self._trainable,
         name=self._name,
         dtype=self._dtype,
         constraint=self._constraint)
+    structure_memoizer[key] = variable
+    return variable
 
   def update_ops(self, structure_memoizer, value_memoizer=None):
     """Creates and returns a list of ops to run at the start of train_op.

@@ -49,7 +49,7 @@ class ProxyLagrangianOptimizerTest(
             minimum_multiplier_radius=minimum_multiplier_radius,
             initial_multiplier_radius=initial_multiplier_radius))
     optimizer = tf.keras.optimizers.SGD(1.0)
-    var_list = minimization_problem.trainable_variables + [state_variable]
+    var_list = list(minimization_problem.trainable_variables) + [state_variable]
 
     if tf.executing_eagerly():
       train_op_fn = lambda: optimizer.minimize(loss_fn, var_list)
@@ -137,7 +137,7 @@ class ProxyLagrangianOptimizerTest(
         minimum_multiplier_radius=minimum_multiplier_radius,
         initial_multiplier_radius=initial_multiplier_radius)
     var_list = (
-        minimization_problem.trainable_variables +
+        list(minimization_problem.trainable_variables) +
         optimizer.trainable_variables())
 
     if tf.executing_eagerly():
