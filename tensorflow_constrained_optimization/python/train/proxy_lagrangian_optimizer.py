@@ -50,7 +50,7 @@ from __future__ import print_function
 
 import math
 import numpy as np
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.train import constrained_optimizer
 

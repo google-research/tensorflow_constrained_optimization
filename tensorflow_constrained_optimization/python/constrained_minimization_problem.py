@@ -33,7 +33,7 @@ from __future__ import print_function
 import abc
 import six
 
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 
 @six.add_metaclass(abc.ABCMeta)

@@ -46,7 +46,7 @@ import collections
 import numbers
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import defaults

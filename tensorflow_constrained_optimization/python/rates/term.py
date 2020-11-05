@@ -54,7 +54,7 @@ import abc
 import copy
 import numpy as np
 import six
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor

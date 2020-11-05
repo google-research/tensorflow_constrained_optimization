@@ -21,7 +21,7 @@ from __future__ import print_function
 
 import abc
 import six
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import constrained_minimization_problem
 
