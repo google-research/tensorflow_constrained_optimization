@@ -386,6 +386,7 @@ py_test(
         ":binary_rates",
         ":defaults",
         ":deferred_tensor",
+        ":loss",
         ":subsettable_context",
         ":test_helpers",
         # numpy dep,
