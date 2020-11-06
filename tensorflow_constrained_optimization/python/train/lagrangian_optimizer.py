@@ -195,7 +195,7 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
             "then they must have the same number of constraints, so that the "
             "Lagrange multipliers can be shared")
 
-    else:
+    elif num_constraints > 0:
       initial_multipliers = np.zeros((num_constraints,), dtype=np.float32)
       self._multipliers = self._variable_fn(
           initial_value=initial_multipliers,
@@ -374,7 +374,8 @@ def create_lagrangian_loss(minimization_problem,
     nullary function returning a `Tensor` that can be minimized to optimize the
     constrained problem, update_ops_fn is a nullary function that returns a list
     of operations that should be executed before each training iteration, and
-    multipliers_variable is a variable of Lagrange multipliers.
+    multipliers_variable is a variable of Lagrange multipliers (which could be
+    None, if there are no constraints, and therefore no Lagrange multipliers).
   """
   return constrained_optimizer.create_loss(
       _LagrangianFormulation(

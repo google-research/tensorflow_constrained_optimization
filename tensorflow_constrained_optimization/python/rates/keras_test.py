@@ -120,14 +120,16 @@ class KerasTest(graph_and_eager_test_case.GraphAndEagerTestCase):
     four = operations.wrap_rate(four_placeholder)
 
     objective = sum([one, two, three, four], zero)
+    constraints = [zero <= one]
 
     # Trying to create a KerasLayer without including the input placeholders
     # should raise.
     with self.assertRaises(ValueError):
-      _ = keras.KerasLayer(objective=objective)
+      _ = keras.KerasLayer(objective=objective, constraints=constraints)
 
     placeholders = [zero_placeholder, two_placeholder, four_placeholder]
-    layer = MockKerasLayer(objective=objective, placeholders=placeholders)
+    layer = MockKerasLayer(
+        objective=objective, constraints=constraints, placeholders=placeholders)
 
     # Make sure that we created the variables we expected.
     expected_names = {"tfco_global_step", "tfco_lagrange_multipliers"}

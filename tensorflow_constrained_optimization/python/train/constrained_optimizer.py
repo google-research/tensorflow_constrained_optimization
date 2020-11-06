@@ -45,6 +45,11 @@ class Formulation(object):
   def state(self):
     """Fetches the internal state, or returns None if it hasn't been created.
 
+    There are two reasons why there might be no state: (i) because
+    create_state() has not yet been called, or (ii) because no state is needed
+    (e.g. if you're using the Lagrangian formulation, and there are no
+    constraints).
+
     Returns:
       The state `Tensor`, if create_state() has been called, or None otherwise.
     """
