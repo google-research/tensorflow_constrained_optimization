@@ -221,71 +221,90 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
     Returns:
       The Lagrangian loss function.
     """
-    # This function returns both the value of the Lagrangian, and its gradients
-    # w.r.t. the contents of the constrained minimization problem (objective,
-    # constraints and proxy_constraints) and the internal Lagrange multipliers
-    # (multipliers). The reason for using tf.custom_gradient is that it allows
-    # us to override the gradient w.r.t. the Lagrange multipliers to use the
-    # original constraints instead of the proxy constraints.
-    @tf.custom_gradient
-    def loss_gradient_fn(objective, constraints, proxy_constraints,
-                         multipliers):
-      """Evaluates the loss for the current Lagrange multipliers."""
-      # Make sure that the objective and proxy constraints have the same dtype.
-      if (constraints.dtype.base_dtype != objective.dtype.base_dtype or
-          proxy_constraints.dtype.base_dtype != objective.dtype.base_dtype):
-        raise TypeError("objective, constraints and proxy_constraints must all "
-                        "have the same dtypes")
+    # Create the Lagrange multipliers.
+    num_constraints = minimization_problem.num_constraints
+    multipliers = self.create_state(num_constraints)
 
-      # The Lagrangian is defined as:
-      #   output = objective + tf.tensordot(
-      #       tf.cast(multipliers), proxy_constraints, 1)
-      # when updating the model parameters, and as:
-      #   output = objective + tf.tensordot(
-      #       tf.cast(multipliers), constraints, 1)
-      # when updating the Lagrange multipliers.
-      #
-      # However, while these quantities are what we differentiate, we do *not*
-      # return either of their values (since they aren't terribly meaningful,
-      # thanks to being simultaneously minimized over the model parameters and
-      # maximized over the Lagrange multipliers). Instead, we just return the
-      # value of the objective.
-      output = objective
+    if multipliers is not None:
+      # This function returns both the value of the Lagrangian, and its
+      # gradients w.r.t. the contents of the constrained minimization problem
+      # (objective, constraints and proxy_constraints) and the internal Lagrange
+      # multipliers (multipliers). The reason for using tf.custom_gradient is
+      # that it allows us to override the gradient w.r.t. the Lagrange
+      # multipliers to use the original constraints instead of the proxy
+      # constraints.
+      @tf.custom_gradient
+      def loss_gradient_fn(objective, constraints, proxy_constraints,
+                           multipliers):
+        """Evaluates the loss for the current Lagrange multipliers."""
+        # Make sure that the objective and proxy constraints have the same
+        # dtype.
+        if (constraints.dtype.base_dtype != objective.dtype.base_dtype or
+            proxy_constraints.dtype.base_dtype != objective.dtype.base_dtype):
+          raise TypeError(
+              "objective, constraints and proxy_constraints must all "
+              "have the same dtypes")
 
-      wrt_objective = 1
-      wrt_proxy_constraints = tf.cast(
-          multipliers, dtype=proxy_constraints.dtype.base_dtype)
-      wrt_multipliers = -tf.cast(constraints, multipliers.dtype.base_dtype)
+        # The Lagrangian is defined as:
+        #   output = objective + tf.tensordot(
+        #       tf.cast(multipliers), proxy_constraints, 1)
+        # when updating the model parameters, and as:
+        #   output = objective + tf.tensordot(
+        #       tf.cast(multipliers), constraints, 1)
+        # when updating the Lagrange multipliers.
+        #
+        # However, while these quantities are what we differentiate, we do *not*
+        # return either of their values (since they aren't terribly meaningful,
+        # thanks to being simultaneously minimized over the model parameters and
+        # maximized over the Lagrange multipliers). Instead, we just return the
+        # value of the objective.
+        output = objective
 
-      def gradient_fn(output_gradient):
+        wrt_objective = 1
+        wrt_proxy_constraints = tf.cast(
+            multipliers, dtype=proxy_constraints.dtype.base_dtype)
+        wrt_multipliers = -tf.cast(constraints, multipliers.dtype.base_dtype)
+
         # We return the gradient w.r.t. the objective, constraints,
         # proxy_constraints and Lagrange multipliers, respectively (this is the
         # same order as the arguments to loss_gradient_fn). Notice that the
         # gradient w.r.t. the constraints is None, and that w.r.t. the Lagrange
         # multipliers is scaled by dual_scale.
-        return (output_gradient * wrt_objective, None,
-                output_gradient * wrt_proxy_constraints,
-                self._dual_scale * output_gradient * wrt_multipliers)
+        def gradient_fn(output_gradient):
+          return (output_gradient * wrt_objective, None,
+                  output_gradient * wrt_proxy_constraints,
+                  self._dual_scale * output_gradient * wrt_multipliers)
 
-      return output, gradient_fn
+        return output, gradient_fn
 
-    # Create the Lagrange multipliers.
-    num_constraints = minimization_problem.num_constraints
-    multipliers = self.create_state(num_constraints)
+      # We don't use functools.partial since we need the arguments to be
+      # evaluated when the loss is called, not when we construct the partial
+      # application.
+      def partial_loss_gradient_fn():
+        objective, constraints, proxy_constraints = (
+            minimization_problem.components())
+        constraints = tf.reshape(constraints, shape=(num_constraints,))
+        if proxy_constraints is None:
+          proxy_constraints = constraints
+        else:
+          proxy_constraints = tf.reshape(
+              proxy_constraints, shape=(num_constraints,))
+        return loss_gradient_fn(objective, constraints, proxy_constraints,
+                                multipliers)
+    else:
+      # If we don't have any Lagrange multipliers (presumably because we don't
+      # have any constraints), then there isn't really a Lagrangian, and we just
+      # differentiate the objective. We still use tf.custom_gradient since if we
+      # just returned minimization_problem.objective, then the return type would
+      # change based on the number of constraints (in particular,
+      # _compute_gradients would require a tape for this branch, but not the
+      # other).
+      @tf.custom_gradient
+      def loss_gradient_fn(objective):
+        return objective, lambda output_gradient: output_gradient
 
-    # We don't use functools.partial since we need the arguments to be evaluated
-    # when the loss is called, not when we construct the partial application.
-    def partial_loss_gradient_fn():
-      objective, constraints, proxy_constraints = (
-          minimization_problem.components())
-      constraints = tf.reshape(constraints, shape=(num_constraints,))
-      if proxy_constraints is None:
-        proxy_constraints = constraints
-      else:
-        proxy_constraints = tf.reshape(
-            proxy_constraints, shape=(num_constraints,))
-      return loss_gradient_fn(objective, constraints, proxy_constraints,
-                              multipliers)
+      partial_loss_gradient_fn = lambda: loss_gradient_fn(minimization_problem.
+                                                          objective())
 
     return partial_loss_gradient_fn
 
