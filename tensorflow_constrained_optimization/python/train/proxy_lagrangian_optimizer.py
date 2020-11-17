@@ -324,7 +324,6 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
     # Instead, we do so lazily, in create_state().
     self._state = None
 
-  @property
   def state(self):
     return self._state
 
@@ -573,7 +572,7 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
 
     # Create the internal state.
     num_constraints = minimization_problem.num_constraints
-    state = self.create_state(num_constraints)
+    self.create_state(num_constraints)
 
     # We don't use functools.partial since we need the arguments to be evaluated
     # when the loss is called, not when we construct the partial application.
@@ -586,7 +585,8 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
       else:
         proxy_constraints = tf.reshape(
             proxy_constraints, shape=(num_constraints,))
-      return loss_gradient_fn(objective, constraints, proxy_constraints, state)
+      return loss_gradient_fn(objective, constraints, proxy_constraints,
+                              self.state())
 
     return partial_loss_gradient_fn
 
@@ -704,14 +704,17 @@ def create_proxy_lagrangian_loss(minimization_problem,
     state_variable is a variable containing the internal state of the
     proxy-Lagrangian formulation.
   """
-  return constrained_optimizer.create_loss(
-      _ProxyLagrangianFormulation(
-          regret_type=regret_type,
-          update_type=update_type,
-          minimum_multiplier_radius=minimum_multiplier_radius,
-          initial_multiplier_radius=initial_multiplier_radius,
-          dual_scale=dual_scale,
-          variable_fn=variable_fn), minimization_problem)
+  formulation = _ProxyLagrangianFormulation(
+      regret_type=regret_type,
+      update_type=update_type,
+      minimum_multiplier_radius=minimum_multiplier_radius,
+      initial_multiplier_radius=initial_multiplier_radius,
+      dual_scale=dual_scale,
+      variable_fn=variable_fn)
+  loss_fn = formulation.get_loss_fn(minimization_problem)
+  # We just return the formulation.state() since we know that it is a
+  # tf.Variable, and is in fact the only tf.Variable owned by the formulation.
+  return loss_fn, minimization_problem.update_ops, formulation.state()
 
 
 class ProxyLagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):

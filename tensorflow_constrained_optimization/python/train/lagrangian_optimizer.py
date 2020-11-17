@@ -158,7 +158,6 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
     # create_state().
     self._multipliers = None
 
-  @property
   def state(self):
     return self._multipliers
 
@@ -223,9 +222,7 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
     """
     # Create the Lagrange multipliers.
     num_constraints = minimization_problem.num_constraints
-    multipliers = self.create_state(num_constraints)
-
-    if multipliers is not None:
+    if num_constraints > 0:
       # This function returns both the value of the Lagrangian, and its
       # gradients w.r.t. the contents of the constrained minimization problem
       # (objective, constraints and proxy_constraints) and the internal Lagrange
@@ -277,6 +274,10 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
 
         return output, gradient_fn
 
+      # Create the Lagrange multipliers. Notice that we only do this if
+      # num_constraints > 0.
+      self.create_state(num_constraints)
+
       # We don't use functools.partial since we need the arguments to be
       # evaluated when the loss is called, not when we construct the partial
       # application.
@@ -290,10 +291,10 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
           proxy_constraints = tf.reshape(
               proxy_constraints, shape=(num_constraints,))
         return loss_gradient_fn(objective, constraints, proxy_constraints,
-                                multipliers)
+                                self.state())
     else:
-      # If we don't have any Lagrange multipliers (presumably because we don't
-      # have any constraints), then there isn't really a Lagrangian, and we just
+      # If we don't have any constraints, then we don't have any Lagrange
+      # multipliers, so there isn't really a Lagrangian, and we just
       # differentiate the objective. We still use tf.custom_gradient since if we
       # just returned minimization_problem.objective, then the return type would
       # change based on the number of constraints (in particular,
@@ -396,11 +397,14 @@ def create_lagrangian_loss(minimization_problem,
     multipliers_variable is a variable of Lagrange multipliers (which could be
     None, if there are no constraints, and therefore no Lagrange multipliers).
   """
-  return constrained_optimizer.create_loss(
-      _LagrangianFormulation(
-          maximum_multiplier_radius=maximum_multiplier_radius,
-          dual_scale=dual_scale,
-          variable_fn=variable_fn), minimization_problem)
+  formulation = _LagrangianFormulation(
+      maximum_multiplier_radius=maximum_multiplier_radius,
+      dual_scale=dual_scale,
+      variable_fn=variable_fn)
+  loss_fn = formulation.get_loss_fn(minimization_problem)
+  # We just return the formulation.state() since we know that it is a
+  # tf.Variable, and is in fact the only tf.Variable owned by the formulation.
+  return loss_fn, minimization_problem.update_ops, formulation.state()
 
 
 class LagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):

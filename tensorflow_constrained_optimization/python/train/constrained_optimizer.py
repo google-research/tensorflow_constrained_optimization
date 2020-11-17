@@ -27,7 +27,7 @@ from tensorflow_constrained_optimization.python import constrained_minimization_
 
 
 @six.add_metaclass(abc.ABCMeta)
-class Formulation(object):
+class Formulation(tf.Module):
   """Represents a constrained optimization formulation.
 
   Currently, the two formulations that this library supports are the Lagrangian
@@ -41,29 +41,31 @@ class Formulation(object):
   we're training (the "get_loss_fn" method).
   """
 
-  @abc.abstractproperty
-  def state(self):
-    """Fetches the internal state, or returns None if it hasn't been created.
+  def __init__(self, name=None):
+    super(Formulation, self).__init__(name=name)
 
-    There are two reasons why there might be no state: (i) because
-    create_state() has not yet been called, or (ii) because no state is needed
-    (e.g. if you're using the Lagrangian formulation, and there are no
-    constraints).
+  @abc.abstractmethod
+  def state(self):
+    """Evaluates and returns the internal state.
 
     Returns:
-      The state `Tensor`, if create_state() has been called, or None otherwise.
+      The value of the internal state (a Tensor), or None if there is no state.
     """
 
   @abc.abstractmethod
   def create_state(self, num_constraints):
-    """Fetches the internal state, creating it if necessary.
+    """Initializes the internal state, for the given number of constraints.
+
+    This method will be called from get_loss_fn(), so calling it isn't usually
+    necessary. The reason that it exists is to handle the case in which one
+    wants to "lock in" the number of constraints before get_loss_fn() is called.
+    For this reason, if the state has already been created, implementations
+    should check that the number of constraints is compatible with the existing
+    state (and raise otherwise).
 
     Args:
       num_constraints: int, the number of constraints in the
         `ConstrainedMinimizationProblem` that will eventually be minimized.
-
-    Returns:
-      The state `Tensor`.
     """
 
   @abc.abstractmethod
@@ -84,80 +86,6 @@ class Formulation(object):
     Returns:
       The loss function.
     """
-
-
-def create_loss(formulation, minimization_problem):
-  """Creates a loss function from a `ConstrainedMinimizationProblem`.
-
-  Minimizing the returned loss will have the effect of jointly optimizing over
-  both the internal state used by the given formulation, and the parameters of
-  the model that we're training.
-
-  In addition to a loss function, this method returns a function returning a
-  list of operations that should be executed before each iteration
-  ("update_ops"), and a `tf.Variable` containing the formulation's internal
-  state.
-
-  In graph mode, the result of this update_ops function could be "attached" to
-  the train_op using tf.control_dependencies. In eager mode, it should be called
-  before each iteration. Likewise, you should make sure to differentiate w.r.t.
-  the internal state variable by e.g. including it in the var_list that you pass
-  to an `Optimizer`'s minimize() method.
-
-  For example, in graph mode, your code could look like this:
-
-  ```python
-  # We ignore the returned state, since we won't provide a var_list to the
-  # Optimizer's minimize() method.
-  loss_fn, update_ops_fn, _ = create_loss(formulation, minimization_problem)
-
-  optimizer = tf.compat.v1.train.GradientDescentOptimizer()
-  with tf.control_dependencies(update_ops_fn()):
-    # Since we don't provide a var_list, we'll just differentiate w.r.t. all
-    # trainable variables, including the state.
-    train_op = optimizer.minimize(loss_fn())
-
-  with tf.compat.v1.Session() as session:
-    for iteration in xrange(num_iterations):
-      session.run(train_op)
-  ```
-
-  while in eager mode, it could look like this:
-
-  ```python
-  loss_fn, update_ops_fn, state_variable = create_loss(formulation,
-      minimization_problem)
-
-  # Assuming that we already have a var_list containing the model parameters.
-  var_list += minimization_problem.trainable_variables
-  var_list.append(state_variable)
-
-  optimizer = tf.keras.optimizers.SGD()
-
-  for iteration in xrange(num_iterations):
-    update_ops_fn()
-    optimizer.minimize(loss_fn, var_list=var_list)
-  ```
-
-  Args:
-    formulation: `Formulation` (defined above) to use for performing constrained
-      optimization.
-    minimization_problem: `ConstrainedMinimizationProblem`, the problem to
-      optimize.
-
-  Returns:
-    A (loss_fn, update_ops_fn, state_variable) tuple, where loss_fn is a nullary
-    function returning a `Tensor` that can be minimized to optimize the
-    constrained problem, update_ops_fn is a nullary function that returns a list
-    of operations that should be executed before each training iteration, and
-    multipliers_variable is a `tf.Variable` containing the internal state of the
-    given formulation.
-  """
-  state_variable = formulation.create_state(
-      minimization_problem.num_constraints)
-  loss_fn = formulation.get_loss_fn(minimization_problem)
-
-  return loss_fn, minimization_problem.update_ops, state_variable
 
 
 class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
@@ -266,11 +194,10 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
     Returns:
       A list of variables.
     """
-    result = self._optimizer.variables()
+    result = (
+        list(self._optimizer.variables()) + list(self._formulation.variables))
     if self._constraint_optimizer is not None:
-      result += self._constraint_optimizer.variables()
-    if self._formulation.state is not None:
-      result.append(self._formulation.state)
+      result += list(self._constraint_optimizer.variables())
     return result
 
   def trainable_variables(self):
@@ -380,16 +307,19 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
   # pylint: disable=protected-access
 
   def _create_slots(self, var_list):
-    state = self._formulation.state
-    if self._constraint_optimizer is None or state is None:
+    # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
+    # which means that "var in state_vars" won't do what want it to do (below).
+    # Instead, we use "id(var) in state_var_ids".
+    state_var_ids = [id(var) for var in self._formulation.variables]
+    if self._constraint_optimizer is None or not state_var_ids:
       return self._optimizer._create_slots(var_list)
 
     state_var_list = []
     non_state_var_list = []
     for var in var_list:
-      # We have to use "is" for the state comparison because in eager mode in
-      # TensorFlow 2.1+, __eq__ is an element-wise comparison.
-      if var is state:
+      # We compare IDs, instead of values, since in TensorFlow 2.1+, __eq__ is
+      # an element-wise comparison.
+      if id(var) in state_var_ids:
         state_var_list.append(var)
       else:
         non_state_var_list.append(var)
@@ -404,26 +334,44 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
 
   def _apply_dense(self, gradient, variable, *args, **kwargs):
     assert variable is not None
-    if (self._constraint_optimizer is not None and
-        variable is self._formulation.state):
+
+    # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
+    # which means that "variable in state_vars" won't do what want it to do
+    # (below). Instead, we use "id(variable) in state_var_ids".
+    state_var_ids = [id(var) for var in self._formulation.variables]
+
+    if self._constraint_optimizer is not None and id(variable) in state_var_ids:
       return self._constraint_optimizer._apply_dense(gradient, variable, *args,
                                                      **kwargs)
     return self._optimizer._apply_dense(gradient, variable, *args, **kwargs)
 
   def _apply_sparse(self, gradient, variable, *args, **kwargs):
     assert variable is not None
-    if (self._constraint_optimizer is not None and
-        variable is self._formulation.state):
+
+    # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
+    # which means that "variable in state_vars" won't do what want it to do
+    # (below). Instead, we use "id(variable) in state_var_ids".
+    state_var_ids = [id(var) for var in self._formulation.variables]
+
+    if self._constraint_optimizer is not None and id(variable) in state_var_ids:
       return self._constraint_optimizer._apply_sparse(gradient, variable, *args,
                                                       **kwargs)
     return self._optimizer._apply_sparse(gradient, variable, *args, **kwargs)
 
   def _resource_apply_dense(self, gradient, handle, *args, **kwargs):
     assert handle is not None
-    # TODO: is it safe to compare variables and handles? It works in
-    # the tests, but will it *always* work?
-    if (self._constraint_optimizer is not None and
-        handle is self._formulation.state):
+
+    # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
+    # which means that "handle in state_vars" won't do what want it to do
+    # (below). For some reason, "id(handle) in state_var_ids" doesn't work
+    # in ConstrainedOptimizerV2, so we iterate over the entire list.
+    #
+    # TODO: is it safe to compare variables and handles using "is"? It
+    # works in the tests, but will it *always* work? If we compare IDs directly
+    # in ConstrainedOptimizerV2, it does *not* work.
+    state_vars = self._formulation.variables
+    if self._constraint_optimizer is not None and any(
+        handle is vv for vv in state_vars):
       return self._constraint_optimizer._resource_apply_dense(
           gradient, handle, *args, **kwargs)
     return self._optimizer._resource_apply_dense(gradient, handle, *args,
@@ -431,10 +379,18 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
 
   def _resource_apply_sparse(self, gradient, handle, *args, **kwargs):
     assert handle is not None
-    # TODO: is it safe to compare variables and handles? It works in
-    # the tests, but will it *always* work?
-    if (self._constraint_optimizer is not None and
-        handle is self._formulation.state):
+
+    # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
+    # which means that "handle in state_vars" won't do what want it to do
+    # (below). For some reason, "id(handle) in state_var_ids" doesn't work
+    # in ConstrainedOptimizerV2, so we iterate over the entire list.
+    #
+    # TODO: is it safe to compare variables and handles using "is"? It
+    # works in the tests, but will it *always* work? If we compare IDs directly
+    # in ConstrainedOptimizerV2, it does *not* work.
+    state_vars = self._formulation.variables
+    if self._constraint_optimizer is not None and any(
+        handle is vv for vv in state_vars):
       return self._constraint_optimizer._resource_apply_sparse(
           gradient, handle, *args, **kwargs)
     return self._optimizer._resource_apply_sparse(gradient, handle, *args,
@@ -531,11 +487,10 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     Returns:
       A list of variables.
     """
-    result = self._optimizer.variables()
+    result = (
+        list(self._optimizer.variables()) + list(self._formulation.variables))
     if self._constraint_optimizer is not None:
-      result += self._constraint_optimizer.variables()
-    if self._formulation.state is not None:
-      result.append(self._formulation.state)
+      result += list(self._constraint_optimizer.variables())
     return result
 
   def trainable_variables(self):
@@ -570,16 +525,19 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     # that constraint_optimizer is non-None.
     assert self._constraint_optimizer is not None
 
-    state = self._formulation.state
-    if state is None:
+    # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
+    # which means that "var in state_vars" won't do what want it to do (below).
+    # Instead, we use "id(var) in state_var_ids".
+    state_var_ids = [id(var) for var in self._formulation.variables]
+    if not state_var_ids:
       return var_list, []
 
     state_var_list = []
     non_state_var_list = []
     for var in var_list:
-      # We have to use "is" for the state comparison because in eager mode in
-      # TensorFlow 2.1+, __eq__ is an element-wise comparison.
-      if var is state:
+      # We compare IDs, instead of values, since in TensorFlow 2.1+, __eq__ is
+      # an element-wise comparison.
+      if id(var) in state_var_ids:
         state_var_list.append(var)
       else:
         non_state_var_list.append(var)
@@ -666,10 +624,18 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
 
   def _resource_apply_dense(self, gradient, handle, *args, **kwargs):
     assert handle is not None
-    # TODO: is it safe to compare variables and handles? It works in
-    # the tests, but will it *always* work?
-    if (self._constraint_optimizer is not None and
-        handle is self._formulation.state):
+
+    # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
+    # which means that "handle in state_vars" won't do what want it to do
+    # (below). For some reason, "id(handle) in state_var_ids" doesn't work
+    # either, so we iterate over the entire list.
+    #
+    # TODO: is it safe to compare variables and handles using "is"? It
+    # works in the tests, but will it *always* work? If we compare IDs directly,
+    # it does *not* work.
+    state_vars = self._formulation.variables
+    if self._constraint_optimizer is not None and any(
+        handle is vv for vv in state_vars):
       return self._constraint_optimizer._resource_apply_dense(
           gradient, handle, *args, **kwargs)
     return self._optimizer._resource_apply_dense(gradient, handle, *args,
@@ -677,10 +643,18 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
 
   def _resource_apply_sparse(self, gradient, handle, *args, **kwargs):
     assert handle is not None
-    # TODO: is it safe to compare variables and handles? It works in
-    # the tests, but will it *always* work?
-    if (self._constraint_optimizer is not None and
-        handle is self._formulation.state):
+
+    # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
+    # which means that "handle in state_vars" won't do what want it to do
+    # (below). For some reason, "id(handle) in state_var_ids" doesn't work
+    # either, so we iterate over the entire list.
+    #
+    # TODO: is it safe to compare variables and handles using "is"? It
+    # works in the tests, but will it *always* work? If we compare IDs directly,
+    # it does *not* work.
+    state_vars = self._formulation.variables
+    if self._constraint_optimizer is not None and any(
+        handle is vv for vv in state_vars):
       return self._constraint_optimizer._resource_apply_sparse(
           gradient, handle, *args, **kwargs)
     return self._optimizer._resource_apply_sparse(gradient, handle, *args,
