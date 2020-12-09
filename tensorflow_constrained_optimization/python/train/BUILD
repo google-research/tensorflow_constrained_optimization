@@ -41,6 +41,16 @@ py_library(
 )
 
 py_library(
+    name = "lagrangian_model_optimizer",
+    srcs = ["lagrangian_model_optimizer.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":lagrangian_optimizer",
+        # tensorflow dep,
+    ],
+)
+
+py_library(
     name = "proxy_lagrangian_optimizer",
     srcs = ["proxy_lagrangian_optimizer.py"],
     srcs_version = "PY2AND3",
@@ -71,6 +81,22 @@ py_test(
         ":lagrangian_optimizer",
         ":test_util",
         # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
+    ],
+)
+
+py_test(
+    name = "lagrangian_model_optimizer_test",
+    srcs = ["lagrangian_model_optimizer_test.py"],
+    python_version = "PY3",
+    srcs_version = "PY2AND3",
+    deps = [
+        ":lagrangian_model_optimizer",
+        ":test_util",
+        # numpy dep,
+        # six dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
         # Placeholder for internal dep,
