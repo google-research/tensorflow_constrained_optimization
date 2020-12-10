@@ -38,6 +38,7 @@ py_library(
         "//tensorflow_constrained_optimization/python/rates:rate_minimization_problem",
         "//tensorflow_constrained_optimization/python/rates:subsettable_context",
         "//tensorflow_constrained_optimization/python/train:constrained_optimizer",
+        "//tensorflow_constrained_optimization/python/train:lagrangian_model_optimizer",
         "//tensorflow_constrained_optimization/python/train:lagrangian_optimizer",
         "//tensorflow_constrained_optimization/python/train:proxy_lagrangian_optimizer",
     ],
