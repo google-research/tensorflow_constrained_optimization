@@ -169,9 +169,9 @@ class _RatioWeights(helpers.RateObject):
 
     Args:
       weights: `DeferredTensor` of example weights.
-      column_coefficients: collection of num_columns floats, each of which is
-        the quantity by which to multiply the weights in the corresponding
-        column.
+      column_coefficients: python list or NumPy array of num_columns floats,
+        each of which is the quantity by which to multiply the weights in the
+        corresponding column.
       numerator_predicate: `Predicate` object representing whether each example
         should be included in the ratio's numerator.
       denominator_predicate: `Predicate` object representing whether each
@@ -186,15 +186,15 @@ class _RatioWeights(helpers.RateObject):
     """
     if not isinstance(weights, deferred_tensor.DeferredTensor):
       raise TypeError("weights must be a DeferredTensor object")
-    if isinstance(column_coefficients, deferred_tensor.DeferredTensor):
-      raise TypeError("column_coefficients must be a Tensor-like object")
+    if (tf.is_tensor(column_coefficients) or
+        isinstance(column_coefficients, deferred_tensor.DeferredTensor)):
+      raise TypeError("column_coefficients must be a list or NumPy array")
     if not (isinstance(numerator_predicate, predicate.Predicate) and
             isinstance(denominator_predicate, predicate.Predicate)):
       raise TypeError("numerator_predicate and denominator_predictate must "
                       "be Predicate objects")
 
-    column_coefficients = helpers.convert_to_1d_tensor(column_coefficients)
-    num_columns = helpers.get_num_elements_of_tensor(column_coefficients)
+    num_columns = len(column_coefficients)
     key = (weights, denominator_predicate)
 
     def value_fn(weights_value, predicate_value):
@@ -217,7 +217,8 @@ class _RatioWeights(helpers.RateObject):
       if not dtype.is_floating:
         raise TypeError("weights must be floating-point")
       column *= tf.cast(predicate_value, dtype=dtype)
-      row = tf.cast(column_coefficients, dtype=dtype)
+      row = tf.cast(
+          helpers.convert_to_1d_tensor(column_coefficients), dtype=dtype)
       # Return the outer product of the column vector "column" and row vector
       # "row", so that result_ij = column_i * row_j.
       return tf.tensordot(column, row, axes=0)
