@@ -68,6 +68,10 @@ class Formulation(tf.Module):
         `ConstrainedMinimizationProblem` that will eventually be minimized.
     """
 
+  @abc.abstractproperty
+  def is_state_created(self):
+    """Returns True iff the create_state method has been called."""
+
   @abc.abstractmethod
   def get_loss_fn(self, minimization_problem):
     """Returns the loss function.
@@ -139,8 +143,9 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
       num_constraints: optional int, the number of constraints in the
         `ConstrainedMinimizationProblem` that will eventually be minimized. If
         this argument is provided, then the internal state will be created
-        inside this constructor. Otherwise, it will be created inside the first
-        call to get_loss_fn().
+        inside this constructor. Otherwise, it will be created inside
+        the num_constraints setter or, if that isn't called, it will be created
+        in first call to minimize() or compute_gradients().
       constraint_optimizer: optional `tf.compat.v1.train.Optimizer`, used to
         optimize the Lagrange multipliers (or their analogues).
       name: a non-empty string, which will be passed on to the parent
@@ -171,9 +176,55 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
     self._formulation = formulation
     self._optimizer = optimizer
     self._constraint_optimizer = constraint_optimizer
+    self._num_constraints = num_constraints
 
-    if num_constraints is not None:
-      self._formulation.create_state(num_constraints)
+  @property
+  def num_constraints(self):
+    """Getter for the number of constraints, which will be None if unknown.
+
+    This accessor will only return the number of constraints that has been
+    *explicitly* specified. The number of constraints might be *implicitly*
+    derived from the `ConstrainedMinimizationProblem` passed to e.g. minimize(),
+    in which case the number of constraints will be fixed, but this accessor
+    will still return `None`.
+
+    Returns:
+      The number of constraints that were specified either in the constructor,
+      or to the num_constraints setter. If this number is fixed but determined
+      implicitly from the `ConstrainedMinimizationProblem` that we're
+      minimizing, then this getter will return `None`.
+    """
+    return self._num_constraints
+
+  @num_constraints.setter
+  def num_constraints(self, num_constraints):
+    """Explicitly sets the number of constraints.
+
+    This function plays the same role as the (optional) num_constraints
+    constructor argument. Once the number of constraints has been set, the
+    internal state (e.g. the Lagrange multipliers) are fixed, and subsequent
+    calls to this method will fail if the number of constraints has changed.
+
+    Args:
+      num_constraints: int, the number of constraints in the
+        `ConstrainedMinimizationProblem` that will eventually be minimized.
+
+    Raises:
+      RuntimeError: if the internal state has already been created.
+      ValueError: if the number of constraints differs from its previous value.
+    """
+    # Since get_loss_fn() can infer the number of constraints from a
+    # ConstrainedMinimizationProblem, it's possible that the state might have
+    # been created, even while self._num_constraints is None.
+    if self._formulation.is_state_created:
+      raise RuntimeError("num_constraints cannot be set after the internal "
+                         "state has been created (by e.g. the variables or "
+                         "minimize methods)")
+    if (self._num_constraints
+        is not None) and (num_constraints != self._num_constraints):
+      raise ValueError("num_constraints cannot be changed once it has been set")
+
+    self._num_constraints = num_constraints
 
   # As in Optimizer, this is *not* a property.
   def variables(self):
@@ -193,11 +244,23 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
 
     Returns:
       A list of variables.
+
+    Raises:
+      RuntimeError: if we don't know the number of constraints (e.g. from the
+        num_constraints setter).
     """
+    if not self._formulation.is_state_created:
+      if self._num_constraints is None:
+        raise RuntimeError("the variables method of a TFCO optimizer cannot "
+                           "be called before the number of constraints has "
+                           "been fixed (maybe you need to set num_constraints)")
+      self._formulation.create_state(self._num_constraints)
+
     result = (
         list(self._optimizer.variables()) + list(self._formulation.variables))
     if self._constraint_optimizer is not None:
       result += list(self._constraint_optimizer.variables())
+
     return result
 
   def trainable_variables(self):
@@ -289,6 +352,17 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
           colocate_gradients_with_ops=colocate_gradients_with_ops,
           grad_loss=grad_loss)
 
+    # We don't raise if we're unable to create a state, since get_loss_fn()
+    # should be able to infer the number of constraints from the loss.
+    #
+    # Also, notice that we perform this check *after* the code that handles the
+    # non-ConstrainedMinimizationProblem case, since the number of constraints
+    # expected by this optimizer is irrelevant if we are not performing
+    # constrained optimization.
+    if (not self._formulation.is_state_created) and (self._num_constraints
+                                                     is not None):
+      self._formulation.create_state(self._num_constraints)
+
     if grad_loss is not None:
       raise ValueError("the grad_loss argument cannot be provided when the "
                        "loss argument is a ConstrainedMinimizationProblem")
@@ -307,6 +381,11 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
   # pylint: disable=protected-access
 
   def _create_slots(self, var_list):
+    if not self._formulation.is_state_created:
+      raise RuntimeError("a ConstrainedOptimizerV1 must know the number of "
+                         "constraints before its variables can be accessed "
+                         "(maybe you need to set num_constraints)")
+
     # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
     # which means that "var in state_vars" won't do what want it to do (below).
     # Instead, we use "id(var) in state_var_ids".
@@ -335,11 +414,15 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
   def _apply_dense(self, gradient, variable, *args, **kwargs):
     assert variable is not None
 
+    if not self._formulation.is_state_created:
+      raise RuntimeError("a ConstrainedOptimizerV1 must know the number of "
+                         "constraints before its variables can be accessed "
+                         "(maybe you need to set num_constraints)")
+
     # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
     # which means that "variable in state_vars" won't do what want it to do
     # (below). Instead, we use "id(variable) in state_var_ids".
     state_var_ids = [id(var) for var in self._formulation.variables]
-
     if self._constraint_optimizer is not None and id(variable) in state_var_ids:
       return self._constraint_optimizer._apply_dense(gradient, variable, *args,
                                                      **kwargs)
@@ -348,11 +431,15 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
   def _apply_sparse(self, gradient, variable, *args, **kwargs):
     assert variable is not None
 
+    if not self._formulation.is_state_created:
+      raise RuntimeError("a ConstrainedOptimizerV1 must know the number of "
+                         "constraints before its variables can be accessed "
+                         "(maybe you need to set num_constraints)")
+
     # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
     # which means that "variable in state_vars" won't do what want it to do
     # (below). Instead, we use "id(variable) in state_var_ids".
     state_var_ids = [id(var) for var in self._formulation.variables]
-
     if self._constraint_optimizer is not None and id(variable) in state_var_ids:
       return self._constraint_optimizer._apply_sparse(gradient, variable, *args,
                                                       **kwargs)
@@ -360,6 +447,11 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
 
   def _resource_apply_dense(self, gradient, handle, *args, **kwargs):
     assert handle is not None
+
+    if not self._formulation.is_state_created:
+      raise RuntimeError("a ConstrainedOptimizerV1 must know the number of "
+                         "constraints before its variables can be accessed "
+                         "(maybe you need to set num_constraints)")
 
     # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
     # which means that "handle in state_vars" won't do what want it to do
@@ -380,6 +472,11 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
   def _resource_apply_sparse(self, gradient, handle, *args, **kwargs):
     assert handle is not None
 
+    if not self._formulation.is_state_created:
+      raise RuntimeError("a ConstrainedOptimizerV1 must know the number of "
+                         "constraints before its variables can be accessed "
+                         "(maybe you need to set num_constraints)")
+
     # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
     # which means that "handle in state_vars" won't do what want it to do
     # (below). For some reason, "id(handle) in state_var_ids" doesn't work
@@ -399,7 +496,6 @@ class ConstrainedOptimizerV1(tf.compat.v1.train.Optimizer):
   # pylint: enable=protected-access
 
 
-# FUTURE WORK: should we override get_gradients()?
 class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
   """Base class representing a constrained V2 optimizer.
 
@@ -430,7 +526,7 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
   def __init__(self,
                formulation,
                optimizer,
-               num_constraints,
+               num_constraints=None,
                constraint_optimizer=None,
                name="ConstrainedOptimizerV2"):
     """Constructs a new `ConstrainedOptimizerV2`.
@@ -442,8 +538,12 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
         and proxy_constraints portion of `ConstrainedMinimizationProblem`. If
         constraint_optimizer is not provided, this will also be used to optimize
         the Lagrange multipliers (or their analogues).
-      num_constraints: int, the number of constraints in the
-        `ConstrainedMinimizationProblem` that will eventually be minimized.
+      num_constraints: optional int, the number of constraints in the
+        `ConstrainedMinimizationProblem` that will eventually be minimized. If
+        this argument is provided, then the internal state will be created
+        inside this constructor. Otherwise, it will be created inside
+        the num_constraints setter, which *must* be called before you attempt to
+        perform optimization.
       constraint_optimizer: optional `tf.keras.optimizers.Optimizer`, used to
         optimize the Lagrange multipliers (or their analogues).
       name: a non-empty string, which will be passed on to the parent
@@ -471,8 +571,50 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     self._formulation = formulation
     self._optimizer = optimizer
     self._constraint_optimizer = constraint_optimizer
+    self._num_constraints = num_constraints
 
-    self._formulation.create_state(num_constraints)
+  @property
+  def num_constraints(self):
+    """Getter for the number of constraints, which will be None if unknown.
+
+    Returns:
+      The number of constraints that were specified either in the constructor,
+      or to the num_constraints setter.
+    """
+    return self._num_constraints
+
+  @num_constraints.setter
+  def num_constraints(self, num_constraints):
+    """Explicitly sets the number of constraints.
+
+    This function plays the same role as the (optional) num_constraints
+    constructor argument. Once the number of constraints has been set, the
+    internal state (e.g. the Lagrange multipliers) are fixed, and subsequent
+    calls to this method will fail if the number of constraints has changed.
+
+    If the num_constraints argument was not provided to the constructor, then
+    this method *must* be called before optimization can be performed.
+
+    Args:
+      num_constraints: int, the number of constraints in the
+        `ConstrainedMinimizationProblem` that will eventually be minimized.
+
+    Raises:
+      RuntimeError: if the internal state has already been created.
+      ValueError: if the number of constraints differs from its previous value.
+    """
+    # Since get_loss_fn() can infer the number of constraints from a
+    # ConstrainedMinimizationProblem, it's possible that the state might have
+    # been created, even while self._num_constraints is None.
+    if self._formulation.is_state_created:
+      raise RuntimeError("num_constraints cannot be set after the internal "
+                         "state has been created (by e.g. the variables or "
+                         "minimize methods)")
+    if (self._num_constraints
+        is not None) and (num_constraints != self._num_constraints):
+      raise ValueError("num_constraints cannot be changed once it has been set")
+
+    self._num_constraints = num_constraints
 
   # As in Optimizer, this is *not* a property.
   def variables(self):
@@ -486,11 +628,24 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
 
     Returns:
       A list of variables.
+
+    Raises:
+      RuntimeError: if we don't know the number of constraints (e.g. from the
+        num_constraints setter).
     """
+    if not self._formulation.is_state_created:
+      if self._num_constraints is None:
+        raise RuntimeError("the variables method of a TFCO optimizer cannot "
+                           "be called before the number of constraints has "
+                           "been fixed (maybe you need to call the "
+                           "num_constraints setter?)")
+      self._formulation.create_state(self._num_constraints)
+
     result = (
         list(self._optimizer.variables()) + list(self._formulation.variables))
     if self._constraint_optimizer is not None:
       result += list(self._constraint_optimizer.variables())
+
     return result
 
   def trainable_variables(self):
@@ -519,11 +674,72 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     """
     return [variable for variable in self.variables() if not variable.trainable]
 
+  def get_gradients(self, loss, params):
+    """Compute gradients of a `ConstrainedMinimizationProblem` (or loss).
+
+    This function should *only* be called in graph mode.
+
+    If "loss" is a `ConstrainedMinimizationProblem` (which is the most common
+    use-case for this method), then you'll want to make sure that params
+    includes the internal state variable of the constrained optimization
+    formulation (e.g. the Lagrange multipliers, for the Lagrangian formulation).
+
+    Inside apply_gradients(), the state gradient will be dispatched to the
+    appropriate contained optimizer (i.e. either the "optimizer" or
+    "constrained_optimizer"), and optionally projected, in the
+    _resource_apply_{dense,sparse}() methods.
+
+    If "loss" is *not* a `ConstrainedMinimizationProblem`, then this function
+    will thunk down to the get_gradients() method of the contained "optimizer".
+
+    Args:
+      loss: either a `ConstrainedMinimizationProblem`, or, if we do not wish to
+        perform constrained optimization, a loss `Tensor`. In the latter case,
+        this function thunks down to the get_gradients() method of the contained
+        "optimizer".
+      params: as in `tf.keras.optimizers.Optimizer`.
+
+    Returns:
+      A list of gradient Tensors.
+
+    Raises:
+      RuntimeError: if we don't know the number of constraints (e.g. from the
+        num_constraints() setter).
+    """
+    if not isinstance(
+        loss, constrained_minimization_problem.ConstrainedMinimizationProblem):
+      return super(ConstrainedOptimizerV2, self).get_gradients(
+          loss, params=params)
+
+    # We perform this check *after* the code that handles the
+    # non-ConstrainedMinimizationProblem case, since the number of constraints
+    # expected by this optimizer is irrelevant if we are not performing
+    # constrained optimization.
+    if not self._formulation.is_state_created:
+      if self._num_constraints is None:
+        raise RuntimeError("the get_gradients method of a TFCO optimizer "
+                           "cannot be called before the number of constraints "
+                           "has been fixed (maybe you need to call the "
+                           "num_constraints setter?)")
+      self._formulation.create_state(self._num_constraints)
+
+    with tf.control_dependencies(loss.update_ops()):
+      loss_fn = self._formulation.get_loss_fn(loss)
+      # We need to *call* loss_fn, since this is graph-mode-only code, and
+      # get_gradients expects a Tensor instead of a function.
+      return super(ConstrainedOptimizerV2, self).get_gradients(
+          loss_fn(), params=params)
+
   def _split_var_list(self, var_list):
     """Helper function that splits a var_list between the two optimizers."""
     # This assertion cannot fail, since we only call this method after checking
     # that constraint_optimizer is non-None.
     assert self._constraint_optimizer is not None
+
+    if not self._formulation.is_state_created:
+      raise RuntimeError("a ConstrainedOptimizerV2 must know the number of "
+                         "constraints before its variables can be accessed "
+                         "(maybe you need to call the num_constraints setter?)")
 
     # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
     # which means that "var in state_vars" won't do what want it to do (below).
@@ -567,7 +783,7 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
       loss: either a `ConstrainedMinimizationProblem`, or, if we do not wish to
         perform constrained optimization, a loss `Tensor` (in graph mode) or a
         nullary function returning a loss `Tensor` (in eager mode). In the two
-        latter cases, this function will thunk down to the compute_gradients()
+        latter cases, this function will thunk down to the _compute_gradients()
         method of the contained "optimizer".
       var_list: as in `tf.keras.optimizers.Optimizer`.
       grad_loss: as in `tf.keras.optimizers.Optimizer`.
@@ -576,11 +792,27 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
     Returns:
       A list of (gradient, variable) pairs, as in the _compute_gradients()
       method of `tf.keras.optimizers.Optimizer`.
+
+    Raises:
+      RuntimeError: if we don't know the number of constraints (e.g. from the
+        num_constraints() setter).
     """
     if not isinstance(
         loss, constrained_minimization_problem.ConstrainedMinimizationProblem):
       return super(ConstrainedOptimizerV2, self)._compute_gradients(
           loss, var_list=var_list, grad_loss=grad_loss, tape=tape)
+
+    # We perform this check *after* the code that handles the
+    # non-ConstrainedMinimizationProblem case, since the number of constraints
+    # expected by this optimizer is irrelevant if we are not performing
+    # constrained optimization.
+    if not self._formulation.is_state_created:
+      if self._num_constraints is None:
+        raise RuntimeError("the _compute_gradients method of a TFCO optimizer "
+                           "cannot be called before the number of constraints "
+                           "has been fixed (maybe you need to call the "
+                           "num_constraints setter?)")
+      self._formulation.create_state(self._num_constraints)
 
     if grad_loss is not None:
       raise ValueError("the grad_loss argument cannot be provided when the "
@@ -625,6 +857,11 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
   def _resource_apply_dense(self, gradient, handle, *args, **kwargs):
     assert handle is not None
 
+    if not self._formulation.is_state_created:
+      raise RuntimeError("a ConstrainedOptimizerV2 must know the number of "
+                         "constraints before its variables can be accessed "
+                         "(maybe you need to set num_constraints)")
+
     # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
     # which means that "handle in state_vars" won't do what want it to do
     # (below). For some reason, "id(handle) in state_var_ids" doesn't work
@@ -643,6 +880,11 @@ class ConstrainedOptimizerV2(tf.keras.optimizers.Optimizer):
 
   def _resource_apply_sparse(self, gradient, handle, *args, **kwargs):
     assert handle is not None
+
+    if not self._formulation.is_state_created:
+      raise RuntimeError("a ConstrainedOptimizerV2 must know the number of "
+                         "constraints before its variables can be accessed "
+                         "(maybe you need to set num_constraints)")
 
     # In eager mode in TensorFlow 2.1+, __eq__ is an element-wise comparison,
     # which means that "handle in state_vars" won't do what want it to do

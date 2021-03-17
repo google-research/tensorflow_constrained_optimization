@@ -96,6 +96,11 @@ class ProxyLagrangianOptimizerTest(
         update_type=update_type,
         minimum_multiplier_radius=minimum_multiplier_radius,
         initial_multiplier_radius=initial_multiplier_radius)
+    # Calling the variables() method has the side-effect of creating the state,
+    # which normally would be unnecessary. Below, however, we will extract the
+    # state directly from the protected _formulation attribute, instead of
+    # accessing it through "normal" means.
+    optimizer.variables()
 
     if tf.executing_eagerly():
       train_op_fn = lambda: optimizer.minimize(minimization_problem)

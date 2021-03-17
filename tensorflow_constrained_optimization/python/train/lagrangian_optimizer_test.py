@@ -82,6 +82,11 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         num_constraints=minimization_problem.num_constraints,
         constraint_optimizer=tf.compat.v1.train.GradientDescentOptimizer(1.0),
         maximum_multiplier_radius=maximum_multiplier_radius)
+    # Calling the variables() method has the side-effect of creating the state,
+    # which normally would be unnecessary. Below, however, we will extract the
+    # state directly from the protected _formulation attribute, instead of
+    # accessing it through "normal" means.
+    optimizer.variables()
 
     if tf.executing_eagerly():
       train_op_fn = lambda: optimizer.minimize(minimization_problem)

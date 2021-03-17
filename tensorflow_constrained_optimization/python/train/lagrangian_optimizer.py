@@ -205,6 +205,10 @@ class _LagrangianFormulation(constrained_optimizer.Formulation):
 
     return self._multipliers
 
+  @property
+  def is_state_created(self):
+    return self._multipliers is not None
+
   def get_loss_fn(self, minimization_problem):
     """Returns the Lagrangian loss function.
 
@@ -455,9 +459,10 @@ class LagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):
         the Lagrange multipliers.
       num_constraints: optional int, the number of constraints in the
         `ConstrainedMinimizationProblem` that will eventually be minimized. If
-        this argument is provided, then the Lagrange multipliers will be created
-        inside this constructor. Otherwise, they'll be created inside the first
-        call to get_loss_fn().
+        this argument is provided, then the internal state will be created
+        inside this constructor. Otherwise, it will be created inside the
+        num_constraints setter or, if that isn't called, it will be created in
+        first call to minimize() or compute_gradients().
       constraint_optimizer: optional `tf.compat.v1.train.Optimizer`, used to
         optimize the Lagrange multipliers.
       maximum_multiplier_radius: float, an optional upper bound to impose on the
@@ -506,7 +511,7 @@ class LagrangianOptimizerV2(constrained_optimizer.ConstrainedOptimizerV2):
 
   def __init__(self,
                optimizer,
-               num_constraints,
+               num_constraints=None,
                constraint_optimizer=None,
                maximum_multiplier_radius=None,
                name="LagrangianOptimizerV2"):
@@ -522,8 +527,12 @@ class LagrangianOptimizerV2(constrained_optimizer.ConstrainedOptimizerV2):
         and proxy_constraints portion of `ConstrainedMinimizationProblem`. If
         constraint_optimizer is not provided, this will also be used to optimize
         the Lagrange multipliers.
-      num_constraints: int, the number of constraints in the
-        `ConstrainedMinimizationProblem` that will eventually be minimized.
+      num_constraints: optional int, the number of constraints in the
+        `ConstrainedMinimizationProblem` that will eventually be minimized. If
+        this argument is provided, then the internal state will be created
+        inside this constructor. Otherwise, it will be created inside the
+        num_constraints setter, which *must* be called before you attempt to
+        perform optimization.
       constraint_optimizer: optional `tf.keras.optimizers.Optimizer`, used to
         optimize the Lagrange multipliers.
       maximum_multiplier_radius: float, an optional upper bound to impose on the
