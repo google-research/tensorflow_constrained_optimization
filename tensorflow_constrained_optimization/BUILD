@@ -31,6 +31,7 @@ py_library(
         "//tensorflow_constrained_optimization/python:candidates",
         "//tensorflow_constrained_optimization/python:constrained_minimization_problem",
         "//tensorflow_constrained_optimization/python/rates:binary_rates",
+        "//tensorflow_constrained_optimization/python/rates:estimator_head",
         "//tensorflow_constrained_optimization/python/rates:general_rates",
         "//tensorflow_constrained_optimization/python/rates:keras",
         "//tensorflow_constrained_optimization/python/rates:loss",

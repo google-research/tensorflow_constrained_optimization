@@ -27,6 +27,7 @@ from tensorflow_constrained_optimization.python.rates.binary_rates import pr_auc
 from tensorflow_constrained_optimization.python.rates.binary_rates import precision_at_recall
 from tensorflow_constrained_optimization.python.rates.binary_rates import recall_at_precision
 from tensorflow_constrained_optimization.python.rates.binary_rates import roc_auc
+from tensorflow_constrained_optimization.python.rates.estimator_head import HeadV2
 from tensorflow_constrained_optimization.python.rates.general_rates import accuracy_rate
 from tensorflow_constrained_optimization.python.rates.general_rates import error_rate
 from tensorflow_constrained_optimization.python.rates.general_rates import f_score
@@ -81,3 +82,8 @@ recall = true_positive_rate
 ConstrainedOptimizer = ConstrainedOptimizerV2
 LagrangianOptimizer = LagrangianOptimizerV2
 ProxyLagrangianOptimizer = ProxyLagrangianOptimizerV2
+
+# We allow "HeadV2" to be also accessed by "Head". This would be convenient when
+# we later add a V1 head and have "Head" default to V2 (or when we have a V3 at
+# some point, in which case we'll update this alias accordingly).
+Head = HeadV2
