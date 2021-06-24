@@ -78,12 +78,11 @@ recall = true_positive_rate
 
 # By default, we use V2 optimizers. These aliases are purely for convenience: in
 # general, you should prefer to explicitly specify either a V1 or a V2 optimizer
-# (in case there's ever a V3, in which case we'll update these aliases).
+# (in case there's ever a V3, we'll update these aliases).
 ConstrainedOptimizer = ConstrainedOptimizerV2
 LagrangianOptimizer = LagrangianOptimizerV2
 ProxyLagrangianOptimizer = ProxyLagrangianOptimizerV2
 
-# We allow "HeadV2" to be also accessed by "Head". This would be convenient when
-# we later add a V1 head and have "Head" default to V2 (or when we have a V3 at
-# some point, in which case we'll update this alias accordingly).
+# We allow "HeadV2" to be also accessed by "Head". If there's a V3 at some
+# point, we'll update this alias accordingly.
 Head = HeadV2

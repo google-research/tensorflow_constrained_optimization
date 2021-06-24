@@ -28,11 +28,12 @@ from tensorflow_constrained_optimization.python.rates import rate_minimization_p
 from tensorflow_constrained_optimization.python.rates import subsettable_context
 from tensorflow_constrained_optimization.python.train import proxy_lagrangian_optimizer
 # Placeholder for internal import.
+from tensorflow_estimator.python.estimator.canned import head as head_lib
 
 
 # @run_all_tests_in_graph_and_eager_modes
-class HeadV2Test(tf.test.TestCase):
-  """Tests for `HeadV2` in estimator_head.py."""
+class HeadTest(tf.test.TestCase):
+  """Tests for `HeadV1` and `HeadV2' in estimator_head.py."""
 
   def _get_inputs(self):
     """Generates constant inputs for tests."""
@@ -52,10 +53,11 @@ class HeadV2Test(tf.test.TestCase):
 
   def _recall_constrained_problem(self, recall_target):
     """Returns function returning a recall-constrained problem."""
-    def problem_fn(logits, labels, features):
+    def problem_fn(logits, labels, features, weight_column=None):
       # Returns a `RateMinimizationProblem` minimizing error rate subject to
       # recall >= recall_target.
       del features
+      del weight_column
       context = subsettable_context.rate_context(logits, labels)
       objective = binary_rates.error_rate(context)
       constraints = [binary_rates.true_positive_rate(context) >= recall_target]
@@ -63,27 +65,66 @@ class HeadV2Test(tf.test.TestCase):
           objective, constraints)
     return problem_fn
 
-  def _train_and_evaluate_estimator(self, head, optimizer):
+  def _train_and_evaluate_estimator(self, head, optimizer, version="V1"):
     """Trains `LinearEstimator` with head and optimizer, and returns metrics."""
     # Training data.
     input_fn, feature_columns = self._get_inputs()
 
+    tf_ = tf.compat.v1 if version == "V1" else tf.compat.v2
+
     # Create Linear estimator.
-    estimator = tf.estimator.LinearEstimator(
+    estimator = tf_.estimator.LinearEstimator(
         head=head, feature_columns=feature_columns, optimizer=optimizer)
 
     # Add recall metric to estimator.
+
     def recall(labels, predictions, features):
       del features
-      recall_metric = tf.keras.metrics.Recall(name="recall")
-      probabilities = predictions["probabilities"][:, -1]
-      recall_metric.update_state(y_true=labels, y_pred=probabilities)
+      if version == "V1":
+        pred_classes = predictions["class_ids"]
+        recall_metric = tf_.metrics.recall(labels, pred_classes)
+      else:
+        pred_probs = predictions["probabilities"][:, -1]
+        recall_metric = tf_.keras.metrics.Recall(name="recall")
+        recall_metric.update_state(y_true=labels, y_pred=pred_probs)
       return {"recall": recall_metric}
-    estimator = tf.estimator.add_metrics(estimator, recall)
+    estimator = tf_.estimator.add_metrics(estimator, recall)
 
     # Train estimator and evaluate it on the same data.
     estimator.train(input_fn=input_fn, max_steps=10)
     return estimator.evaluate(input_fn=input_fn, steps=1)
+
+  def test_estimator_head_v1_with_constrained_optimizer(self):
+    """Trains `Estimator` with `tfco.HeadV1` and a `ConstrainedOptimizerV1`."""
+    # Create `tfco.HeadV1` instance with base binary head and constrained
+    # optimization problem constraining recall to be at least 0.9.
+    problem_fn = self._recall_constrained_problem(0.9)
+    binary_head = (
+        head_lib._binary_logistic_head_with_sigmoid_cross_entropy_loss())
+    head = estimator_head.HeadV1(binary_head, problem_fn)
+
+    # Train and evaluate linear estimator with constrained optimizer, and assert
+    # the recall for the trained model is at least 0.9.
+    optimizer = proxy_lagrangian_optimizer.ProxyLagrangianOptimizerV1(
+        optimizer=tf.compat.v1.train.AdagradOptimizer(1),
+        constraint_optimizer=tf.compat.v1.train.AdagradOptimizer(1))
+    results = self._train_and_evaluate_estimator(head, optimizer)
+    self.assertGreaterEqual(results["recall"], 0.9)
+
+  def test_estimator_head_v1_with_tf_optimizer(self):
+    """Trains `Estimator` with `tfco.HeadV1` and a TF V1 optimizer."""
+    # Create `tfco.HeadV1` with base binary head and constrained optimization
+    # problem constraining recall to be at least 0.9.
+    problem_fn = self._recall_constrained_problem(0.9)
+    binary_head = (
+        head_lib._binary_logistic_head_with_sigmoid_cross_entropy_loss())
+    head = estimator_head.HeadV1(binary_head, problem_fn)
+
+    # Train and evaluate linear estimator with keras optimizer, and assert the
+    # recall for the trained model is at least 0.9.
+    optimizer = tf.compat.v1.train.AdagradOptimizer(1)
+    results = self._train_and_evaluate_estimator(head, optimizer, version="V1")
+    self.assertGreaterEqual(results["recall"], 0.9)
 
   def test_estimator_head_v2_with_constrained_optimizer(self):
     """Trains `Estimator` with `tfco.HeadV2` and a `ConstrainedOptimizerV2`."""
@@ -98,11 +139,11 @@ class HeadV2Test(tf.test.TestCase):
     optimizer = proxy_lagrangian_optimizer.ProxyLagrangianOptimizerV2(
         optimizer=tf.keras.optimizers.Adagrad(1),
         constraint_optimizer=tf.keras.optimizers.Adagrad(1))
-    results = self._train_and_evaluate_estimator(head, optimizer)
+    results = self._train_and_evaluate_estimator(head, optimizer, version="V2")
     self.assertGreaterEqual(results["recall"], 0.9)
 
-  def test_estimator_head_v2_with_keras_optimizer(self):
-    """Trains `Estimator` with `tfco.HeadV2` and a `tf.keras.Optimizer`."""
+  def test_estimator_head_v2_with_tf_optimizer(self):
+    """Trains `Estimator` with `tfco.HeadV2` and a TF V2 optimizer."""
     # Create `tfco.HeadV2` with base binary head and constrained optimization
     # problem constraining recall to be at least 0.9.
     problem_fn = self._recall_constrained_problem(0.9)
@@ -112,7 +153,7 @@ class HeadV2Test(tf.test.TestCase):
     # Train and evaluate linear estimator with keras optimizer, and assert the
     # recall for the trained model is at least 0.9.
     optimizer = tf.keras.optimizers.Adagrad(1)
-    results = self._train_and_evaluate_estimator(head, optimizer)
+    results = self._train_and_evaluate_estimator(head, optimizer, version="V2")
     self.assertGreaterEqual(results["recall"], 0.9)
 
 
