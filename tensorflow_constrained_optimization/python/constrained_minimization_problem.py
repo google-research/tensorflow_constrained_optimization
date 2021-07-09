@@ -33,9 +33,11 @@ from __future__ import print_function
 import abc
 import six
 
+import tensorflow as tf
+
 
 @six.add_metaclass(abc.ABCMeta)
-class ConstrainedMinimizationProblem(object):
+class ConstrainedMinimizationProblem(tf.Module):
   """Abstract class representing a `ConstrainedMinimizationProblem`.
 
   A `ConstrainedMinimizationProblem` consists of an objective function to
@@ -50,6 +52,9 @@ class ConstrainedMinimizationProblem(object):
   proxy constraints should be some approximation of the original constraints
   that is well-enough behaved to permit successful optimization.
   """
+
+  def __init__(self, name=None):
+    super(ConstrainedMinimizationProblem, self).__init__(name=name)
 
   @abc.abstractmethod
   def objective(self):
@@ -137,48 +142,6 @@ class ConstrainedMinimizationProblem(object):
       constraints, then the third component should be `None`.
     """
     return self.objective(), self.constraints(), self.proxy_constraints()
-
-  # This is a method, instead of an abstract method, since it doesn't need to be
-  # overridden: if variables returns [], then there are no Variables owned by
-  # this problem.
-  @property
-  def variables(self):
-    """Returns a list of variables owned by this problem.
-
-    The returned variables will only be those that are owned by the constrained
-    minimization problem itself, e.g. implicit slack variables. The model
-    variables will *not* be included.
-
-    Returns:
-      A list of variables.
-    """
-    return []
-
-  @property
-  def trainable_variables(self):
-    """Returns a list of trainable variables owned by this problem.
-
-    The returned variables will only be those that are owned by the constrained
-    minimization problem itself, e.g. implicit slack variables. The model
-    variables will *not* be included.
-
-    Returns:
-      A list of variables.
-    """
-    return [variable for variable in self.variables if variable.trainable]
-
-  @property
-  def non_trainable_variables(self):
-    """Returns a list of non-trainable variables owned by this problem.
-
-    The returned variables will only be those that are owned by the constrained
-    minimization problem itself, e.g. implicit slack variables. The model
-    variables will *not* be included.
-
-    Returns:
-      A list of variables.
-    """
-    return [variable for variable in self.variables if not variable.trainable]
 
   # This is a method, instead of an abstract method, since it doesn't need to be
   # overridden: if update_ops() returns [], then there are no ops to run before

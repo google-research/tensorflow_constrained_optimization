@@ -225,6 +225,17 @@ py_library(
 )
 
 py_library(
+    name = "estimator_head",
+    srcs = ["estimator_head.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python/train:constrained_optimizer",
+        "//tensorflow_constrained_optimization/python/train:proxy_lagrangian_optimizer",
+    ],
+)
+
+py_library(
     name = "test_helpers",
     testonly = 1,
     srcs = ["test_helpers.py"],
@@ -386,6 +397,7 @@ py_test(
         ":binary_rates",
         ":defaults",
         ":deferred_tensor",
+        ":loss",
         ":subsettable_context",
         ":test_helpers",
         # numpy dep,
@@ -464,6 +476,23 @@ py_test(
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_constrained_optimization/python:graph_and_eager_test_case",
+        # Placeholder for internal dep,
+    ],
+)
+
+py_test(
+    name = "estimator_head_test",
+    srcs = ["estimator_head_test.py"],
+    python_version = "PY3",
+    srcs_version = "PY2AND3",
+    deps = [
+        ":binary_rates",
+        ":estimator_head",
+        ":rate_minimization_problem",
+        ":subsettable_context",
+        # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_constrained_optimization/python/train:lagrangian_optimizer",
         # Placeholder for internal dep,
     ],
 )

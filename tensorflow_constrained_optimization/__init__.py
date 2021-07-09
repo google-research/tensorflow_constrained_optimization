@@ -27,6 +27,7 @@ from tensorflow_constrained_optimization.python.rates.binary_rates import pr_auc
 from tensorflow_constrained_optimization.python.rates.binary_rates import precision_at_recall
 from tensorflow_constrained_optimization.python.rates.binary_rates import recall_at_precision
 from tensorflow_constrained_optimization.python.rates.binary_rates import roc_auc
+from tensorflow_constrained_optimization.python.rates.estimator_head import HeadV2
 from tensorflow_constrained_optimization.python.rates.general_rates import accuracy_rate
 from tensorflow_constrained_optimization.python.rates.general_rates import error_rate
 from tensorflow_constrained_optimization.python.rates.general_rates import f_score
@@ -63,6 +64,7 @@ from tensorflow_constrained_optimization.python.rates.subsettable_context import
 from tensorflow_constrained_optimization.python.rates.subsettable_context import split_rate_context
 from tensorflow_constrained_optimization.python.train.constrained_optimizer import ConstrainedOptimizerV1
 from tensorflow_constrained_optimization.python.train.constrained_optimizer import ConstrainedOptimizerV2
+from tensorflow_constrained_optimization.python.train.lagrangian_model_optimizer import create_lagrangian_model_loss
 from tensorflow_constrained_optimization.python.train.lagrangian_optimizer import create_lagrangian_loss
 from tensorflow_constrained_optimization.python.train.lagrangian_optimizer import LagrangianOptimizerV1
 from tensorflow_constrained_optimization.python.train.lagrangian_optimizer import LagrangianOptimizerV2
@@ -76,7 +78,11 @@ recall = true_positive_rate
 
 # By default, we use V2 optimizers. These aliases are purely for convenience: in
 # general, you should prefer to explicitly specify either a V1 or a V2 optimizer
-# (in case there's ever a V3, in which case we'll update these aliases).
+# (in case there's ever a V3, we'll update these aliases).
 ConstrainedOptimizer = ConstrainedOptimizerV2
 LagrangianOptimizer = LagrangianOptimizerV2
 ProxyLagrangianOptimizer = ProxyLagrangianOptimizerV2
+
+# We allow "HeadV2" to be also accessed by "Head". If there's a V3 at some
+# point, we'll update this alias accordingly.
+Head = HeadV2

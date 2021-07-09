@@ -20,7 +20,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.train import lagrangian_optimizer
@@ -42,7 +42,7 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
             minimization_problem,
             maximum_multiplier_radius=maximum_multiplier_radius))
     optimizer = tf.keras.optimizers.SGD(1.0)
-    var_list = minimization_problem.trainable_variables + [state_variable]
+    var_list = list(minimization_problem.trainable_variables) + [state_variable]
 
     if tf.executing_eagerly():
       train_op_fn = lambda: optimizer.minimize(loss_fn, var_list)
@@ -82,6 +82,11 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         num_constraints=minimization_problem.num_constraints,
         constraint_optimizer=tf.compat.v1.train.GradientDescentOptimizer(1.0),
         maximum_multiplier_radius=maximum_multiplier_radius)
+    # Calling the variables() method has the side-effect of creating the state,
+    # which normally would be unnecessary. Below, however, we will extract the
+    # state directly from the protected _formulation attribute, instead of
+    # accessing it through "normal" means.
+    optimizer.variables()
 
     if tf.executing_eagerly():
       train_op_fn = lambda: optimizer.minimize(minimization_problem)
@@ -116,7 +121,7 @@ class LagrangianOptimizerTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         constraint_optimizer=tf.keras.optimizers.SGD(1.0),
         maximum_multiplier_radius=maximum_multiplier_radius)
     var_list = (
-        minimization_problem.trainable_variables +
+        list(minimization_problem.trainable_variables) +
         optimizer.trainable_variables())
 
     if tf.executing_eagerly():

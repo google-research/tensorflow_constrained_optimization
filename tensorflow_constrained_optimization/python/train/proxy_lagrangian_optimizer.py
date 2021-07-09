@@ -50,7 +50,7 @@ from __future__ import print_function
 
 import math
 import numpy as np
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.train import constrained_optimizer
 
@@ -324,7 +324,6 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
     # Instead, we do so lazily, in create_state().
     self._state = None
 
-  @property
   def state(self):
     return self._state
 
@@ -441,6 +440,10 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
           constraint=self._project_state)
 
     return self._state
+
+  @property
+  def is_state_created(self):
+    return self._state is not None
 
   def _distribution(self, state):
     """Returns the distribution represented by the internal state."""
@@ -573,7 +576,7 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
 
     # Create the internal state.
     num_constraints = minimization_problem.num_constraints
-    state = self.create_state(num_constraints)
+    self.create_state(num_constraints)
 
     # We don't use functools.partial since we need the arguments to be evaluated
     # when the loss is called, not when we construct the partial application.
@@ -586,7 +589,8 @@ class _ProxyLagrangianFormulation(constrained_optimizer.Formulation):
       else:
         proxy_constraints = tf.reshape(
             proxy_constraints, shape=(num_constraints,))
-      return loss_gradient_fn(objective, constraints, proxy_constraints, state)
+      return loss_gradient_fn(objective, constraints, proxy_constraints,
+                              self.state())
 
     return partial_loss_gradient_fn
 
@@ -704,14 +708,17 @@ def create_proxy_lagrangian_loss(minimization_problem,
     state_variable is a variable containing the internal state of the
     proxy-Lagrangian formulation.
   """
-  return constrained_optimizer.create_loss(
-      _ProxyLagrangianFormulation(
-          regret_type=regret_type,
-          update_type=update_type,
-          minimum_multiplier_radius=minimum_multiplier_radius,
-          initial_multiplier_radius=initial_multiplier_radius,
-          dual_scale=dual_scale,
-          variable_fn=variable_fn), minimization_problem)
+  formulation = _ProxyLagrangianFormulation(
+      regret_type=regret_type,
+      update_type=update_type,
+      minimum_multiplier_radius=minimum_multiplier_radius,
+      initial_multiplier_radius=initial_multiplier_radius,
+      dual_scale=dual_scale,
+      variable_fn=variable_fn)
+  loss_fn = formulation.get_loss_fn(minimization_problem)
+  # We just return the formulation.state() since we know that it is a
+  # tf.Variable, and is in fact the only tf.Variable owned by the formulation.
+  return loss_fn, minimization_problem.update_ops, formulation.state()
 
 
 class ProxyLagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):
@@ -774,8 +781,9 @@ class ProxyLagrangianOptimizerV1(constrained_optimizer.ConstrainedOptimizerV1):
       num_constraints: optional int, the number of constraints in the
         `ConstrainedMinimizationProblem` that will eventually be minimized. If
         this argument is provided, then the internal state will be created
-        inside this constructor. Otherwise, it will be created inside the first
-        call to get_loss_fn().
+        inside this constructor. Otherwise, it will be created inside the
+        num_constraints setter or, if that isn't called, it will be created in
+        first call to minimize() or compute_gradients().
       constraint_optimizer: optional `tf.compat.v1.train.Optimizer`, used to
         optimize the internal constrained optimization state (the analogues of
         the Lagrange multipliers).
@@ -855,7 +863,7 @@ class ProxyLagrangianOptimizerV2(constrained_optimizer.ConstrainedOptimizerV2):
 
   def __init__(self,
                optimizer,
-               num_constraints,
+               num_constraints=None,
                constraint_optimizer=None,
                regret_type=_SWAP_REGRET_TYPE,
                update_type=_MULTPILICATIVE_UPDATE_TYPE,
@@ -876,8 +884,12 @@ class ProxyLagrangianOptimizerV2(constrained_optimizer.ConstrainedOptimizerV2):
         constraint_optimizer is not provided, this will also be used to optimize
         the internal constrained optimization state (the analogues of the
         Lagrange multipliers).
-      num_constraints: int, the number of constraints in the
-        `ConstrainedMinimizationProblem` that will eventually be minimized.
+      num_constraints: optional int, the number of constraints in the
+        `ConstrainedMinimizationProblem` that will eventually be minimized. If
+        this argument is provided, then the internal state will be created
+        inside this constructor. Otherwise, it will be created inside the
+        num_constraints setter, which *must* be called before you attempt to
+        perform optimization.
       constraint_optimizer: optional `tf.keras.optimizers.Optimizer`, used to
         optimize the internal constrained optimization state (the analogues of
         the Lagrange multipliers).

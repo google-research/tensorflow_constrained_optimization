@@ -508,6 +508,13 @@ directory contains several illustrations of how one can use this library:
         Same as
         [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Recall_constraint.ipynb),
         but uses Keras instead of raw TensorFlow.
+        
+    1.  [Recall_constraint_estimator.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Recall_constraint_estimator.ipynb):
+        Same as
+        [Recall_constraint.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Recall_constraint.ipynb),
+        but uses a *canned* estimator instead of raw TensorFlow. See
+        [PRAUC_training.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/PRAUC_training.ipynb)
+        for a tutorial on using TFCO with a *custom* estimator.
 
     1.  [Wiki_toxicity_fairness.ipynb](https://github.com/google-research/tensorflow_constrained_optimization/tree/master/examples/colab/Wiki_toxicity_fairness.ipynb):
         This notebook shows how to train a *fair* classifier to predict whether

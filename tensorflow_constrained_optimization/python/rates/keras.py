@@ -98,7 +98,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import rate_minimization_problem
 from tensorflow_constrained_optimization.python.train import lagrangian_optimizer
@@ -280,7 +280,11 @@ class KerasLayer(tf.keras.layers.Layer):
       # change after we leave this method.
       self._placeholders = list(placeholders)
 
-      self._loss_fn, self._update_ops_fn, _ = loss_creator(
+      # We don't actually use self._state_variable, and since we create it with
+      # self.add_weight(), it seems to be tracked (by tf.Module) even if we
+      # don't store it in a member variable, but we do so anyway to be
+      # extra-safe.
+      self._loss_fn, self._update_ops_fn, self._state_variable = loss_creator(
           minimization_problem=problem, variable_fn=self._variable_fn, **kwargs)
 
   def _variable_fn(self, initial_value, **kwargs):

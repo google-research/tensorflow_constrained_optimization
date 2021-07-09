@@ -22,12 +22,13 @@ from __future__ import print_function
 import numpy as np
 import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import graph_and_eager_test_case
 from tensorflow_constrained_optimization.python.rates import binary_rates
 from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
+from tensorflow_constrained_optimization.python.rates import loss
 from tensorflow_constrained_optimization.python.rates import subsettable_context
 from tensorflow_constrained_optimization.python.rates import test_helpers
 # Placeholder for internal import.
@@ -67,6 +68,10 @@ class BinaryRatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         -1.86878605935, 0.0312541446545, 0.0929898206701, 1.02580838489
     ])
     self._penalty_labels = np.array([1, -1, -1, 1, 1, -1, 1, 1, -1, 1, 1, -1])
+    self._soft_penalty_labels = np.array([
+        0.56185069, 0.20448156, 0.46801564, 0.63603304, 0.57397471, 0.47691663,
+        0.95434055, 0.8654393, 0.31841703, 0.99248551, 0.73015531, 0.09621856
+    ])
     self._penalty_weights = np.array([
         0.305792297057, 0.432750439411, 0.713731859892, 0.635314810893,
         0.513210439781, 0.739280862773, 0.349403785117, 0.0256588613944,
@@ -496,6 +501,152 @@ class BinaryRatesTest(graph_and_eager_test_case.GraphAndEagerTestCase):
         self._split_context)
     self._check_rates(expected_penalty_value, expected_constraint_value,
                       actual_expression)
+
+  def test_hinge_loss(self):
+    """Checks that our hinge loss matches TensorFlow's."""
+    loss_function = loss.HingeLoss()
+
+    predictions = tf.constant(self._penalty_predictions, dtype=tf.float32)
+    labels = tf.cast(self._penalty_labels > 0.0, dtype=tf.float32)
+    weights = tf.constant(self._penalty_weights, dtype=tf.float32)
+    context = subsettable_context.rate_context(
+        predictions=lambda: predictions,
+        labels=lambda: labels,
+        weights=lambda: weights)
+
+    with self.wrapped_session() as session:
+      # We don't use a split context, so we only care about at the "penalty"
+      # portion.
+      expected_loss_numerator = tf.reduce_mean(
+          tf.compat.v1.losses.hinge_loss(
+              labels=labels,
+              logits=predictions,
+              weights=weights,
+              reduction=tf.compat.v1.losses.Reduction.NONE))
+      expected_loss_denominator = tf.reduce_mean(weights)
+      expected_loss = session.run(expected_loss_numerator /
+                                  expected_loss_denominator)
+
+    actual_expression = binary_rates.error_rate(
+        context, penalty_loss=loss_function, constraint_loss=loss_function)
+    self._check_rates(expected_loss, expected_loss, actual_expression)
+
+  def test_soft_hinge_loss(self):
+    """Checks that our soft hinge loss matches TensorFlow's."""
+    loss_function = loss.HingeLoss()
+
+    predictions = tf.constant(self._penalty_predictions, dtype=tf.float32)
+    labels = tf.cast(self._soft_penalty_labels, dtype=tf.float32)
+    weights = tf.constant(self._penalty_weights, dtype=tf.float32)
+    context = subsettable_context.rate_context(
+        predictions=lambda: predictions,
+        labels=lambda: labels,
+        weights=lambda: weights,
+        labels_are_probabilities=True)
+
+    with self.wrapped_session() as session:
+      # This library tries to find tighter bounds for losses by eliminating
+      # constants, so we need to adjust the label weights appropriately.
+      # For example, if we have a 0.1 probability of being positive, and a 0.9
+      # probability of being negative, then we're guaranteed to be wrong with
+      # a probability of at least 0.1, so we can just treat that as a constant,
+      # and only use a loss on what's left.
+      positive_labels = labels
+      negative_labels = 1.0 - labels
+      constants = tf.minimum(positive_labels, negative_labels)
+      positive_labels -= constants
+      negative_labels -= constants
+      # We don't use a split context, so we only care about at the "penalty"
+      # portion.
+      one_labels = tf.ones_like(labels)
+      zero_labels = tf.zeros_like(labels)
+      expected_loss_numerator = tf.reduce_mean(
+          weights * constants + tf.compat.v1.losses.hinge_loss(
+              labels=one_labels,
+              logits=predictions,
+              weights=weights * positive_labels,
+              reduction=tf.compat.v1.losses.Reduction.NONE) +
+          tf.compat.v1.losses.hinge_loss(
+              labels=zero_labels,
+              logits=predictions,
+              weights=weights * negative_labels,
+              reduction=tf.compat.v1.losses.Reduction.NONE))
+      expected_loss_denominator = tf.reduce_mean(weights)
+      expected_loss = session.run(expected_loss_numerator /
+                                  expected_loss_denominator)
+
+    actual_expression = binary_rates.error_rate(
+        context, penalty_loss=loss_function, constraint_loss=loss_function)
+    self._check_rates(expected_loss, expected_loss, actual_expression)
+
+  def test_cross_entropy_loss(self):
+    """Checks that our cross-entropy loss matches TensorFlow's."""
+    loss_function = loss.SoftmaxCrossEntropyLoss()
+
+    predictions = tf.constant(self._penalty_predictions, dtype=tf.float32)
+    labels = tf.cast(self._penalty_labels > 0.0, dtype=tf.float32)
+    weights = tf.constant(self._penalty_weights, dtype=tf.float32)
+    context = subsettable_context.rate_context(
+        predictions=lambda: predictions,
+        labels=lambda: labels,
+        weights=lambda: weights)
+
+    with self.wrapped_session() as session:
+      # We don't use a split context, so we only care about at the "penalty"
+      # portion.
+      expected_losses = tf.nn.sigmoid_cross_entropy_with_logits(
+          labels=labels, logits=predictions)
+      expected_loss_numerator = tf.reduce_mean(weights * expected_losses)
+      expected_loss_denominator = tf.reduce_mean(weights)
+      expected_loss = session.run(expected_loss_numerator /
+                                  expected_loss_denominator)
+
+    actual_expression = binary_rates.error_rate(
+        context, penalty_loss=loss_function, constraint_loss=loss_function)
+    self._check_rates(expected_loss, expected_loss, actual_expression)
+
+  def test_soft_cross_entropy_loss(self):
+    """Checks that our soft cross_entropy loss matches TensorFlow's."""
+    loss_function = loss.SoftmaxCrossEntropyLoss()
+
+    predictions = tf.constant(self._penalty_predictions, dtype=tf.float32)
+    labels = tf.cast(self._soft_penalty_labels, dtype=tf.float32)
+    weights = tf.constant(self._penalty_weights, dtype=tf.float32)
+    context = subsettable_context.rate_context(
+        predictions=lambda: predictions,
+        labels=lambda: labels,
+        weights=lambda: weights,
+        labels_are_probabilities=True)
+
+    with self.wrapped_session() as session:
+      # This library tries to find tighter bounds for losses by eliminating
+      # constants, so we need to adjust the label weights appropriately.
+      # For example, if we have a 0.1 probability of being positive, and a 0.9
+      # probability of being negative, then we're guaranteed to be wrong with
+      # a probability of at least 0.1, so we can just treat that as a constant,
+      # and only use a loss on what's left.
+      positive_labels = labels
+      negative_labels = 1.0 - labels
+      constants = tf.minimum(positive_labels, negative_labels)
+      positive_labels -= constants
+      negative_labels -= constants
+      # We don't use a split context, so we only care about at the "penalty"
+      # portion.
+      one_labels = tf.ones_like(labels)
+      zero_labels = tf.zeros_like(labels)
+      expected_loss_numerator = tf.reduce_mean(
+          weights * (constants +
+                     positive_labels * tf.nn.sigmoid_cross_entropy_with_logits(
+                         labels=one_labels, logits=predictions) +
+                     negative_labels * tf.nn.sigmoid_cross_entropy_with_logits(
+                         labels=zero_labels, logits=predictions)))
+      expected_loss_denominator = tf.reduce_mean(weights)
+      expected_loss = session.run(expected_loss_numerator /
+                                  expected_loss_denominator)
+
+    actual_expression = binary_rates.error_rate(
+        context, penalty_loss=loss_function, constraint_loss=loss_function)
+    self._check_rates(expected_loss, expected_loss, actual_expression)
 
   def test_precision_ratio(self):
     """Checks `precision_ratio`."""

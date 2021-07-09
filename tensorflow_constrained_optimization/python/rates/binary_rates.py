@@ -78,7 +78,7 @@ from __future__ import print_function
 import numbers
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import basic_expression
 from tensorflow_constrained_optimization.python.rates import defaults
@@ -87,6 +87,39 @@ from tensorflow_constrained_optimization.python.rates import expression
 from tensorflow_constrained_optimization.python.rates import loss
 from tensorflow_constrained_optimization.python.rates import subsettable_context
 from tensorflow_constrained_optimization.python.rates import term
+
+
+def _label_contexts(context, name="this operation"):
+  """Returns contexts containing positive and negatively-labeled examples."""
+  raw_context = context.raw_context
+  if (raw_context.penalty_labels is None or
+      raw_context.constraint_labels is None):
+    raise ValueError("{} requires a context with labels".format(name))
+
+  def callback(labels):
+    if raw_context.labels_are_probabilities:
+      # The labels will be clipped to [0, 1] once the
+      # SubsettableContext.subset() method puts them into a Predicate.
+      return tf.cast(labels, dtype=tf.float32)
+    return tf.cast(labels > 0, dtype=tf.float32)
+
+  penalty_labels = deferred_tensor.DeferredTensor.apply(
+      callback, raw_context.penalty_labels)
+  # We only need to subset as a split context if the context is already split,
+  # or we're about to split it.
+  if (context.is_split or
+      raw_context.penalty_labels != raw_context.constraint_labels):
+    constraint_labels = deferred_tensor.DeferredTensor.apply(
+        callback, raw_context.constraint_labels)
+
+    positive_context = context.subset(penalty_labels, constraint_labels)
+    negative_context = context.subset(1.0 - penalty_labels,
+                                      1.0 - constraint_labels)
+  else:
+    positive_context = context.subset(penalty_labels)
+    negative_context = context.subset(1.0 - penalty_labels)
+
+  return positive_context, negative_context
 
 
 def _binary_classification_rate(
@@ -268,15 +301,7 @@ def error_rate(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("error_rate requires a context with labels")
-
-  positive_context = context.subset(raw_context.penalty_labels > 0,
-                                    raw_context.constraint_labels > 0)
-  negative_context = context.subset(raw_context.penalty_labels <= 0,
-                                    raw_context.constraint_labels <= 0)
+  positive_context, negative_context = _label_contexts(context, "error_rate")
 
   positive_expression = _binary_classification_rate(
       numerator_context=positive_context,
@@ -327,15 +352,7 @@ def accuracy_rate(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("accuracy_rate requires a context with labels")
-
-  positive_context = context.subset(raw_context.penalty_labels > 0,
-                                    raw_context.constraint_labels > 0)
-  negative_context = context.subset(raw_context.penalty_labels <= 0,
-                                    raw_context.constraint_labels <= 0)
+  positive_context, negative_context = _label_contexts(context, "accuracy_rate")
 
   positive_expression = _binary_classification_rate(
       numerator_context=positive_context,
@@ -390,13 +407,7 @@ def true_positive_rate(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("true_positive_rate requires a context with labels")
-
-  positive_context = context.subset(raw_context.penalty_labels > 0,
-                                    raw_context.constraint_labels > 0)
+  positive_context, _ = _label_contexts(context, "true_positive_rate")
 
   return _binary_classification_rate(
       numerator_context=positive_context,
@@ -443,13 +454,7 @@ def false_negative_rate(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("false_negative_rate requires a context with labels")
-
-  positive_context = context.subset(raw_context.penalty_labels > 0,
-                                    raw_context.constraint_labels > 0)
+  positive_context, _ = _label_contexts(context, "false_negative_rate")
 
   return _binary_classification_rate(
       numerator_context=positive_context,
@@ -496,13 +501,7 @@ def false_positive_rate(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("false_positive_rate requires a context with labels")
-
-  negative_context = context.subset(raw_context.penalty_labels <= 0,
-                                    raw_context.constraint_labels <= 0)
+  _, negative_context = _label_contexts(context, "false_positive_rate")
 
   return _binary_classification_rate(
       numerator_context=negative_context,
@@ -549,13 +548,7 @@ def true_negative_rate(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("true_negative_rate requires a context with labels")
-
-  negative_context = context.subset(raw_context.penalty_labels <= 0,
-                                    raw_context.constraint_labels <= 0)
+  _, negative_context = _label_contexts(context, "true_negative_rate")
 
   return _binary_classification_rate(
       numerator_context=negative_context,
@@ -602,13 +595,7 @@ def true_positive_proportion(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("true_positive_proportion requires a context with labels")
-
-  positive_context = context.subset(raw_context.penalty_labels > 0,
-                                    raw_context.constraint_labels > 0)
+  positive_context, _ = _label_contexts(context, "true_positive_proportion")
 
   return _binary_classification_rate(
       numerator_context=positive_context,
@@ -655,13 +642,7 @@ def false_negative_proportion(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("false_negative_proportion requires a context with labels")
-
-  positive_context = context.subset(raw_context.penalty_labels > 0,
-                                    raw_context.constraint_labels > 0)
+  positive_context, _ = _label_contexts(context, "false_negative_proportion")
 
   return _binary_classification_rate(
       numerator_context=positive_context,
@@ -708,13 +689,7 @@ def false_positive_proportion(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("false_positive_proportion requires a context with labels")
-
-  negative_context = context.subset(raw_context.penalty_labels <= 0,
-                                    raw_context.constraint_labels <= 0)
+  _, negative_context = _label_contexts(context, "false_positive_proportion")
 
   return _binary_classification_rate(
       numerator_context=negative_context,
@@ -761,13 +736,7 @@ def true_negative_proportion(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("true_negative_proportion requires a context with labels")
-
-  negative_context = context.subset(raw_context.penalty_labels <= 0,
-                                    raw_context.constraint_labels <= 0)
+  _, negative_context = _label_contexts(context, "true_negative_proportion")
 
   return _binary_classification_rate(
       numerator_context=negative_context,
@@ -826,13 +795,7 @@ def precision_ratio(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("precision requires a context with labels")
-
-  positive_context = context.subset(raw_context.penalty_labels > 0,
-                                    raw_context.constraint_labels > 0)
+  positive_context, _ = _label_contexts(context, "precision")
 
   numerator_expression = _binary_classification_rate(
       numerator_context=positive_context,
@@ -905,11 +868,6 @@ def f_score_ratio(context,
       a BinaryClassificationLoss.
     ValueError: if the context doesn't contain labels.
   """
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("f_score requires a context with labels")
-
   if beta < 0.0:
     raise ValueError("beta parameter to f_score must be non-negative")
   if beta <= 0.0:
@@ -918,10 +876,7 @@ def f_score_ratio(context,
     return precision_ratio(
         context, penalty_loss=penalty_loss, constraint_loss=constraint_loss)
 
-  positive_context = context.subset(raw_context.penalty_labels > 0,
-                                    raw_context.constraint_labels > 0)
-  negative_context = context.subset(raw_context.penalty_labels <= 0,
-                                    raw_context.constraint_labels <= 0)
+  positive_context, negative_context = _label_contexts(context, "f_score")
 
   numerator_expression = _binary_classification_rate(
       numerator_context=positive_context,
@@ -1485,16 +1440,8 @@ def _inverse_precision_at_recall_bound(context, recall_target,
 
   if not isinstance(context, subsettable_context.SubsettableContext):
     raise TypeError("context must be a SubsettableContext object")
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("inverse_precision_at_recall requires a context with "
-                     "labels")
-
-  positive_context = context.subset(raw_context.penalty_labels > 0,
-                                    raw_context.constraint_labels > 0)
-  negative_context = context.subset(raw_context.penalty_labels <= 0,
-                                    raw_context.constraint_labels <= 0)
+  positive_context, negative_context = _label_contexts(
+      context, "inverse_precision_at_recall")
 
   recall_expression = _binary_classification_rate(
       numerator_context=positive_context,
@@ -1712,15 +1659,8 @@ def _precision_at_recall_bound(context, recall_target, threshold_tensor,
 
   if not isinstance(context, subsettable_context.SubsettableContext):
     raise TypeError("context must be a SubsettableContext object")
-  raw_context = context.raw_context
-  if (raw_context.penalty_labels is None or
-      raw_context.constraint_labels is None):
-    raise ValueError("precision_at_recall requires a context with labels")
-
-  positive_context = context.subset(raw_context.penalty_labels > 0,
-                                    raw_context.constraint_labels > 0)
-  negative_context = context.subset(raw_context.penalty_labels <= 0,
-                                    raw_context.constraint_labels <= 0)
+  positive_context, negative_context = _label_contexts(context,
+                                                       "precision_at_recall")
 
   recall_expression = _binary_classification_rate(
       numerator_context=positive_context,

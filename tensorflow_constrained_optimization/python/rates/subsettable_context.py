@@ -83,7 +83,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numbers
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
 from tensorflow_constrained_optimization.python.rates import helpers
@@ -107,7 +107,7 @@ class _RawContext(helpers.RateObject):
 
   def __init__(self, penalty_predictions, penalty_labels, penalty_weights,
                constraint_predictions, constraint_labels, constraint_weights,
-               num_classes):
+               labels_are_probabilities, num_classes):
     """Creates a new `_RawContext`.
 
     Args:
@@ -143,6 +143,8 @@ class _RawContext(helpers.RateObject):
       constraint_weights: rank-1 floating-point `DeferredTensor`, for which the
         ith element is the weight of the ith training example, on the training
         dataset associated with the constraints.
+      labels_are_probabilities: bool, whether the labels should be treated as
+        probabilities. For multiclass contexts, this must be True.
       num_classes: int or None, the number of classes of a multiclass context,
         or None if this isn't a multiclass context.
     """
@@ -152,6 +154,9 @@ class _RawContext(helpers.RateObject):
                         "classes")
       if num_classes < 2:
         raise ValueError("multiclass problems must have at least two classes")
+      if not labels_are_probabilities:
+        raise ValueError("for a multiclass context, labels_are_probabilities "
+                         "must be True")
 
     self._penalty_predictions = penalty_predictions
     self._penalty_labels = penalty_labels
@@ -159,6 +164,7 @@ class _RawContext(helpers.RateObject):
     self._constraint_predictions = constraint_predictions
     self._constraint_labels = constraint_labels
     self._constraint_weights = constraint_weights
+    self._labels_are_probabilities = labels_are_probabilities
     self._num_classes = num_classes
 
   def __eq__(self, other):
@@ -224,6 +230,11 @@ class _RawContext(helpers.RateObject):
     return self._constraint_weights
 
   @property
+  def labels_are_probabilities(self):
+    """Returns whether the labels should be treated as probabilities."""
+    return self._labels_are_probabilities
+
+  @property
   def num_classes(self):
     """Returns the number of classes, or None if a non-multiclass context."""
     return self._num_classes
@@ -246,10 +257,15 @@ class _RawContext(helpers.RateObject):
       constraint_predictions = penalty_predictions
     else:
       constraint_predictions = transformation(self._constraint_predictions)
-    return _RawContext(penalty_predictions, self._penalty_labels,
-                       self._penalty_weights, constraint_predictions,
-                       self._constraint_labels, self._constraint_weights,
-                       self._num_classes)
+    return _RawContext(
+        penalty_predictions=penalty_predictions,
+        penalty_labels=self._penalty_labels,
+        penalty_weights=self._penalty_weights,
+        constraint_predictions=constraint_predictions,
+        constraint_labels=self._constraint_labels,
+        constraint_weights=self._constraint_weights,
+        labels_are_probabilities=self._labels_are_probabilities,
+        num_classes=self._num_classes)
 
 
 class SubsettableContext(helpers.RateObject):
@@ -312,6 +328,14 @@ class SubsettableContext(helpers.RateObject):
     self._raw_context = raw_context
     self._penalty_predicate = penalty_predicate
     self._constraint_predicate = constraint_predicate
+
+  @property
+  def is_split(self):
+    """Returns True iff this is a split context."""
+    # It's fine if the labels and/or weights are different.
+    return (self._raw_context.penalty_predictions !=
+            self._raw_context.constraint_predictions or
+            self._penalty_predicate != self._constraint_predicate)
 
   @property
   def raw_context(self):
@@ -395,10 +419,7 @@ class SubsettableContext(helpers.RateObject):
         context.
     """
     if constraint_predicate is None:
-      # It's fine if the labels and/or weights are different.
-      if (self._raw_context.penalty_predictions !=
-          self._raw_context.constraint_predictions or
-          self._penalty_predicate != self._constraint_predicate):
+      if self.is_split:
         raise ValueError("constraint_predicate must be provided when "
                          "subsetting a split context")
       constraint_predicate = penalty_predicate
@@ -513,7 +534,8 @@ class SubsettableContext(helpers.RateObject):
         constraint_predicate=constraint_predicate)
 
 
-def _rate_context_helper(predictions, labels, weights, num_classes):
+def _rate_context_helper(predictions, labels, weights, labels_are_probabilities,
+                         num_classes):
   """Helper for rate_context() and multiclass_rate_context()."""
 
   # Ideally, we'd check that these objects are Tensors, or are types that can be
@@ -564,12 +586,16 @@ def _rate_context_helper(predictions, labels, weights, num_classes):
       constraint_predictions=predictions,
       constraint_labels=labels,
       constraint_weights=weights,
+      labels_are_probabilities=labels_are_probabilities,
       num_classes=num_classes)
   true_predicate = predicate.Predicate(True)
   return SubsettableContext(raw_context, true_predicate, true_predicate)
 
 
-def rate_context(predictions, labels=None, weights=1.0):
+def rate_context(predictions,
+                 labels=None,
+                 weights=1.0,
+                 labels_are_probabilities=False):
   """Creates a new binary classification context.
 
   For multiclass problems, use multiclass_rate_context() instead.
@@ -582,6 +608,10 @@ def rate_context(predictions, labels=None, weights=1.0):
     weights: optional rank-1 floating-point `Tensor`, for which the ith element
       is the weight of the ith training example. If not specified, the weights
       default to being all-one.
+    labels_are_probabilities: optional bool, defaulting to False. If True, then
+      binary classification rates will treat each label as the probability of
+      the label being positive. If False, such rates will treat a label <= 0 as
+      a negative label, and a label > 0 as a positive label.
 
   Returns:
     `SubsettableContext` representing the given predictions, labels and weights.
@@ -592,7 +622,11 @@ def rate_context(predictions, labels=None, weights=1.0):
       instead of `Tensor`s or scalars.
   """
   return _rate_context_helper(
-      predictions=predictions, labels=labels, weights=weights, num_classes=None)
+      predictions=predictions,
+      labels=labels,
+      weights=weights,
+      labels_are_probabilities=labels_are_probabilities,
+      num_classes=None)
 
 
 def multiclass_rate_context(num_classes, predictions, labels=None, weights=1.0):
@@ -625,13 +659,14 @@ def multiclass_rate_context(num_classes, predictions, labels=None, weights=1.0):
       predictions=predictions,
       labels=labels,
       weights=weights,
+      labels_are_probabilities=True,
       num_classes=num_classes)
 
 
 def _split_rate_context_helper(penalty_predictions, constraint_predictions,
                                penalty_labels, constraint_labels,
                                penalty_weights, constraint_weights,
-                               num_classes):
+                               labels_are_probabilities, num_classes):
   """Helper for split_rate_context() and multiclass_split_rate_context()."""
 
   # See comment in _rate_context_helper.
@@ -700,6 +735,7 @@ def _split_rate_context_helper(penalty_predictions, constraint_predictions,
       constraint_predictions=constraint_predictions,
       constraint_labels=constraint_labels,
       constraint_weights=constraint_weights,
+      labels_are_probabilities=labels_are_probabilities,
       num_classes=num_classes)
   true_predicate = predicate.Predicate(True)
   return SubsettableContext(raw_context, true_predicate, true_predicate)
@@ -710,7 +746,8 @@ def split_rate_context(penalty_predictions,
                        penalty_labels=None,
                        constraint_labels=None,
                        penalty_weights=1.0,
-                       constraint_weights=1.0):
+                       constraint_weights=1.0,
+                       labels_are_probabilities=False):
   """Creates a new split binary classification context.
 
   A "split context", unlike a normal context, has separate predictions, labels,
@@ -740,6 +777,10 @@ def split_rate_context(penalty_predictions,
       ith element is the weight of the ith training example, on the training
       dataset associated with the constraints. If not specified, the weights
       default to being all-one.
+    labels_are_probabilities: optional bool, defaulting to False. If True, then
+      binary classification rates will treat each label as the probability of
+      the label being positive. If False, such rates will treat a label <= 0 as
+      a negative label, and a label > 0 as a positive label.
 
   Returns:
     `SubsettableContext` representing the given predictions, labels and weights.
@@ -757,6 +798,7 @@ def split_rate_context(penalty_predictions,
       constraint_labels=constraint_labels,
       penalty_weights=penalty_weights,
       constraint_weights=constraint_weights,
+      labels_are_probabilities=labels_are_probabilities,
       num_classes=None)
 
 
@@ -820,4 +862,5 @@ def multiclass_split_rate_context(num_classes,
       constraint_labels=constraint_labels,
       penalty_weights=penalty_weights,
       constraint_weights=constraint_weights,
+      labels_are_probabilities=True,
       num_classes=num_classes)

@@ -52,10 +52,9 @@ from __future__ import print_function
 
 import abc
 import copy
-import numbers
 import numpy as np
 import six
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import defaults
 from tensorflow_constrained_optimization.python.rates import deferred_tensor
@@ -170,9 +169,9 @@ class _RatioWeights(helpers.RateObject):
 
     Args:
       weights: `DeferredTensor` of example weights.
-      column_coefficients: collection of num_columns floats, each of which is
-        the quantity by which to multiply the weights in the corresponding
-        column.
+      column_coefficients: python list or NumPy array of num_columns floats,
+        each of which is the quantity by which to multiply the weights in the
+        corresponding column.
       numerator_predicate: `Predicate` object representing whether each example
         should be included in the ratio's numerator.
       denominator_predicate: `Predicate` object representing whether each
@@ -187,15 +186,15 @@ class _RatioWeights(helpers.RateObject):
     """
     if not isinstance(weights, deferred_tensor.DeferredTensor):
       raise TypeError("weights must be a DeferredTensor object")
-    if isinstance(column_coefficients, deferred_tensor.DeferredTensor):
-      raise TypeError("column_coefficients must be a Tensor-like object")
+    if (tf.is_tensor(column_coefficients) or
+        isinstance(column_coefficients, deferred_tensor.DeferredTensor)):
+      raise TypeError("column_coefficients must be a list or NumPy array")
     if not (isinstance(numerator_predicate, predicate.Predicate) and
             isinstance(denominator_predicate, predicate.Predicate)):
       raise TypeError("numerator_predicate and denominator_predictate must "
                       "be Predicate objects")
 
-    column_coefficients = helpers.convert_to_1d_tensor(column_coefficients)
-    num_columns = helpers.get_num_elements_of_tensor(column_coefficients)
+    num_columns = len(column_coefficients)
     key = (weights, denominator_predicate)
 
     def value_fn(weights_value, predicate_value):
@@ -218,7 +217,8 @@ class _RatioWeights(helpers.RateObject):
       if not dtype.is_floating:
         raise TypeError("weights must be floating-point")
       column *= tf.cast(predicate_value, dtype=dtype)
-      row = tf.cast(column_coefficients, dtype=dtype)
+      row = tf.cast(
+          helpers.convert_to_1d_tensor(column_coefficients), dtype=dtype)
       # Return the outer product of the column vector "column" and row vector
       # "row", so that result_ij = column_i * row_j.
       return tf.tensordot(column, row, axes=0)
@@ -237,12 +237,6 @@ class _RatioWeights(helpers.RateObject):
 
   def __mul__(self, scalar):
     """Returns the result of multiplying the ratio weights by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("_RatioWeights objects only support *scalar* "
-                      "multiplication")
-
-    if scalar == 0:
-      return _RatioWeights({}, self._num_columns)
     return _RatioWeights(
         {
             denominator_key: numerator * scalar
@@ -255,11 +249,6 @@ class _RatioWeights(helpers.RateObject):
 
   def __truediv__(self, scalar):
     """Returns the result of dividing the ratio weights by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("_RatioWeights objects only support *scalar* division")
-
-    if scalar == 0:
-      raise ValueError("cannot divide by zero")
     return _RatioWeights(
         {
             denominator_key: numerator / scalar
@@ -594,6 +583,8 @@ class TensorTerm(Term):
     Raises:
       TypeError: if "tensor" is not a `DeferredTensor` or `Tensor`-like object.
     """
+    super(TensorTerm, self).__init__()
+
     if isinstance(tensor, deferred_tensor.DeferredTensor):
       self._tensor = tensor
     elif not isinstance(tensor, helpers.RateObject):
@@ -776,6 +767,8 @@ class BinaryClassificationTerm(Term):
     Raises:
       TypeError: if predictions or ratio_weights has the wrong type.
     """
+    super(BinaryClassificationTerm, self).__init__()
+
     if not isinstance(predictions, deferred_tensor.DeferredTensor):
       raise TypeError("predictions must be a DeferredTensor object")
     if not isinstance(ratio_weights, _RatioWeights):
@@ -929,17 +922,11 @@ class BinaryClassificationTerm(Term):
   # function.
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("Term objects only support *scalar* multiplication")
-
     return BinaryClassificationTerm(self._predictions,
                                     self._ratio_weights * scalar, self._loss)
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("Term objects only support *scalar* division")
-
     return BinaryClassificationTerm(self._predictions,
                                     self._ratio_weights / scalar, self._loss)
 
@@ -1106,6 +1093,8 @@ class MulticlassTerm(Term):
     Raises:
       TypeError: if predictions or ratio_weights has the wrong type.
     """
+    super(MulticlassTerm, self).__init__()
+
     if not isinstance(predictions, deferred_tensor.DeferredTensor):
       raise TypeError("predictions must be a DeferredTensor object")
     if not isinstance(ratio_weights, _RatioWeights):
@@ -1260,17 +1249,11 @@ class MulticlassTerm(Term):
   # function.
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("Term objects only support *scalar* multiplication")
-
     return MulticlassTerm(self._predictions, self._ratio_weights * scalar,
                           self._loss)
 
   def __truediv__(self, scalar):
     """Returns the result of dividing by a scalar."""
-    if not isinstance(scalar, numbers.Number):
-      raise TypeError("Term objects only support *scalar* division")
-
     return MulticlassTerm(self._predictions, self._ratio_weights / scalar,
                           self._loss)
 

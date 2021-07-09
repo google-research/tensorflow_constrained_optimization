@@ -113,6 +113,22 @@ class Expression(helpers.RateObject):
     """Returns the list of extra `Constraint`s."""
 
   @abc.abstractmethod
+  def _positive_scalar_mul(self, scalar):
+    """Returns the result of multiplying by a positive scalar."""
+    # This method is intended for internal use only. It's basically the same as
+    # __mul__, except that it requires its parameter to be nonnegative (this is
+    # *not* checked), and accepts non-Number inputs (in particular, it accepts
+    # DeferredTensors).
+
+  @abc.abstractmethod
+  def _positive_scalar_div(self, scalar):
+    """Returns the result of dividing by a positive scalar."""
+    # This method is intended for internal use only. It's basically the same as
+    # __div__, except that it requires its parameter to be positive (this is
+    # *not* checked), and accepts non-Number inputs (in particular, it accepts
+    # DeferredTensors).
+
+  @abc.abstractmethod
   def __mul__(self, scalar):
     """Returns the result of multiplying by a scalar."""
 
@@ -193,6 +209,7 @@ class ExplicitExpression(Expression):
         "constraint" portion of the optimization (i.e. when optimizing the
         constraints). It does not need to be {sub,semi}differentiable.
     """
+    super(ExplicitExpression, self).__init__()
     self._penalty_expression = penalty_expression
     self._constraint_expression = constraint_expression
 
@@ -207,6 +224,14 @@ class ExplicitExpression(Expression):
   @property
   def extra_constraints(self):
     return []
+
+  def _positive_scalar_mul(self, scalar):
+    return ExplicitExpression(self._penalty_expression * scalar,
+                              self._constraint_expression * scalar)
+
+  def _positive_scalar_div(self, scalar):
+    return ExplicitExpression(self._penalty_expression / scalar,
+                              self._constraint_expression / scalar)
 
   def __mul__(self, scalar):
     if not isinstance(scalar, numbers.Number):
@@ -251,6 +276,7 @@ class ConstrainedExpression(Expression):
       extra_constraints: optional collection of `Constraint`s required by this
         `Expression`.
     """
+    super(ConstrainedExpression, self).__init__()
     self._expression = expression
     self._extra_constraints = constraint.ConstraintList(extra_constraints)
 
@@ -266,6 +292,16 @@ class ConstrainedExpression(Expression):
   def extra_constraints(self):
     # The "list" property of a ConstraintList returns a copy.
     return self._extra_constraints.list
+
+  def _positive_scalar_mul(self, scalar):
+    return ConstrainedExpression(
+        self._expression._positive_scalar_mul(scalar),  # pylint: disable=protected-access
+        self._extra_constraints)
+
+  def _positive_scalar_div(self, scalar):
+    return ConstrainedExpression(
+        self._expression._positive_scalar_div(scalar),  # pylint: disable=protected-access
+        self._extra_constraints)
 
   def __mul__(self, scalar):
     if not isinstance(scalar, numbers.Number):
@@ -311,6 +347,7 @@ class SumExpression(Expression):
     Args:
       expressions: collection of `Expression`s that this object should sum.
     """
+    super(SumExpression, self).__init__()
     self._expressions = []
     for subexpression in expressions:
       self._expressions += SumExpression._expression_to_list(subexpression)
@@ -340,6 +377,18 @@ class SumExpression(Expression):
       result += subexpression.extra_constraints
     # The "list" property of a ConstraintList returns a copy.
     return result.list
+
+  def _positive_scalar_mul(self, scalar):
+    return SumExpression([
+        subexpression._positive_scalar_mul(scalar)  # pylint: disable=protected-access
+        for subexpression in self._expressions
+    ])
+
+  def _positive_scalar_div(self, scalar):
+    return SumExpression([
+        subexpression._positive_scalar_div(scalar)  # pylint: disable=protected-access
+        for subexpression in self._expressions
+    ])
 
   def __mul__(self, scalar):
     if not isinstance(scalar, numbers.Number):
@@ -382,6 +431,7 @@ class BoundedExpression(Expression):
         interest.
       scalar: float, a quantity by which to multiply this `BoundedExpression`.
     """
+    super(BoundedExpression, self).__init__()
     self._lower_bound = lower_bound
     self._upper_bound = upper_bound
     self._scalar = scalar
@@ -421,6 +471,22 @@ class BoundedExpression(Expression):
       return (self._upper_bound * self._scalar).extra_constraints
     return []
 
+  def _positive_scalar_mul(self, scalar):
+    # Since the scalar is nonnegative, it cannot change the sign of the
+    # expression, so we apply it to the two subexpressions directly, while
+    # leaving self._scalar alone.
+    return BoundedExpression(
+        self._lower_bound.positive_scalar_mul(scalar),
+        self._upper_bound.positive_scalar_mul(scalar), self._scalar)
+
+  def _positive_scalar_div(self, scalar):
+    # Since the scalar is positive, it cannot change the sign of the expression,
+    # so we apply it to the two subexpressions directly, while leaving
+    # self._scalar alone.
+    return BoundedExpression(
+        self._lower_bound.positive_scalar_div(scalar),
+        self._upper_bound.positive_scalar_div(scalar), self._scalar)
+
   def __mul__(self, scalar):
     if not isinstance(scalar, numbers.Number):
       raise TypeError("Expression objects only support *scalar* multiplication")
@@ -453,6 +519,7 @@ class InvalidExpression(Expression):
       message: string to raise when "penalty_expression",
         "constraint_expression" or "extra_constraints" is called.
     """
+    super(InvalidExpression, self).__init__()
     self._message = message
 
   @property
@@ -466,6 +533,12 @@ class InvalidExpression(Expression):
   @property
   def extra_constraints(self):
     raise RuntimeError(self._message)
+
+  def _positive_scalar_mul(self, scalar):
+    return self
+
+  def _positive_scalar_div(self, scalar):
+    return self
 
   def __mul__(self, scalar):
     if not isinstance(scalar, numbers.Number):

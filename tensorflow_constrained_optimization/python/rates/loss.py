@@ -31,7 +31,7 @@ from __future__ import print_function
 import abc
 import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python.rates import helpers
 
@@ -231,9 +231,6 @@ class ZeroOneLoss(MulticlassLoss):
   constant).
   """
 
-  def __init__(self):
-    pass
-
   @property
   def is_differentiable(self):
     """Returns False, since the zero-one loss is discontinuous."""
@@ -372,6 +369,8 @@ class HingeLoss(MulticlassLoss):
     Raises:
       ValueError: if the margin is negative.
     """
+    super(HingeLoss, self).__init__()
+
     self._margin = float(margin)
     if margin < 0.0:
       raise ValueError("margin must be non-negative")

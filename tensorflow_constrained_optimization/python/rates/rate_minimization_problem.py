@@ -69,7 +69,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow.compat.v2 as tf
+import tensorflow as tf
 
 from tensorflow_constrained_optimization.python import constrained_minimization_problem
 from tensorflow_constrained_optimization.python.rates import constraint
@@ -96,11 +96,27 @@ class RateMinimizationProblem(
   iteration-to-iteration as they converge to their true values.
   """
 
+  # We handle variables in a sort of roundabout manner: each DeferredVariable
+  # has an associated key, which maps (in the structure memoizer) to the
+  # tf.Variable itself. However, since dicts with tuple keys cannot be tracked
+  # by tf.Trackable (upon which tf.Module is based), "self._structure_memoizer"
+  # is excluded from tracking via "self._no_dependency".
+  #
+  #
+  # Unfortunately, "self._no_dependency" only handles tf.Trackable dependencies,
+  # and tf.Module also encounters issues when flattening dictionaries with
+  # mixed-type keys, so to exclude "self._structure_memoizer" from tf.Module
+  # tracking, we also need to add it to the folowing list:
+  _TF_MODULE_IGNORED_PROPERTIES = (
+      constrained_minimization_problem.ConstrainedMinimizationProblem
+      ._TF_MODULE_IGNORED_PROPERTIES.union(["_structure_memoizer"]))
+
   def __init__(self,
                objective,
                constraints=None,
                denominator_lower_bound=1e-3,
-               variable_fn=tf.Variable):
+               variable_fn=tf.Variable,
+               name=None):
     """Creates a rate constrained optimization problem.
 
     In addition to an objective function to minimize and a list of constraints
@@ -125,11 +141,14 @@ class RateMinimizationProblem(
       variable_fn: optional function with the same signature as the
         `tf.Variable` constructor, that returns a new variable with the
         specified properties.
+      name: optional string, the name of this object.
 
     Raises:
       ValueError: if the "penalty" portion of the objective or a constraint is
         non-differentiable, or if denominator_lower_bound is negative.
     """
+    super(RateMinimizationProblem, self).__init__(name=name)
+
     # We do permit denominator_lower_bound to be zero. In this case, division by
     # zero is possible, and it's the user's responsibility to ensure that it
     # doesn't happen.
@@ -161,11 +180,19 @@ class RateMinimizationProblem(
     # redundancies than it would otherwise. Additionally, it will store any
     # slack variables or denominator variables that need to be created for the
     # optimization problem.
-    self._structure_memoizer = {
+    #
+    # Each DeferredVariable has an associated key, which maps (in the structure
+    # memoizer) to the tf.Variable itself. However, since dicts with tuple keys
+    # cannot be tracked by tf.Trackable (upon which tf.Module is based),
+    # "self._structure_memoizer" is excluded from tracking via
+    # "self._no_dependency" and "_TF_MODULE_IGNORED_PROPERTIES". We still need
+    # the raw tf.Variables to be tracked though, so we create the
+    # "self._raw_variables" list, at the end of this method.
+    self._structure_memoizer = self._no_dependency({
         defaults.DENOMINATOR_LOWER_BOUND_KEY: denominator_lower_bound,
         defaults.GLOBAL_STEP_KEY: self._global_step,
         defaults.VARIABLE_FN_KEY: variable_fn
-    }
+    })
 
     # We ignore the "constraint_expression" field here, since we're not inside a
     # constraint (this is the objective function).
@@ -197,8 +224,9 @@ class RateMinimizationProblem(
                            "cannot be optimized--they can only be constrained")
         penalty_value = new_constraint.expression.penalty_expression.evaluate(
             self._structure_memoizer)
-        constraint_value = new_constraint.expression.constraint_expression.evaluate(
-            self._structure_memoizer)
+        constraint_value = (
+            new_constraint.expression.constraint_expression.evaluate(
+                self._structure_memoizer))
         self._proxy_constraints.append(penalty_value)
         self._constraints.append(constraint_value)
         inputs += penalty_value.inputs
@@ -215,9 +243,17 @@ class RateMinimizationProblem(
     # check: before this point, no variable should have been accessed
     # directly, and since their storage didn't exist yet, they couldn't have
     # been.
+    #
+    # The self._variables list contains the DeferredVariables needed by this
+    # problem, whereas self._raw_variables contains the tf.Variables created by
+    # these DeferredVariables. The only reason that we have the latter list is
+    # to help tf.Module checkpoint them.
     self._variables = variables.list
-    for variable in self._variables:
-      variable.create(self._structure_memoizer)
+    with self.name_scope:
+      self._raw_variables = [
+          variable.create(self._structure_memoizer)
+          for variable in self._variables
+      ]
 
   def objective(self):
     """Returns the objective function.
@@ -299,22 +335,6 @@ class RateMinimizationProblem(
       function returning such.
     """
     return self._inputs
-
-  @property
-  def variables(self):
-    """Returns a list of variables owned by this problem.
-
-    The returned variables will only be those that are owned by the rate
-    minimization problem itself, e.g. implicit slack variables and denominator
-    accumulators. The model variables will *not* be included.
-
-    Returns:
-      A list of variables.
-    """
-    # Variables do not have their values memoized, so there's no real need to
-    # include a value_memoizer.
-    return ([vv(self._structure_memoizer) for vv in self._variables] +
-            [self._global_step])
 
   def update_ops(self):
     """Creates and returns a list of ops to run at the start of train_op.
